@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCart } from "@/context/CartContext";
+import { useLocation } from "@/context/LocationContext";
+import { getCurrentLocation } from "@/helpers/currentLocation";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
+import { useRouter } from "next/navigation";
+import { toast } from "react-hot-toast";
 
 const recommendedProducts = [
   {
@@ -64,8 +68,11 @@ export default function OrderPage() {
     totalOriginalPrice,
     totalDiscount,
   } = useCart();
+  const { location, setLocation } = useLocation();
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>("GET150");
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const router = useRouter();
 
   const [formData, setFormData] = useState({
     receiverName: "",
@@ -73,6 +80,45 @@ export default function OrderPage() {
     flatDetails: "",
     locality: "",
   });
+
+  useEffect(() => {
+    if (location?.address && !formData.locality) {
+      setFormData((prev) => ({
+        ...prev,
+        locality: location.address ?? prev.locality,
+      }));
+    }
+  }, [location?.address]);
+
+  const handleUseCurrentLocation = async () => {
+    setLocationLoading(true);
+    try {
+      const { lat, lng, address } = await getCurrentLocation();
+      setLocation({ lat, lng, address, timestamp: Date.now() });
+      if (address) {
+        setFormData((prev) => ({ ...prev, locality: address }));
+      }
+      toast.success("Location saved");
+    } catch {
+      toast.error("Could not get location");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  const handlePlaceOrder = () => {
+    console.log(formData);
+    if (
+      formData.receiverName === "" ||
+      formData.phoneNumber === "" ||
+      formData.flatDetails === "" ||
+      formData.locality === ""
+    ) {
+      toast.error("Please fill all the fields");
+      return;
+    }
+    router.push("/success");
+  };
 
   const couponDiscount =
     appliedCoupon === "GET150" ? 150 : appliedCoupon === "GET120" ? 120 : 0;
@@ -316,9 +362,14 @@ export default function OrderPage() {
 
           <div className="border-t border-gray-100" />
 
-          <button className="flex items-center gap-2 bg-[rgba(245,98,21,0.06)] px-3 py-1.5 rounded-md">
+          <button
+            type="button"
+            onClick={handleUseCurrentLocation}
+            disabled={locationLoading}
+            className="flex items-center gap-2 bg-[rgba(245,98,21,0.06)] px-3 py-1.5 rounded-md cursor-pointer hover:bg-[rgba(245,98,21,0.12)] transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
             <svg
-              className="w-5 h-5 text-[#f56215]"
+              className="w-5 h-5 text-[#f56215] shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -337,7 +388,7 @@ export default function OrderPage() {
               />
             </svg>
             <span className="text-[#f56215] text-sm font-medium">
-              Use Current Location
+              {locationLoading ? "Getting location…" : "Use Current Location"}
             </span>
           </button>
 
@@ -439,7 +490,7 @@ export default function OrderPage() {
       </div>
 
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex flex-col">
-        <div className="bg-gradient-to-r from-[rgba(2,88,63,0.12)] to-[rgba(2,88,63,0.12)] rounded-t-2xl px-4 py-2 text-center">
+        <div className="bg-gradient-to-r from-[rgba(2,88,63,0.12)] to-[rgba(2,88,63,0.12)] rounded-t-2xl pt-2 pb-5 text-center">
           <span className="text-[#02583f] font-semibold text-sm">
             {totalKcal} kcal | {totalProtein}g Protein
           </span>
@@ -467,9 +518,9 @@ export default function OrderPage() {
               <span className="text-[#222] font-medium">PAYTM</span>
             </div>
           </div>
-          <Link
-            href="/success"
-            className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl"
+          <div
+            className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer"
+            onClick={handlePlaceOrder}
           >
             <div className="flex flex-col items-start text-white">
               <span className="font-semibold">Place Order</span>
@@ -488,7 +539,7 @@ export default function OrderPage() {
                 d="M19 9l-7 7-7-7"
               />
             </svg>
-          </Link>
+          </div>
         </div>
       </div>
     </main>

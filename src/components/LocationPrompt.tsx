@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocation } from "@/context/LocationContext";
+import { getCurrentLocation } from "@/helpers/currentLocation";
 
 const STORAGE_KEY = "sochmat_location_prompt";
 
@@ -20,39 +21,13 @@ export default function LocationPrompt() {
     if (!status) setOpen(true);
   }, [mounted]);
 
-  const handleAllow = () => {
-    if (typeof navigator !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          let address: string | undefined;
-          try {
-            const res = await fetch(
-              `/api/geocode/reverse?lat=${encodeURIComponent(
-                lat
-              )}&lng=${encodeURIComponent(lng)}`
-            );
-            const data = await res.json();
-            if (data.address) address = data.address;
-          } catch {
-            // keep address undefined
-          }
-          setLocation({
-            lat,
-            lng,
-            address,
-            timestamp: Date.now(),
-          });
-          localStorage.setItem(STORAGE_KEY, "allowed");
-          setOpen(false);
-        },
-        () => {
-          localStorage.setItem(STORAGE_KEY, "dismissed");
-          setOpen(false);
-        }
-      );
-    } else {
+  const handleAllow = async () => {
+    try {
+      const { lat, lng, address } = await getCurrentLocation();
+      setLocation({ lat, lng, address, timestamp: Date.now() });
+      localStorage.setItem(STORAGE_KEY, "allowed");
+      setOpen(false);
+    } catch {
       localStorage.setItem(STORAGE_KEY, "dismissed");
       setOpen(false);
     }

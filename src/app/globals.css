@@ -23,6 +23,10 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+button {
+  cursor: pointer;
+}
+
 @keyframes marquee {
   0% {
     transform: translateX(0);

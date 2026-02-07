@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { codeInspectorPlugin } from "code-inspector-plugin";
 
 const nextConfig: NextConfig = {
   images: {
@@ -11,16 +12,9 @@ const nextConfig: NextConfig = {
     ],
   },
   turbopack: {
-    rules: {
-      "**/*.{tsx,jsx}": {
-        loaders: [
-          {
-            loader: "@locator/webpack-loader",
-            options: { env: "development" },
-          },
-        ],
-      },
-    },
+    rules: codeInspectorPlugin({
+      bundler: "turbopack",
+    }),
   },
 };
 
