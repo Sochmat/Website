@@ -67,11 +67,13 @@ export default function OrderPage() {
     totalPrice,
     totalOriginalPrice,
     totalDiscount,
+    clearCart,
   } = useCart();
   const { location, setLocation } = useLocation();
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>("GET150");
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [placingOrder, setPlacingOrder] = useState(false);
   const router = useRouter();
 
   const [formData, setFormData] = useState({
@@ -106,8 +108,7 @@ export default function OrderPage() {
     }
   };
 
-  const handlePlaceOrder = () => {
-    console.log(formData);
+  const handlePlaceOrder = async () => {
     if (
       formData.receiverName === "" ||
       formData.phoneNumber === "" ||
@@ -117,7 +118,54 @@ export default function OrderPage() {
       toast.error("Please fill all the fields");
       return;
     }
-    router.push("/success");
+    setPlacingOrder(true);
+    try {
+      const couponDiscountAmount =
+        appliedCoupon === "GET150" ? 150 : appliedCoupon === "GET120" ? 120 : 0;
+      const gstAmount = Math.round((totalPrice - couponDiscountAmount) * 0.05);
+      const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
+
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user: {
+            phone: formData.phoneNumber.replace(/\D/g, ""),
+            name: formData.receiverName,
+          },
+          receiver: {
+            name: formData.receiverName,
+            phone: formData.phoneNumber,
+            address: [formData.flatDetails, formData.locality]
+              .filter(Boolean)
+              .join(", "),
+          },
+          orderItems: items.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          totalAmount: finalAmount,
+          discountAmount: couponDiscountAmount,
+          tax: gstAmount,
+          paymentMethod: "cash",
+          couponCode: appliedCoupon ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        toast.error(data.message ?? "Failed to place order");
+        return;
+      }
+      clearCart();
+      router.push(
+        `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`
+      );
+    } catch {
+      toast.error("Failed to place order");
+    } finally {
+      setPlacingOrder(false);
+    }
   };
 
   const couponDiscount =
@@ -518,12 +566,16 @@ export default function OrderPage() {
               <span className="text-[#222] font-medium">PAYTM</span>
             </div>
           </div>
-          <div
-            className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer"
+          <button
+            type="button"
+            className="w-full bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={handlePlaceOrder}
+            disabled={placingOrder}
           >
             <div className="flex flex-col items-start text-white">
-              <span className="font-semibold">Place Order</span>
+              <span className="font-semibold">
+                {placingOrder ? "Placing…" : "Place Order"}
+              </span>
               <span className="font-medium text-sm">₹{finalPrice}</span>
             </div>
             <svg
@@ -539,7 +591,7 @@ export default function OrderPage() {
                 d="M19 9l-7 7-7-7"
               />
             </svg>
-          </div>
+          </button>
         </div>
       </div>
     </main>
