@@ -8,7 +8,8 @@ import { getCurrentLocation } from "@/helpers/currentLocation";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import { useRouter } from "next/navigation";
-import { toast } from "react-hot-toast";
+import { Order } from "@/lib/types";
+import { message } from "antd";
 
 const recommendedProducts = [
   {
@@ -70,11 +71,32 @@ export default function OrderPage() {
     clearCart,
   } = useCart();
   const { location, setLocation } = useLocation();
-  const [appliedCoupon, setAppliedCoupon] = useState<string | null>("GET150");
+  const [coupons, setCoupons] = useState<
+    { code: string; discountAmount: number }[]
+  >([]);
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [locationLoading, setLocationLoading] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const router = useRouter();
+
+  console.log({ appliedCoupon });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/coupons")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.success && Array.isArray(data.coupons)) {
+          setCoupons(data.coupons);
+          setAppliedCoupon((prev) => prev || (data.coupons[0]?.code ?? null));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [formData, setFormData] = useState({
     receiverName: "",
@@ -100,9 +122,9 @@ export default function OrderPage() {
       if (address) {
         setFormData((prev) => ({ ...prev, locality: address }));
       }
-      toast.success("Location saved");
+      message.success("Location saved");
     } catch {
-      toast.error("Could not get location");
+      message.error("Could not get location");
     } finally {
       setLocationLoading(false);
     }
@@ -115,46 +137,46 @@ export default function OrderPage() {
       formData.flatDetails === "" ||
       formData.locality === ""
     ) {
-      toast.error("Please fill all the fields");
+      message.error("Please fill all the fields");
       return;
     }
     setPlacingOrder(true);
     try {
-      const couponDiscountAmount =
-        appliedCoupon === "GET150" ? 150 : appliedCoupon === "GET120" ? 120 : 0;
+      const applied = coupons.find((c) => c.code === appliedCoupon);
+      const couponDiscountAmount = applied?.discountAmount ?? 0;
       const gstAmount = Math.round((totalPrice - couponDiscountAmount) * 0.05);
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
+
+      const orderPayload: Order = {
+        paymentStatus: "pending",
+        status: "pending",
+        receiver: {
+          name: formData.receiverName,
+          phone: formData.phoneNumber,
+          address: [formData.flatDetails, formData.locality]
+            .filter(Boolean)
+            .join(", "),
+        },
+        orderItems: items.map((item) => ({
+          productId: item.id,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        totalAmount: finalAmount,
+        discountAmount: couponDiscountAmount,
+        tax: gstAmount,
+        paymentMethod: "cash",
+        couponCode: appliedCoupon ?? undefined,
+      };
 
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user: {
-            phone: formData.phoneNumber.replace(/\D/g, ""),
-            name: formData.receiverName,
-          },
-          receiver: {
-            name: formData.receiverName,
-            phone: formData.phoneNumber,
-            address: [formData.flatDetails, formData.locality]
-              .filter(Boolean)
-              .join(", "),
-          },
-          orderItems: items.map((item) => ({
-            productId: item.id,
-            quantity: item.quantity,
-            price: item.price,
-          })),
-          totalAmount: finalAmount,
-          discountAmount: couponDiscountAmount,
-          tax: gstAmount,
-          paymentMethod: "cash",
-          couponCode: appliedCoupon ?? undefined,
-        }),
+        body: JSON.stringify(orderPayload),
       });
       const data = await res.json();
       if (!data.success) {
-        toast.error(data.message ?? "Failed to place order");
+        message.error(data.message ?? "Failed to place order");
         return;
       }
       clearCart();
@@ -162,14 +184,14 @@ export default function OrderPage() {
         `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`
       );
     } catch {
-      toast.error("Failed to place order");
+      message.error("Failed to place order");
     } finally {
       setPlacingOrder(false);
     }
   };
 
-  const couponDiscount =
-    appliedCoupon === "GET150" ? 150 : appliedCoupon === "GET120" ? 120 : 0;
+  const appliedCouponData = coupons.find((c) => c.code === appliedCoupon);
+  const couponDiscount = appliedCouponData?.discountAmount ?? 0;
   const gst = Math.round((totalPrice - couponDiscount) * 0.05);
   const finalPrice = totalPrice - couponDiscount + gst;
 
@@ -290,34 +312,12 @@ export default function OrderPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3">
-          <div className="flex items-start gap-2">
-            <svg
-              className="w-5 h-5 text-[#f56215] mt-1 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-              />
-            </svg>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <p className="font-medium text-sm text-black">
-                  Save ₹120 with "GET120"
-                </p>
-                <button className="bg-[rgba(245,98,21,0.06)] border border-[#f56215] text-[#f56215] text-sm font-medium px-3 py-1 rounded-md">
-                  Apply
-                </button>
-              </div>
-              <button className="flex items-center gap-0.5 text-[#666] text-xs mt-1">
-                View all coupons
+        <div className="bg-white rounded-xl p-3 space-y-3">
+          {coupons.length > 0 ? (
+            coupons.map((coupon) => (
+              <div key={coupon.code} className="flex items-start gap-2">
                 <svg
-                  className="w-4 h-4"
+                  className="w-5 h-5 text-[#f56215] mt-1 shrink-0"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -326,12 +326,29 @@ export default function OrderPage() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M9 5l7 7-7 7"
+                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
                   />
                 </svg>
-              </button>
-            </div>
-          </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-sm text-black">
+                      Save ₹{coupon.discountAmount} with &quot;{coupon.code}
+                      &quot;
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setAppliedCoupon(coupon.code)}
+                      className="bg-[rgba(245,98,21,0.06)] border border-[#f56215] text-[#f56215] text-sm font-medium px-3 py-1 rounded-md"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500">No coupons available</p>
+          )}
         </div>
 
         {appliedCoupon && (
@@ -568,7 +585,7 @@ export default function OrderPage() {
           </div>
           <button
             type="button"
-            className="w-full bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+            className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={handlePlaceOrder}
             disabled={placingOrder}
           >

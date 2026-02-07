@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as Order & { couponCode?: string };
+    const body = (await request.json()) as Order;
     const phone = String(body.receiver?.phone ?? "")
       .trim()
       .replace(/\D/g, "");
@@ -104,7 +104,6 @@ export async function POST(request: NextRequest) {
     }
 
     let discountAmount = Number(body.discountAmount) ?? 0;
-    let couponId: ObjectId | undefined;
     if (body.couponCode) {
       const coupon = await db.collection("coupons").findOne({
         code: String(body.couponCode).trim().toUpperCase(),
@@ -112,7 +111,6 @@ export async function POST(request: NextRequest) {
       });
       if (coupon) {
         discountAmount = Number(coupon.discountAmount) || 0;
-        couponId = coupon._id as ObjectId;
       }
     }
 
@@ -137,7 +135,7 @@ export async function POST(request: NextRequest) {
       discountAmount,
       tax,
       netAmount: totalAmount,
-      couponId: couponId ?? undefined,
+      couponCode: body.couponCode ?? undefined,
       paymentStatus: "pending" as const,
       status: "pending" as const,
       paymentMethod: body.paymentMethod ?? "cash",

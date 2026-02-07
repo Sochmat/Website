@@ -43,8 +43,8 @@ export interface OrderItem {
 
 export interface Order {
   _id?: ObjectId | string;
-  orderNumber: string;
-  couponId?: ObjectId | string;
+  orderNumber?: string;
+  couponCode?: ObjectId | string;
 
   discountAmount?: number;
   deliveryFee?: number;

@@ -63,6 +63,22 @@ export default function AdminLayout({
           >
             Coupons
           </Link>
+          <Link
+            href="/admin/orders"
+            className={`font-medium ${
+              pathname === "/admin/orders" ? "underline" : "hover:underline"
+            }`}
+          >
+            Orders
+          </Link>
+          <Link
+            href="/admin/users"
+            className={`font-medium ${
+              pathname === "/admin/users" ? "underline" : "hover:underline"
+            }`}
+          >
+            Users
+          </Link>
           <button
             onClick={handleLogout}
             className="bg-white text-[#02583f] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
