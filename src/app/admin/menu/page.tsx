@@ -26,9 +26,19 @@ const initialFormState: FormState = {
   badge: null,
   image: "",
   isVeg: true,
+  isAddOn: false,
+  isRecommended: false,
+  showOnHomePage: false,
   category: "",
   type: "food",
 };
+
+function parseDiscountPercent(discount: string): number | null {
+  const match = discount.trim().match(/(\d+)\s*%?/);
+  if (!match) return null;
+  const pct = parseInt(match[1], 10);
+  return pct >= 0 && pct <= 100 ? pct : null;
+}
 
 export default function AdminMenuPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -48,6 +58,36 @@ export default function AdminMenuPage() {
     fetchMenuItems();
     fetchCategories();
   }, []);
+
+  useEffect(() => {
+    const price = Number(formData.price);
+    const originalPrice = Number(formData.originalPrice);
+    if (price > 0 && originalPrice > 0) {
+      const discount =
+        originalPrice > price
+          ? String(Math.round(((originalPrice - price) / originalPrice) * 100))
+          : "0";
+      setFormData((prev) => ({ ...prev, discount }));
+    }
+  }, [formData.price, formData.originalPrice]);
+
+  useEffect(() => {
+    const originalPrice = Number(formData.originalPrice);
+    const pct = parseDiscountPercent(formData.discount ?? "");
+    if (originalPrice > 0 && pct !== null) {
+      const price =
+        pct > 0 ? Math.round(originalPrice * (1 - pct / 100)) : originalPrice;
+      setFormData((prev) => ({ ...prev, price: String(price) }));
+    }
+  }, [formData.originalPrice, formData.discount]);
+
+  useEffect(() => {
+    const forType = categories.filter((c) => c.type === formData.type);
+    const exists = forType.some((c) => c.id === formData.category);
+    if (formData.category && !exists) {
+      setFormData((prev) => ({ ...prev, category: "" }));
+    }
+  }, [formData.type]);
 
   const fetchMenuItems = async () => {
     try {
@@ -69,14 +109,30 @@ export default function AdminMenuPage() {
     }
   };
 
-  const toPayload = (): MenuItem => ({
-    ...formData,
-    price: Number(formData.price) || 0,
-    originalPrice: Number(formData.originalPrice) || 0,
-    kcal: Number(formData.kcal) || 0,
-    protein: Number(formData.protein) || 0,
-    rating: Number(formData.rating) || 0,
-  });
+  const toPayload = (): MenuItem => {
+    let price = Number(formData.price) || 0;
+    const originalPrice = Number(formData.originalPrice) || 0;
+    const pct = parseDiscountPercent(formData.discount ?? "");
+    if (originalPrice > 0 && pct !== null && price <= 0) {
+      price =
+        pct > 0 ? Math.round(originalPrice * (1 - pct / 100)) : originalPrice;
+    }
+    const discount =
+      price > 0 && originalPrice > price
+        ? String(Math.round(((originalPrice - price) / originalPrice) * 100))
+        : price > 0 && originalPrice > 0
+          ? "0"
+          : (formData.discount ?? "");
+    return {
+      ...formData,
+      price,
+      originalPrice,
+      discount: discount || undefined,
+      kcal: Number(formData.kcal) || 0,
+      protein: Number(formData.protein) || 0,
+      rating: Number(formData.rating) || 0,
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,7 +276,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, discount: e.target.value })
                   }
-                  placeholder="e.g., 20% off"
+                  placeholder="e.g., 20"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                   required
                 />
@@ -299,16 +355,22 @@ export default function AdminMenuPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Category
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.category}
                   onChange={(e) =>
                     setFormData({ ...formData, category: e.target.value })
                   }
-                  placeholder="e.g., burgers"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
-                  required
-                />
+                >
+                  <option value="">Select category</option>
+                  {categories
+                    .filter((cat) => cat.type === formData.type)
+                    .map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -339,7 +401,7 @@ export default function AdminMenuPage() {
                     setFormData({ ...formData, image: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
-                  required
+                  placeholder="Optional"
                 />
               </div>
               <div className="col-span-2">
@@ -356,6 +418,87 @@ export default function AdminMenuPage() {
                     Vegetarian
                   </span>
                 </label>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.isAddOn ?? false}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isAddOn: !prev.isAddOn,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
+                      formData.isAddOn ? "bg-[#02583f]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                        formData.isAddOn
+                          ? "translate-x-5 ml-0.5"
+                          : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Add on
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.isRecommended ?? false}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isRecommended: !prev.isRecommended,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
+                      formData.isRecommended ? "bg-[#02583f]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                        formData.isRecommended
+                          ? "translate-x-5 ml-0.5"
+                          : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Recommended
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.showOnHomePage ?? false}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        showOnHomePage: !prev.showOnHomePage,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
+                      formData.showOnHomePage ? "bg-[#02583f]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                        formData.showOnHomePage
+                          ? "translate-x-5 ml-0.5"
+                          : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Show on home page
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex gap-3">
@@ -582,7 +725,7 @@ export default function AdminMenuPage() {
                     type="button"
                     onClick={() =>
                       handleCategoryDelete(
-                        cat._id != null ? String(cat._id) : ""
+                        cat._id != null ? String(cat._id) : "",
                       )
                     }
                     className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"

@@ -5,13 +5,20 @@ import {
   useContext,
   useState,
   useEffect,
+  useMemo,
   ReactNode,
 } from "react";
+import {
+  distanceFromBusinessKm,
+  isWithinServiceArea,
+  SERVICE_RADIUS_KM,
+} from "@/helpers/distance";
 
 export interface UserLocation {
   lat: number;
   lng: number;
   address?: string;
+  pincode?: string;
   timestamp?: number;
 }
 
@@ -20,6 +27,9 @@ const STORAGE_KEY = "sochmat_user_location";
 interface LocationContextType {
   location: UserLocation | null;
   setLocation: (loc: UserLocation | null) => void;
+  distanceFromStoreKm: number | null;
+  isServiceable: boolean;
+  serviceRadiusKm: number;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -59,8 +69,26 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const distanceFromStoreKm = location
+    ? distanceFromBusinessKm(location.lat, location.lng)
+    : null;
+  const isServiceable = location
+    ? isWithinServiceArea(location.lat, location.lng)
+    : false;
+
+  const value = useMemo(
+    () => ({
+      location,
+      setLocation,
+      distanceFromStoreKm,
+      isServiceable,
+      serviceRadiusKm: SERVICE_RADIUS_KM,
+    }),
+    [location, distanceFromStoreKm, isServiceable]
+  );
+
   return (
-    <LocationContext.Provider value={{ location, setLocation }}>
+    <LocationContext.Provider value={value}>
       {children}
     </LocationContext.Provider>
   );

@@ -5,59 +5,13 @@ import Link from "next/link";
 import { useCart } from "@/context/CartContext";
 import { useLocation } from "@/context/LocationContext";
 import { getCurrentLocation } from "@/helpers/currentLocation";
+import { distanceFromBusinessKm } from "@/helpers/distance";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import { useRouter } from "next/navigation";
 import { Order } from "@/lib/types";
 import { message } from "antd";
-
-const recommendedProducts = [
-  {
-    id: "101",
-    name: "Chocolate Protein Shake",
-    kcal: 420,
-    protein: 20,
-    price: 160,
-    originalPrice: 199,
-    discount: "20% off",
-    rating: 4.1,
-    reviews: "500+",
-    badge: null,
-    image:
-      "https://www.figma.com/api/mcp/asset/25b7ef51-e645-4799-a3f1-bfbe187d5cd6",
-    isVeg: true,
-  },
-  {
-    id: "102",
-    name: "Chocolate Protein Shake",
-    kcal: 420,
-    protein: 20,
-    price: 160,
-    originalPrice: 199,
-    discount: "20% off",
-    rating: 4.1,
-    reviews: "500+",
-    badge: null,
-    image:
-      "https://www.figma.com/api/mcp/asset/25b7ef51-e645-4799-a3f1-bfbe187d5cd6",
-    isVeg: true,
-  },
-  {
-    id: "103",
-    name: "Chocolate Protein Shake",
-    kcal: 420,
-    protein: 20,
-    price: 160,
-    originalPrice: 199,
-    discount: "20% off",
-    rating: 4.1,
-    reviews: "500+",
-    badge: null,
-    image:
-      "https://www.figma.com/api/mcp/asset/25b7ef51-e645-4799-a3f1-bfbe187d5cd6",
-    isVeg: true,
-  },
-];
+import type { Product } from "@/context/CartContext";
 
 export default function OrderPage() {
   const {
@@ -70,7 +24,8 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { location, setLocation } = useLocation();
+  const { location, setLocation, distanceFromStoreKm, isServiceable } =
+    useLocation();
   const [coupons, setCoupons] = useState<
     { code: string; discountAmount: number }[]
   >([]);
@@ -78,9 +33,41 @@ export default function OrderPage() {
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [locationLoading, setLocationLoading] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
   const router = useRouter();
 
-  console.log({ appliedCoupon });
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/menu")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data.success && Array.isArray(data.items)) {
+          const recommended = (
+            data.items as (Product & { isRecommended?: boolean })[]
+          )
+            .filter((item) => item.isRecommended === true)
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              kcal: item.kcal,
+              protein: item.protein,
+              price: item.price,
+              originalPrice: item.originalPrice,
+              discount: item.discount ?? "",
+              rating: item.rating ?? 0,
+              reviews: item.reviews ?? "",
+              badge: item.badge ?? null,
+              image: item.image,
+              isVeg: item.isVeg,
+            }));
+          setRecommendedProducts(recommended);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,12 +104,22 @@ export default function OrderPage() {
   const handleUseCurrentLocation = async () => {
     setLocationLoading(true);
     try {
-      const { lat, lng, address } = await getCurrentLocation();
-      setLocation({ lat, lng, address, timestamp: Date.now() });
+      const { lat, lng, address, pincode } = await getCurrentLocation();
+      setLocation({ lat, lng, address, pincode, timestamp: Date.now() });
       if (address) {
         setFormData((prev) => ({ ...prev, locality: address }));
       }
-      message.success("Location saved");
+      const dist = distanceFromBusinessKm(lat, lng);
+      const inRange = dist <= 10;
+      if (inRange) {
+        message.success(
+          `Location saved. You're ${dist.toFixed(1)} km away (within delivery area).`,
+        );
+      } else {
+        message.warning(
+          `Location saved but you're ${dist.toFixed(1)} km away. Delivery available only within 10 km.`,
+        );
+      }
     } catch {
       message.error("Could not get location");
     } finally {
@@ -138,6 +135,12 @@ export default function OrderPage() {
       formData.locality === ""
     ) {
       message.error("Please fill all the fields");
+      return;
+    }
+    if (location && !isServiceable) {
+      message.error(
+        `Delivery not available. You're ${distanceFromStoreKm?.toFixed(1)} km away; we deliver within 10 km only.`,
+      );
       return;
     }
     setPlacingOrder(true);
@@ -181,7 +184,7 @@ export default function OrderPage() {
       }
       clearCart();
       router.push(
-        `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`
+        `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`,
       );
     } catch {
       message.error("Failed to place order");
@@ -301,16 +304,18 @@ export default function OrderPage() {
           </Link>
         </div>
 
-        <div className="bg-white rounded-xl p-3">
-          <p className="font-medium text-[13px] text-black mb-2.5">
-            Recommended Add Ons
-          </p>
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-            {recommendedProducts.map((product) => (
-              <RecommendedItem key={product.id} product={product} />
-            ))}
+        {recommendedProducts.length > 0 && (
+          <div className="bg-white rounded-xl p-3">
+            <p className="font-medium text-[13px] text-black mb-2.5">
+              Recommended Add Ons
+            </p>
+            <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+              {recommendedProducts.map((product) => (
+                <RecommendedItem key={product.id} product={product} />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="bg-white rounded-xl p-3 space-y-3">
           {coupons.length > 0 ? (
@@ -555,7 +560,7 @@ export default function OrderPage() {
       </div>
 
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex flex-col">
-        <div className="bg-gradient-to-r from-[rgba(2,88,63,0.12)] to-[rgba(2,88,63,0.12)] rounded-t-2xl pt-2 pb-5 text-center">
+        <div className="bg-[#E1EBE8] rounded-t-2xl pt-2 pb-5 text-center">
           <span className="text-[#02583f] font-semibold text-sm">
             {totalKcal} kcal | {totalProtein}g Protein
           </span>

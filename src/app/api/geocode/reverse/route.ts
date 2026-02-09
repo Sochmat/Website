@@ -33,7 +33,13 @@ export async function GET(request: NextRequest) {
       address?: Record<string, string>;
     };
     const address = data.display_name ?? null;
-    return NextResponse.json({ address });
+    let pincode: string | null =
+      (data.address?.postcode ?? data.address?.postalcode) || null;
+    if (!pincode && address && /\b\d{6}\b/.test(address)) {
+      const match = address.match(/\b(\d{6})\b/);
+      if (match) pincode = match[1];
+    }
+    return NextResponse.json({ address, pincode });
   } catch (err) {
     console.error("Reverse geocode error:", err);
     return NextResponse.json(

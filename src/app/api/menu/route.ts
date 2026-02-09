@@ -20,6 +20,8 @@ export async function GET() {
       badge: item.badge,
       image: item.image,
       isVeg: item.isVeg,
+      isRecommended: item.isRecommended ?? false,
+      showOnHomePage: item.showOnHomePage ?? false,
       category: item.category,
       type: item.type,
     }));

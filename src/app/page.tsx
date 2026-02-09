@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import CartBar from "@/components/CartBar";
 import Menu from "@/components/Menu";
-import { MenuIcon } from "lucide-react";
+import ExpandableMenu from "@/components/ExpandableMenu";
 
 const imgHeroFood =
   "https://www.figma.com/api/mcp/asset/b672fe8e-1927-4bea-b6a2-3f01ef15169a";
@@ -119,10 +119,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-        {/* Hamburger Menu */}
-        <div className="bg-[#02583f] rounded-full p-4 cursor-pointer">
-          <MenuIcon className="w-6 h-6 text-white" />
-        </div>
+        <ExpandableMenu />
       </div>
 
       {/* Hero Image */}
@@ -181,7 +178,11 @@ export default function Home() {
 
       {/* Menu Section */}
       <div className="px-4 pt-16 pb-6 mt-4">
-        <Menu showTitle={true} linkCategoriesToMenu={true} />
+        <Menu
+          showTitle={true}
+          linkCategoriesToMenu={true}
+          showOnHomePage={true}
+        />
       </div>
 
       {/* Core Values Section */}
@@ -229,7 +230,7 @@ export default function Home() {
       </div>
 
       {/* Download App Section */}
-      <div className="mx-5 my-8">
+      {/* <div className="mx-5 my-8">
         <div className="bg-[#02583f] rounded-[32px] px-6 py-16 relative overflow-hidden">
           <h2 className="text-white text-4xl font-semibold text-center leading-tight mb-4">
             Order from our
@@ -292,7 +293,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Phone Mockup */}
+          Phone Mockup
           <div className="mt-8 flex justify-center">
             <div className="relative w-[284px] h-[351px]">
               <div className="absolute inset-0 bg-black rounded-[42px] border-4 border-[#989892] overflow-hidden">
@@ -307,7 +308,7 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Footer */}
       <footer className="bg-[#f56215] px-5 py-16">

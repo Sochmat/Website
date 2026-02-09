@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     console.error("Error fetching orders:", error);
     return NextResponse.json(
       { success: false, message: "Failed to fetch orders" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -55,13 +55,13 @@ export async function POST(request: NextRequest) {
     if (!phone) {
       return NextResponse.json(
         { success: false, message: "user.phone is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (!body.orderItems?.length) {
       return NextResponse.json(
         { success: false, message: "orderItems are required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     const totalAmount = Number(body.totalAmount);
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
           success: false,
           message: "totalAmount is required and must be a number",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       const newUser = {
         phone,
         name: body.receiver?.name ?? "",
+        address: body.receiver?.address ?? "",
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json(
         { success: false, message: "Failed to resolve user" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest) {
     console.error("Error creating order:", error);
     return NextResponse.json(
       { success: false, message: "Failed to create order" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

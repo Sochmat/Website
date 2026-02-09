@@ -6,6 +6,7 @@ import Link from "next/link";
 import MenuItem from "./MenuItem";
 import CategoryFilter from "./CategoryFilter";
 import { Product } from "@/context/CartContext";
+import { Category } from "@/lib/types";
 
 const defaultCategories = [
   {
@@ -34,7 +35,11 @@ const defaultCategories = [
   },
 ];
 
-type MenuProduct = Product & { category?: string; type?: string };
+type MenuProduct = Product & {
+  category?: string;
+  type?: string;
+  showOnHomePage?: boolean;
+};
 
 function mapApiItemToProduct(item: {
   id: string;
@@ -74,23 +79,19 @@ interface MenuProps {
   showTitle?: boolean;
   linkCategoriesToMenu?: boolean;
   className?: string;
-}
-
-interface ApiCategory {
-  id: string;
-  name: string;
-  image?: string;
+  showOnHomePage?: boolean;
 }
 
 export default function Menu({
   showTitle = true,
   linkCategoriesToMenu = false,
   className = "",
+  showOnHomePage = false,
 }: MenuProps) {
   const [activeTab, setActiveTab] = useState<"food" | "beverages">("food");
   const [activeCategory, setActiveCategory] = useState("burgers");
   const [products, setProducts] = useState<MenuProduct[]>([]);
-  const [categories, setCategories] = useState(defaultCategories);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,11 +106,12 @@ export default function Menu({
         setProducts(items);
         if (data.categories?.length) {
           setCategories(
-            data.categories.map((c: ApiCategory) => ({
+            data.categories.map((c: Category) => ({
               id: c.id,
               name: c.name,
               image: c.image ?? defaultCategories[0]?.image ?? "",
-            }))
+              type: c.type,
+            })),
           );
           setActiveCategory(data.categories[0]?.id ?? "burgers");
         }
@@ -128,15 +130,15 @@ export default function Menu({
   const listProducts = products.filter(
     (p) =>
       (p.type ?? "food") === activeTab &&
-      (activeCategory === "all" || !p.category || p.category === activeCategory)
+      (activeCategory === "all" ||
+        !p.category ||
+        p.category === activeCategory) &&
+      (showOnHomePage ? p.showOnHomePage : true),
   );
   const displayProducts =
     listProducts.length > 0
       ? listProducts
       : products.filter((p) => (p.type ?? "food") === activeTab);
-
-  const CategoryWrapper = linkCategoriesToMenu ? Link : "div";
-  const categoryWrapperProps = linkCategoriesToMenu ? { href: "/menu" } : {};
 
   return (
     <div className={className}>
@@ -177,32 +179,37 @@ export default function Menu({
           href="/menu"
           className="flex gap-4 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide"
         >
-          {categories.map((cat) => (
-            <div key={cat.id} className="flex flex-col items-center shrink-0">
-              <div className="w-[78px] h-[78px] rounded-full border border-white p-1.5">
-                <div
-                  className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden ${
-                    activeCategory === cat.id ? "bg-[#02583f]" : "bg-[#f0f0f0]"
-                  }`}
-                >
-                  <Image
-                    src={cat.image}
-                    alt={cat.name}
-                    width={70}
-                    height={70}
-                    className="object-cover scale-150 -translate-y-2"
-                    unoptimized
-                  />
+          {categories
+            .filter((cat) => cat.type === activeTab)
+            .map((cat) => (
+              <div key={cat.id} className="flex flex-col items-center shrink-0">
+                <div className="w-[78px] h-[78px] rounded-full border border-white p-1.5">
+                  <div
+                    className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden ${
+                      activeCategory === cat.id
+                        ? "bg-[#02583f]"
+                        : "bg-[#f0f0f0]"
+                    }`}
+                  >
+                    <Image
+                      src={cat.image}
+                      alt={cat.name}
+                      width={70}
+                      height={70}
+                      className="object-cover scale-150 -translate-y-2"
+                      unoptimized
+                    />
+                  </div>
                 </div>
+                <span className="text-[#222] text-xs font-semibold mt-2">
+                  {cat.name}
+                </span>
               </div>
-              <span className="text-[#222] text-xs font-semibold mt-2">
-                {cat.name}
-              </span>
-            </div>
-          ))}
+            ))}
         </Link>
       ) : (
         <CategoryFilter
+          activeTab={activeTab}
           categories={categories}
           activeCategory={activeCategory}
           onCategoryChange={setActiveCategory}

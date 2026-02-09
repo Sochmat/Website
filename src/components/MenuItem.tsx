@@ -14,7 +14,7 @@ export default function MenuItem({ product }: MenuItemProps) {
 
   return (
     <div className="flex gap-3 w-full">
-      <div className="relative w-[130px] h-[160px] shrink-0">
+      <div className="relative w-[180px] h-[180px] shrink-0">
         <div className="w-full h-full rounded-xl overflow-hidden bg-white">
           <Image
             src={product.image}
@@ -85,7 +85,7 @@ export default function MenuItem({ product }: MenuItemProps) {
               </span>
             </div>
             <span className="border border-[#00a86e] text-[#00a86e] text-[11px] font-semibold px-2 py-0.5 rounded-full w-fit">
-              {product.discount}
+              {product.discount}% Off
             </span>
           </div>
 

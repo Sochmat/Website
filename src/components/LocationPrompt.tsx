@@ -18,13 +18,15 @@ export default function LocationPrompt() {
   useEffect(() => {
     if (!mounted || typeof window === "undefined") return;
     const status = localStorage.getItem(STORAGE_KEY);
-    if (!status) setOpen(true);
+    if (status) return;
+    const timer = setTimeout(() => setOpen(true), 5000);
+    return () => clearTimeout(timer);
   }, [mounted]);
 
   const handleAllow = async () => {
     try {
-      const { lat, lng, address } = await getCurrentLocation();
-      setLocation({ lat, lng, address, timestamp: Date.now() });
+      const { lat, lng, address, pincode } = await getCurrentLocation();
+      setLocation({ lat, lng, address, pincode, timestamp: Date.now() });
       localStorage.setItem(STORAGE_KEY, "allowed");
       setOpen(false);
     } catch {

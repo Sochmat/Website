@@ -13,6 +13,9 @@ export interface MenuItem {
   badge?: string | null;
   image: string;
   isVeg: boolean;
+  isAddOn?: boolean;
+  isRecommended?: boolean;
+  showOnHomePage?: boolean;
   category: string;
   type: "food" | "beverages";
   createdAt?: Date;
