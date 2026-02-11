@@ -12,7 +12,7 @@ interface Category {
 interface CategoryFilterProps {
   activeTab: "food" | "beverages";
   categories: Category[];
-  activeCategory: string;
+  activeCategory: string | null;
   onCategoryChange: (categoryId: string) => void;
 }
 

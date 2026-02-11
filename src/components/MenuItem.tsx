@@ -17,7 +17,7 @@ export default function MenuItem({ product }: MenuItemProps) {
       <div className="relative w-[180px] h-[180px] shrink-0">
         <div className="w-full h-full rounded-xl overflow-hidden bg-white">
           <Image
-            src={product.image}
+            src={product.image ? product.image : "food.png"}
             alt={product.name}
             fill
             className="object-cover"

@@ -56,6 +56,7 @@ function mapApiItemToProduct(item: {
   isVeg: boolean;
   category?: string;
   type?: string;
+  showOnHomePage?: boolean;
 }): MenuProduct {
   return {
     id: item.id,
@@ -71,6 +72,7 @@ function mapApiItemToProduct(item: {
     image: item.image,
     isVeg: item.isVeg,
     category: item.category,
+    showOnHomePage: item.showOnHomePage ?? false,
     type: item.type,
   };
 }
@@ -89,7 +91,7 @@ export default function Menu({
   showOnHomePage = false,
 }: MenuProps) {
   const [activeTab, setActiveTab] = useState<"food" | "beverages">("food");
-  const [activeCategory, setActiveCategory] = useState("burgers");
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +115,7 @@ export default function Menu({
               type: c.type,
             })),
           );
-          setActiveCategory(data.categories[0]?.id ?? "burgers");
+          setActiveCategory(null);
         }
       } catch {
         if (!cancelled) setError("Failed to load menu");
@@ -132,9 +134,9 @@ export default function Menu({
       (p.type ?? "food") === activeTab &&
       (activeCategory === "all" ||
         !p.category ||
-        p.category === activeCategory) &&
-      (showOnHomePage ? p.showOnHomePage : true),
+        p.category === activeCategory),
   );
+
   const displayProducts =
     listProducts.length > 0
       ? listProducts
@@ -222,9 +224,11 @@ export default function Menu({
         ) : error ? (
           <p className="text-center text-red-500 py-8">{error}</p>
         ) : (
-          displayProducts.map((product) => (
-            <MenuItem key={product.id} product={product} />
-          ))
+          displayProducts
+            .filter((product) =>
+              showOnHomePage ? product.showOnHomePage : true,
+            )
+            .map((product) => <MenuItem key={product.id} product={product} />)
         )}
       </div>
     </div>

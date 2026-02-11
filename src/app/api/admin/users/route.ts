@@ -17,6 +17,7 @@ export async function GET() {
         name: u.name,
         email: u.email,
         address: u.address,
+        addresses: u.addresses ?? [],
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
       })),

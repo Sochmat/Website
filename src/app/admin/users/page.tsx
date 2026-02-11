@@ -4,12 +4,21 @@ import { useState, useEffect } from "react";
 import { Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
+interface UserAddress {
+  id?: string;
+  address: string;
+  lat: number;
+  long: number;
+  pincode: string;
+}
+
 interface UserRow {
   key: string;
   phone: string;
   name: string;
   email: string;
   address: string;
+  addresses: UserAddress[];
   createdAt: string;
 }
 
@@ -23,16 +32,24 @@ export default function AdminUsersPage() {
       .then((data) => {
         if (data.success && Array.isArray(data.users)) {
           setUsers(
-            data.users.map((u: Record<string, unknown>) => ({
-              key: String(u._id),
-              phone: String(u.phone ?? ""),
-              name: String(u.name ?? "-"),
-              email: String(u.email ?? "-"),
-              address: String(u.address ?? "-"),
-              createdAt: u.createdAt
-                ? new Date(u.createdAt as string).toLocaleString()
-                : "-",
-            }))
+            data.users.map((u: Record<string, unknown>) => {
+              const addrs = (u.addresses as UserAddress[] | undefined) ?? [];
+              const addrDisplay =
+                addrs.length > 0
+                  ? addrs.map((a) => a.address).join("; ")
+                  : String(u.address ?? "-");
+              return {
+                key: String(u._id),
+                phone: String(u.phone ?? ""),
+                name: String(u.name ?? "-"),
+                email: String(u.email ?? "-"),
+                address: addrDisplay,
+                addresses: addrs,
+                createdAt: u.createdAt
+                  ? new Date(u.createdAt as string).toLocaleString()
+                  : "-",
+              };
+            })
           );
         }
       })

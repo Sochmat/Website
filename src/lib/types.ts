@@ -73,6 +73,16 @@ export interface Order {
   updatedAt?: Date;
 }
 
+export interface UserAddress {
+  id?: string;
+  address: string;
+  lat: number;
+  long: number;
+  pincode: string;
+  receiverName?: string;
+  receiverPhone?: string;
+}
+
 export interface User {
   _id?: ObjectId | string;
   phone: string;
@@ -83,6 +93,7 @@ export interface User {
   state?: string;
   country?: string;
   pincode?: string;
+  addresses?: UserAddress[];
   createdAt?: Date;
   updatedAt?: Date;
 }

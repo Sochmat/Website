@@ -1,23 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MenuIcon, X, Home, UtensilsCrossed, LogIn, LogOut } from "lucide-react";
+import { MenuIcon, X, Home, UtensilsCrossed, LogIn, LogOut, User } from "lucide-react";
+import { useUser } from "@/context/UserContext";
+import { useLoginPopup } from "@/context/LoginPopupContext";
 
 export default function ExpandableMenu() {
   const [open, setOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
+  const { user, logout: userLogout, isAuthenticated } = useUser();
+  const { openLoginPopup } = useLoginPopup();
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setIsAdmin(!!localStorage.getItem("adminToken"));
-  }, [open]);
-
-  const handleLogout = () => {
-    localStorage.removeItem("adminToken");
-    setIsAdmin(false);
+  const handleUserLogout = () => {
+    userLogout();
     setOpen(false);
     router.push("/");
   };
@@ -67,24 +64,37 @@ export default function ExpandableMenu() {
             Menu
           </Link>
 
-          {isAdmin ? (
+          {isAuthenticated && (
+            <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
+              <User className="w-6 h-6 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-lg truncate">{user?.name || "User"}</p>
+                <p className="text-sm text-white/80 truncate">{user?.phone}</p>
+              </div>
+            </div>
+          )}
+
+          {isAuthenticated ? (
             <button
               type="button"
-              onClick={handleLogout}
+              onClick={handleUserLogout}
               className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium text-lg transition-colors text-left"
             >
               <LogOut className="w-6 h-6 shrink-0" />
               Logout
             </button>
           ) : (
-            <Link
-              href="/admin/login"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium text-lg transition-colors"
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                openLoginPopup();
+              }}
+              className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium text-lg transition-colors text-left"
             >
               <LogIn className="w-6 h-6 shrink-0" />
               Login
-            </Link>
+            </button>
           )}
         </div>
       )}

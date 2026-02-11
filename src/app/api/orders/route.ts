@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
         phone,
         name: body.receiver?.name ?? "",
         address: body.receiver?.address ?? "",
+        addresses: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };

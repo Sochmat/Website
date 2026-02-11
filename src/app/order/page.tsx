@@ -4,12 +4,15 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCart } from "@/context/CartContext";
 import { useLocation } from "@/context/LocationContext";
-import { getCurrentLocation } from "@/helpers/currentLocation";
-import { distanceFromBusinessKm } from "@/helpers/distance";
+import { useUser } from "@/context/UserContext";
+import { useLoginPopup } from "@/context/LoginPopupContext";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
+import SelectAddressSheet from "@/components/SelectAddressSheet";
+import AddAddressSheet from "@/components/AddAddressSheet";
 import { useRouter } from "next/navigation";
-import { Order } from "@/lib/types";
+import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
+import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
 
@@ -24,14 +27,17 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { location, setLocation, distanceFromStoreKm, isServiceable } =
-    useLocation();
+  const { distanceFromStoreKm, isServiceable } = useLocation();
+  const { user, isAuthenticated, setUser } = useUser();
+  const { openLoginPopup } = useLoginPopup();
+  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(null);
+  const [showSelectAddress, setShowSelectAddress] = useState(false);
+  const [showAddAddress, setShowAddAddress] = useState(false);
   const [coupons, setCoupons] = useState<
     { code: string; discountAmount: number }[]
   >([]);
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
-  const [locationLoading, setLocationLoading] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
   const router = useRouter();
@@ -85,61 +91,60 @@ export default function OrderPage() {
     };
   }, []);
 
-  const [formData, setFormData] = useState({
-    receiverName: "",
-    phoneNumber: "",
-    flatDetails: "",
-    locality: "",
-  });
-
+  const addresses = user?.addresses ?? [];
   useEffect(() => {
-    if (location?.address && !formData.locality) {
-      setFormData((prev) => ({
-        ...prev,
-        locality: location.address ?? prev.locality,
-      }));
+    if (isAuthenticated && addresses.length > 0 && !selectedAddress) {
+      setSelectedAddress(addresses[0]);
     }
-  }, [location?.address]);
+  }, [isAuthenticated, addresses.length, selectedAddress]);
 
-  const handleUseCurrentLocation = async () => {
-    setLocationLoading(true);
+  const selectedAddressServiceable = selectedAddress
+    ? isWithinServiceArea(selectedAddress.lat, selectedAddress.long)
+    : null;
+  const selectedAddressDistance = selectedAddress
+    ? distanceFromBusinessKm(selectedAddress.lat, selectedAddress.long)
+    : null;
+
+  const handleSaveNewAddress = async (newAddr: UserAddress) => {
+    if (!user?._id) return;
     try {
-      const { lat, lng, address, pincode } = await getCurrentLocation();
-      setLocation({ lat, lng, address, pincode, timestamp: Date.now() });
-      if (address) {
-        setFormData((prev) => ({ ...prev, locality: address }));
-      }
-      const dist = distanceFromBusinessKm(lat, lng);
-      const inRange = dist <= 10;
-      if (inRange) {
-        message.success(
-          `Location saved. You're ${dist.toFixed(1)} km away (within delivery area).`,
-        );
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          _id: user._id,
+          addresses: [...(user.addresses ?? []), newAddr],
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.user) {
+        setUser(data.user);
+        setSelectedAddress(newAddr);
+        setShowAddAddress(false);
+        setShowSelectAddress(false);
+        message.success("Address saved");
       } else {
-        message.warning(
-          `Location saved but you're ${dist.toFixed(1)} km away. Delivery available only within 10 km.`,
-        );
+        message.error(data.message ?? "Failed to save address");
       }
     } catch {
-      message.error("Could not get location");
-    } finally {
-      setLocationLoading(false);
+      message.error("Failed to save address");
     }
   };
 
   const handlePlaceOrder = async () => {
-    if (
-      formData.receiverName === "" ||
-      formData.phoneNumber === "" ||
-      formData.flatDetails === "" ||
-      formData.locality === ""
-    ) {
-      message.error("Please fill all the fields");
+    if (!isAuthenticated || !user) {
+      message.error("Please log in to place an order");
+      openLoginPopup();
       return;
     }
-    if (location && !isServiceable) {
+    if (!selectedAddress) {
+      message.error("Please select a delivery address");
+      setShowSelectAddress(true);
+      return;
+    }
+    if (selectedAddressServiceable === false) {
       message.error(
-        `Delivery not available. You're ${distanceFromStoreKm?.toFixed(1)} km away; we deliver within 10 km only.`,
+        `Delivery not available at this address. You're ${selectedAddressDistance?.toFixed(1)} km away; we deliver within 10 km only.`,
       );
       return;
     }
@@ -154,11 +159,9 @@ export default function OrderPage() {
         paymentStatus: "pending",
         status: "pending",
         receiver: {
-          name: formData.receiverName,
-          phone: formData.phoneNumber,
-          address: [formData.flatDetails, formData.locality]
-            .filter(Boolean)
-            .join(", "),
+          name: user.name ?? selectedAddress.receiverName ?? "",
+          phone: user.phone,
+          address: selectedAddress.address,
         },
         orderItems: items.map((item) => ({
           productId: item.id,
@@ -273,6 +276,62 @@ export default function OrderPage() {
       </div>
 
       <div className="px-4 pt-4 space-y-3">
+        <div className="bg-white rounded-xl border border-[#e5e5e5] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <svg
+                className="w-5 h-5 text-[#111] shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <div>
+                <p className="font-semibold text-[#111] text-[15px]">Delivery at</p>
+                {!isAuthenticated ? (
+                  <p className="text-sm text-[#737373] mt-1">Login to set delivery address</p>
+                ) : !selectedAddress ? (
+                  <p className="text-sm text-[#737373] mt-1">Select delivery address</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-[#111] mt-1">{selectedAddress.address}</p>
+                    <p className="text-sm font-semibold text-[#111] mt-0.5">{selectedAddress.pincode}</p>
+                  </>
+                )}
+              </div>
+            </div>
+            {!isAuthenticated ? (
+              <button
+                type="button"
+                onClick={openLoginPopup}
+                className="text-[#f56215] font-semibold text-sm underline shrink-0"
+              >
+                Login
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSelectAddress(true)}
+                className="text-[#f56215] font-semibold text-sm underline shrink-0"
+              >
+                Change
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl p-3 space-y-3">
           {items.map((item, index) => (
             <div key={item.id}>
@@ -405,84 +464,6 @@ export default function OrderPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl p-3 space-y-4">
-          <p className="font-medium text-[13px] text-black">
-            Delivery Address Details
-          </p>
-
-          <input
-            type="text"
-            placeholder="Receiver's Name"
-            value={formData.receiverName}
-            onChange={(e) =>
-              setFormData({ ...formData, receiverName: e.target.value })
-            }
-            className="w-full border border-[#e2e8f0] rounded-md px-3 py-2 text-sm placeholder-[#64748b] focus:outline-none focus:border-[#f56215]"
-          />
-
-          <input
-            type="tel"
-            placeholder="Enter Phone Number"
-            value={formData.phoneNumber}
-            onChange={(e) =>
-              setFormData({ ...formData, phoneNumber: e.target.value })
-            }
-            className="w-full border border-[#e2e8f0] rounded-md px-3 py-2 text-sm placeholder-[#64748b] focus:outline-none focus:border-[#f56215]"
-          />
-
-          <div className="border-t border-gray-100" />
-
-          <button
-            type="button"
-            onClick={handleUseCurrentLocation}
-            disabled={locationLoading}
-            className="flex items-center gap-2 bg-[rgba(245,98,21,0.06)] px-3 py-1.5 rounded-md cursor-pointer hover:bg-[rgba(245,98,21,0.12)] transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <svg
-              className="w-5 h-5 text-[#f56215] shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            <span className="text-[#f56215] text-sm font-medium">
-              {locationLoading ? "Getting location…" : "Use Current Location"}
-            </span>
-          </button>
-
-          <input
-            type="text"
-            placeholder="E.g. Floor, Flat no., Tower"
-            value={formData.flatDetails}
-            onChange={(e) =>
-              setFormData({ ...formData, flatDetails: e.target.value })
-            }
-            className="w-full border border-[#e2e8f0] rounded-md px-3 py-2 text-sm placeholder-[#64748b] focus:outline-none focus:border-[#f56215]"
-          />
-
-          <input
-            type="text"
-            placeholder="E.g. Office Building, Locality Name"
-            value={formData.locality}
-            onChange={(e) =>
-              setFormData({ ...formData, locality: e.target.value })
-            }
-            className="w-full border border-[#e2e8f0] rounded-md px-3 py-2 text-sm placeholder-[#64748b] focus:outline-none focus:border-[#f56215]"
-          />
-        </div>
-
         <div className="bg-white rounded-xl p-3">
           <button
             onClick={() => setShowPriceBreakdown(!showPriceBreakdown)}
@@ -592,7 +573,7 @@ export default function OrderPage() {
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={handlePlaceOrder}
-            disabled={placingOrder}
+            disabled={placingOrder || !isAuthenticated || !selectedAddress}
           >
             <div className="flex flex-col items-start text-white">
               <span className="font-semibold">
@@ -616,6 +597,26 @@ export default function OrderPage() {
           </button>
         </div>
       </div>
+
+      <SelectAddressSheet
+        open={showSelectAddress && !showAddAddress}
+        onClose={() => setShowSelectAddress(false)}
+        addresses={addresses}
+        selectedAddress={selectedAddress}
+        onSelect={(addr) => {
+          setSelectedAddress(addr);
+          setShowSelectAddress(false);
+        }}
+        onAddNew={() => {
+          setShowSelectAddress(false);
+          setShowAddAddress(true);
+        }}
+      />
+      <AddAddressSheet
+        open={showAddAddress}
+        onClose={() => setShowAddAddress(false)}
+        onSave={handleSaveNewAddress}
+      />
     </main>
   );
 }

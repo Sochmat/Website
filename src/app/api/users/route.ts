@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
           name: user.name,
           email: user.email,
           address: user.address,
+          addresses: user.addresses ?? [],
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
         name: u.name,
         email: u.email,
         address: u.address,
+        addresses: u.addresses ?? [],
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
       })),
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
           name: user.name,
           email: user.email,
           address: user.address,
+          addresses: user.addresses ?? [],
           createdAt: user.createdAt,
           updatedAt: user.updatedAt ?? updates.updatedAt,
         },
@@ -96,6 +99,7 @@ export async function POST(request: NextRequest) {
     const newUser = {
       phone,
       name: name ?? "",
+      addresses: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -106,6 +110,7 @@ export async function POST(request: NextRequest) {
         _id: result.insertedId,
         phone: newUser.phone,
         name: newUser.name,
+        addresses: [],
         createdAt: newUser.createdAt,
         updatedAt: newUser.updatedAt,
       },
@@ -137,6 +142,7 @@ export async function PATCH(request: NextRequest) {
       "state",
       "country",
       "pincode",
+      "addresses",
     ];
     const set: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
@@ -169,6 +175,7 @@ export async function PATCH(request: NextRequest) {
         name: user.name,
         email: user.email,
         address: user.address,
+        addresses: user.addresses ?? [],
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },

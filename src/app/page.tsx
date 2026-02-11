@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import CartBar from "@/components/CartBar";
 import Menu from "@/components/Menu";
 import ExpandableMenu from "@/components/ExpandableMenu";
