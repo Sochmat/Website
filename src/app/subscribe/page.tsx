@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
@@ -28,7 +28,7 @@ interface SubscribeProduct {
   isVeg: boolean;
 }
 
-export default function SubscribePage() {
+function SubscribeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const productId = searchParams.get("productId");
@@ -719,5 +719,19 @@ export default function SubscribePage() {
         editAddress={editingAddress}
       />
     </main>
+  );
+}
+
+export default function SubscribePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
+          <p className="text-gray-500">Loading...</p>
+        </main>
+      }
+    >
+      <SubscribeContent />
+    </Suspense>
   );
 }

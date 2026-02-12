@@ -96,7 +96,9 @@ export default function Menu({
   showOnHomePage = false,
   initialCategory = "food",
 }: MenuProps) {
-  const [activeTab, setActiveTab] = useState<"food" | "beverages">(initialCategory);
+  const [activeTab, setActiveTab] = useState<"food" | "beverages">(
+    initialCategory,
+  );
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -152,7 +154,6 @@ export default function Menu({
       ? listProducts
       : products.filter((p) => (p.type ?? "food") === activeTab);
 
-  console.log({ displayProducts });
   return (
     <div className={className}>
       {showTitle && (
