@@ -3,7 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MenuIcon, X, Home, UtensilsCrossed, LogIn, LogOut, User, Phone } from "lucide-react";
+import {
+  MenuIcon,
+  X,
+  Home,
+  UtensilsCrossed,
+  LogIn,
+  LogOut,
+  User,
+  Phone,
+} from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 
@@ -76,13 +85,15 @@ export default function ExpandableMenu() {
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
               <User className="w-6 h-6 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-lg truncate">{user?.name || "User"}</p>
+                <p className="font-medium text-lg truncate">
+                  {user?.name || "User"}
+                </p>
                 <p className="text-sm text-white/80 truncate">{user?.phone}</p>
               </div>
             </div>
           )}
 
-          {isAuthenticated ? (
+          {/* {isAuthenticated ? (
             <button
               type="button"
               onClick={handleUserLogout}
@@ -103,7 +114,7 @@ export default function ExpandableMenu() {
               <LogIn className="w-6 h-6 shrink-0" />
               Login
             </button>
-          )}
+          )} */}
         </div>
       )}
     </>
