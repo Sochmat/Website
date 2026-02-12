@@ -1,16 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
+import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 
 interface MenuItemProps {
   product: Product;
 }
 
 export default function MenuItem({ product }: MenuItemProps) {
+  const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
+  const [subscriptionSheetOpen, setSubscriptionSheetOpen] = useState(false);
   const cartItem = items.find((item) => item.id === product.id);
   const quantity = cartItem?.quantity || 0;
+
+  const handleAddClick = () => {
+    if (product.isAvailableForSubscription) {
+      setSubscriptionSheetOpen(true);
+    } else {
+      addToCart(product);
+    }
+  };
+
+  const handleSubscribe = () => {
+    setSubscriptionSheetOpen(false);
+    router.push(`/subscribe?productId=${product.id}`);
+  };
 
   return (
     <div className="flex gap-3 w-full">
@@ -89,7 +107,7 @@ export default function MenuItem({ product }: MenuItemProps) {
             </span>
           </div>
 
-          {/* {quantity > 0 ? (
+          {quantity > 0 ? (
             <div className="bg-[#f56215] text-white text-sm font-medium px-3 py-1.5 rounded-md flex items-center justify-between w-[84px]">
               <button onClick={() => updateQuantity(product.id, quantity - 1)}>
                 -
@@ -101,14 +119,22 @@ export default function MenuItem({ product }: MenuItemProps) {
             </div>
           ) : (
             <button
-              onClick={() => addToCart(product)}
+              onClick={handleAddClick}
               className="bg-[rgba(245,98,21,0.06)] border border-[#f56215] text-[#f56215] text-sm font-medium px-3 py-1.5 rounded-md w-[84px]"
             >
               Add
             </button>
-          )} */}
+          )}
         </div>
       </div>
+
+      <SubscriptionChoiceSheet
+        open={subscriptionSheetOpen}
+        onClose={() => setSubscriptionSheetOpen(false)}
+        product={product}
+        onSubscribe={handleSubscribe}
+        onOrderOnce={() => addToCart(product)}
+      />
     </div>
   );
 }

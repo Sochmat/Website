@@ -1,14 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
+import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 
 interface RecommendedItemProps {
   product: Product;
 }
 
 export default function RecommendedItem({ product }: RecommendedItemProps) {
+  const router = useRouter();
   const { addToCart } = useCart();
+  const [subscriptionSheetOpen, setSubscriptionSheetOpen] = useState(false);
+
+  const handleAddClick = () => {
+    if (product.isAvailableForSubscription) {
+      setSubscriptionSheetOpen(true);
+    } else {
+      addToCart(product);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-1.5 w-[120px] shrink-0 relative">
@@ -21,7 +34,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
           unoptimized
         />
         <button
-          onClick={() => addToCart(product)}
+          onClick={handleAddClick}
           className="absolute right-2 bottom-2 bg-[#2d5cf2] p-1.5 rounded-lg shadow-md"
         >
           <svg
@@ -76,6 +89,17 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
           </span>
         </div>
       </div>
+
+      <SubscriptionChoiceSheet
+        open={subscriptionSheetOpen}
+        onClose={() => setSubscriptionSheetOpen(false)}
+        product={product}
+        onSubscribe={() => {
+          setSubscriptionSheetOpen(false);
+          router.push(`/subscribe?productId=${product.id}`);
+        }}
+        onOrderOnce={() => addToCart(product)}
+      />
     </div>
   );
 }

@@ -30,6 +30,7 @@ const initialFormState: FormState = {
   isAddOn: false,
   isRecommended: false,
   showOnHomePage: false,
+  isAvailableForSubscription: false,
   addOns: [],
   category: "",
   type: "food",
@@ -532,6 +533,33 @@ export default function AdminMenuPage() {
                   </button>
                   <span className="text-sm font-medium text-gray-700">
                     Show on home page
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.isAvailableForSubscription ?? false}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        isAvailableForSubscription: !prev.isAvailableForSubscription,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
+                      formData.isAvailableForSubscription ? "bg-[#02583f]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                        formData.isAvailableForSubscription
+                          ? "translate-x-5 ml-0.5"
+                          : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Available for subscription
                   </span>
                 </div>
               </div>

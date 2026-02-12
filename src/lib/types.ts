@@ -16,7 +16,8 @@ export interface MenuItem {
   isAddOn?: boolean;
   isRecommended?: boolean;
   showOnHomePage?: boolean;
-   addOns?: string[];
+  isAvailableForSubscription?: boolean;
+  addOns?: string[];
   category: string;
   type: "food" | "beverages";
   createdAt?: Date;
@@ -56,7 +57,7 @@ export interface Order {
   netAmount?: number;
   totalAmount: number;
 
-  paymentMethod?: "cash" | "card" | "upi";
+  paymentMethod?: "cash" | "card" | "upi" | "razorpay";
   paymentStatus: "pending" | "paid" | "failed" | "refunded";
   paymentId?: string;
   paymentUrl?: string;

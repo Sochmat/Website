@@ -22,6 +22,7 @@ export async function GET() {
       isVeg: item.isVeg,
       isRecommended: item.isRecommended ?? false,
       showOnHomePage: item.showOnHomePage ?? false,
+      isAvailableForSubscription: item.isAvailableForSubscription ?? false,
       category: item.category,
       type: item.type,
     }));

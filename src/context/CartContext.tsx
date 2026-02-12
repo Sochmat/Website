@@ -15,6 +15,8 @@ export interface Product {
   badge: string | null;
   image: string;
   isVeg: boolean;
+  isAvailableForSubscription?: boolean;
+  addOns?: string[];
 }
 
 export interface CartItem extends Product {

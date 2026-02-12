@@ -57,6 +57,8 @@ function mapApiItemToProduct(item: {
   category?: string;
   type?: string;
   showOnHomePage?: boolean;
+  isAvailableForSubscription?: boolean;
+  addOns?: string[];
 }): MenuProduct {
   return {
     id: item.id,
@@ -74,6 +76,8 @@ function mapApiItemToProduct(item: {
     category: item.category,
     showOnHomePage: item.showOnHomePage ?? false,
     type: item.type,
+    isAvailableForSubscription: item.isAvailableForSubscription ?? false,
+    addOns: item.addOns ?? [],
   };
 }
 
@@ -142,6 +146,7 @@ export default function Menu({
       ? listProducts
       : products.filter((p) => (p.type ?? "food") === activeTab);
 
+  console.log({ displayProducts });
   return (
     <div className={className}>
       {showTitle && (

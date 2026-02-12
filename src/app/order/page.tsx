@@ -15,6 +15,7 @@ import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance"
 import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
+import { handleRazorpayPayment } from "@/helpers/razorpay";
 
 export default function OrderPage() {
   const {
@@ -40,6 +41,7 @@ export default function OrderPage() {
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">("cash");
   const router = useRouter();
 
   useEffect(() => {
@@ -156,7 +158,7 @@ export default function OrderPage() {
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
 
       const orderPayload: Order = {
-        paymentStatus: "pending",
+        paymentStatus: paymentMethod === "razorpay" ? "pending" : "pending",
         status: "pending",
         receiver: {
           name: user.name ?? selectedAddress.receiverName ?? "",
@@ -171,7 +173,7 @@ export default function OrderPage() {
         totalAmount: finalAmount,
         discountAmount: couponDiscountAmount,
         tax: gstAmount,
-        paymentMethod: "cash",
+        paymentMethod: paymentMethod,
         couponCode: appliedCoupon ?? undefined,
       };
 
@@ -185,14 +187,42 @@ export default function OrderPage() {
         message.error(data.message ?? "Failed to place order");
         return;
       }
-      clearCart();
-      router.push(
-        `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`,
-      );
-    } catch {
-      message.error("Failed to place order");
+
+      if (paymentMethod === "razorpay") {
+        await handleRazorpayPayment({
+          amount: finalAmount,
+          currency: "INR",
+          name: "Sochmat",
+          description: `Order #${data.order?.orderNumber || ""}`,
+          prefill: {
+            name: user.name ?? selectedAddress.receiverName ?? "",
+            email: user.email ?? "",
+            contact: user.phone,
+          },
+          orderId: data.order?._id,
+          onSuccess: () => {
+            clearCart();
+            router.push(
+              `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`,
+            );
+          },
+          onError: (error) => {
+            message.error(error.message || "Payment failed");
+            setPlacingOrder(false);
+          },
+        });
+      } else {
+        clearCart();
+        router.push(
+          `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`,
+        );
+      }
+    } catch (error: any) {
+      message.error(error.message || "Failed to place order");
     } finally {
-      setPlacingOrder(false);
+      if (paymentMethod !== "razorpay") {
+        setPlacingOrder(false);
+      }
     }
   };
 
@@ -564,9 +594,29 @@ export default function OrderPage() {
                 />
               </svg>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-4 h-4 bg-[#00BAF2] rounded" />
-              <span className="text-[#222] font-medium">PAYTM</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("cash")}
+                className={`px-3 py-1 rounded-md text-sm font-medium ${
+                  paymentMethod === "cash"
+                    ? "bg-[#f56215] text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("razorpay")}
+                className={`px-3 py-1 rounded-md text-sm font-medium ${
+                  paymentMethod === "razorpay"
+                    ? "bg-[#f56215] text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                Online
+              </button>
             </div>
           </div>
           <button
