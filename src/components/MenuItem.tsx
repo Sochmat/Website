@@ -47,7 +47,7 @@ export default function MenuItem({ product }: MenuItemProps) {
                 }`}
               />
             </div>
-            <div className="flex items-center gap-0.5">
+            {/* <div className="flex items-center gap-0.5">
               <svg
                 className="w-3 h-3 text-[#f5c518]"
                 fill="currentColor"
@@ -61,7 +61,7 @@ export default function MenuItem({ product }: MenuItemProps) {
               <span className="text-[#666] text-[11px]">
                 ({product.reviews})
               </span>
-            </div>
+            </div> */}
           </div>
           <h3 className="text-black font-bold text-base">{product.name}</h3>
           <div className="flex gap-0.5">

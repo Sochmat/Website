@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MenuIcon, X, Home, UtensilsCrossed, LogIn, LogOut, User } from "lucide-react";
+import { MenuIcon, X, Home, UtensilsCrossed, LogIn, LogOut, User, Phone } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 
@@ -63,6 +63,14 @@ export default function ExpandableMenu() {
             <UtensilsCrossed className="w-6 h-6 shrink-0" />
             Menu
           </Link>
+
+          <a
+            href="tel:+917042816413"
+            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white text-[#02583f] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors"
+          >
+            <Phone className="w-6 h-6 shrink-0" />
+            Order Now
+          </a>
 
           {isAuthenticated && (
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
