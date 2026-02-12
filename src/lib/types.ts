@@ -16,6 +16,7 @@ export interface MenuItem {
   isAddOn?: boolean;
   isRecommended?: boolean;
   showOnHomePage?: boolean;
+   addOns?: string[];
   category: string;
   type: "food" | "beverages";
   createdAt?: Date;

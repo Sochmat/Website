@@ -89,7 +89,7 @@ export default function MenuItem({ product }: MenuItemProps) {
             </span>
           </div>
 
-          {quantity > 0 ? (
+          {/* {quantity > 0 ? (
             <div className="bg-[#f56215] text-white text-sm font-medium px-3 py-1.5 rounded-md flex items-center justify-between w-[84px]">
               <button onClick={() => updateQuantity(product.id, quantity - 1)}>
                 -
@@ -106,7 +106,7 @@ export default function MenuItem({ product }: MenuItemProps) {
             >
               Add
             </button>
-          )}
+          )} */}
         </div>
       </div>
     </div>

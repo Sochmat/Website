@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { MenuItem, Category } from "@/lib/types";
+import { Select } from "antd";
 
 type FormState = Omit<
   MenuItem,
@@ -29,6 +30,7 @@ const initialFormState: FormState = {
   isAddOn: false,
   isRecommended: false,
   showOnHomePage: false,
+  addOns: [],
   category: "",
   type: "food",
 };
@@ -53,6 +55,9 @@ export default function AdminMenuPage() {
     type: "food" as "food" | "beverages",
   });
   const [categoryLoading, setCategoryLoading] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     fetchMenuItems();
@@ -60,26 +65,16 @@ export default function AdminMenuPage() {
   }, []);
 
   useEffect(() => {
-    const price = Number(formData.price);
-    const originalPrice = Number(formData.originalPrice);
-    if (price > 0 && originalPrice > 0) {
-      const discount =
-        originalPrice > price
-          ? String(Math.round(((originalPrice - price) / originalPrice) * 100))
-          : "0";
-      setFormData((prev) => ({ ...prev, discount }));
-    }
+    if (!formData.price || !formData.originalPrice)
+      return setFormData((prev) => ({ ...prev, discount: "" }));
+    const price = Number(formData.price) || 0;
+    const originalPrice = Number(formData.originalPrice) || 0;
+    const discount =
+      originalPrice > price
+        ? String(Math.round(((originalPrice - price) / originalPrice) * 100))
+        : "0";
+    setFormData((prev) => ({ ...prev, discount }));
   }, [formData.price, formData.originalPrice]);
-
-  useEffect(() => {
-    const originalPrice = Number(formData.originalPrice);
-    const pct = parseDiscountPercent(formData.discount ?? "");
-    if (originalPrice > 0 && pct !== null) {
-      const price =
-        pct > 0 ? Math.round(originalPrice * (1 - pct / 100)) : originalPrice;
-      setFormData((prev) => ({ ...prev, price: String(price) }));
-    }
-  }, [formData.originalPrice, formData.discount]);
 
   useEffect(() => {
     const forType = categories.filter((c) => c.type === formData.type);
@@ -125,6 +120,7 @@ export default function AdminMenuPage() {
           : (formData.discount ?? "");
     return {
       ...formData,
+      addOns: formData.addOns ?? [],
       price,
       originalPrice,
       discount: discount || undefined,
@@ -164,6 +160,7 @@ export default function AdminMenuPage() {
   const handleEdit = (item: MenuItem) => {
     setFormData({
       ...item,
+      addOns: item.addOns ?? [],
       price: String(item.price),
       originalPrice: String(item.originalPrice),
       kcal: String(item.kcal),
@@ -192,12 +189,18 @@ export default function AdminMenuPage() {
     e.preventDefault();
     setCategoryLoading(true);
     try {
+      const method = editingCategoryId ? "PUT" : "POST";
+      const payload = editingCategoryId
+        ? { ...categoryForm, _id: editingCategoryId }
+        : categoryForm;
+
       await fetch("/api/admin/categories", {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(categoryForm),
+        body: JSON.stringify(payload),
       });
       setCategoryForm({ id: "", name: "", image: "", type: "food" });
+      setEditingCategoryId(null);
       fetchCategories();
     } catch (err) {
       console.error("Failed to create category:", err);
@@ -213,6 +216,16 @@ export default function AdminMenuPage() {
     } catch (err) {
       console.error("Failed to delete category:", err);
     }
+  };
+
+  const handleCategoryEdit = (cat: Category) => {
+    setCategoryForm({
+      id: cat.id,
+      name: cat.name,
+      image: cat.image,
+      type: cat.type,
+    });
+    setEditingCategoryId(cat._id != null ? String(cat._id) : null);
   };
 
   return (
@@ -276,6 +289,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, discount: e.target.value })
                   }
+                  disabled
                   placeholder="e.g., 20"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                   required
@@ -371,6 +385,27 @@ export default function AdminMenuPage() {
                       </option>
                     ))}
                 </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Add-ons
+                </label>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  value={formData.addOns ?? []}
+                  onChange={(selected: string[]) => {
+                    setFormData((prev) => ({ ...prev, addOns: selected }));
+                  }}
+                  placeholder="Select add-ons"
+                  className="w-100"
+                  options={menuItems
+                    .filter((item) => item.isAddOn)
+                    .map((item) => ({
+                      label: item.name,
+                      value: item._id?.toString() || "",
+                    }))}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -526,7 +561,7 @@ export default function AdminMenuPage() {
           <h2 className="text-lg font-bold text-gray-800 mb-4">
             Menu Items ({menuItems.length})
           </h2>
-          <div className="space-y-3 max-h-[600px] overflow-y-auto">
+          <div className="space-y-3 max-h-[800px] overflow-y-auto">
             {menuItems.length === 0 ? (
               <p className="text-gray-500 text-center py-8">
                 No menu items yet. Add your first item!
@@ -538,7 +573,7 @@ export default function AdminMenuPage() {
                   className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
                 >
                   <img
-                    src={item.image}
+                    src={item.image ? item.image : "/food.png"}
                     alt={item.name}
                     className="w-16 h-16 object-cover rounded-lg"
                   />
@@ -613,7 +648,9 @@ export default function AdminMenuPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-lg p-6">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">Add Category</h2>
+          <h2 className="text-lg font-bold text-gray-800 mb-4">
+            {editingCategoryId ? "Edit Category" : "Add Category"}
+          </h2>
           <form
             onSubmit={handleCategorySubmit}
             className="space-y-4"
@@ -681,13 +718,38 @@ export default function AdminMenuPage() {
                 <option value="beverages">Beverages</option>
               </select>
             </div>
-            <button
-              type="submit"
-              disabled={categoryLoading}
-              className="w-full bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
-            >
-              {categoryLoading ? "Adding..." : "Add Category"}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={categoryLoading}
+                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+              >
+                {categoryLoading
+                  ? editingCategoryId
+                    ? "Saving..."
+                    : "Adding..."
+                  : editingCategoryId
+                    ? "Update Category"
+                    : "Add Category"}
+              </button>
+              {editingCategoryId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategoryForm({
+                      id: "",
+                      name: "",
+                      image: "",
+                      type: "food",
+                    });
+                    setEditingCategoryId(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
@@ -708,7 +770,7 @@ export default function AdminMenuPage() {
                 >
                   {cat.image ? (
                     <img
-                      src={cat.image}
+                      src={cat.image ? cat.image : "/food.png"}
                       alt={cat.name}
                       className="w-12 h-12 object-cover rounded-lg"
                     />
@@ -721,29 +783,50 @@ export default function AdminMenuPage() {
                       {cat.id} • {cat.type}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleCategoryDelete(
-                        cat._id != null ? String(cat._id) : "",
-                      )
-                    }
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCategoryEdit(cat)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCategoryDelete(
+                          cat._id != null ? String(cat._id) : "",
+                        )
+                      }
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               ))
             )}

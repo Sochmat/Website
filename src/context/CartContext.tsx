@@ -47,7 +47,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return prev.map((item) =>
           item.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
-            : item
+            : item,
         );
       }
       return [...prev, { ...product, quantity: 1 }];
@@ -64,7 +64,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
     setItems((prev) =>
-      prev.map((item) => (item.id === productId ? { ...item, quantity } : item))
+      prev.map((item) =>
+        item.id === productId ? { ...item, quantity } : item,
+      ),
     );
   };
 
@@ -75,19 +77,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const totalKcal = items.reduce(
     (sum, item) => sum + item.kcal * item.quantity,
-    0
+    0,
   );
   const totalProtein = items.reduce(
     (sum, item) => sum + item.protein * item.quantity,
-    0
+    0,
   );
   const totalPrice = items.reduce(
     (sum, item) => sum + item.price * item.quantity,
-    0
+    0,
   );
   const totalOriginalPrice = items.reduce(
     (sum, item) => sum + item.originalPrice * item.quantity,
-    0
+    0,
   );
   const totalDiscount = totalOriginalPrice - totalPrice;
 

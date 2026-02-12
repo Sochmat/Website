@@ -35,7 +35,7 @@ export async function GET() {
     console.error("Error fetching menu:", error);
     return NextResponse.json(
       { success: false, message: "Failed to fetch menu" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
