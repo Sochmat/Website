@@ -4,11 +4,11 @@ import { connectToDatabase } from "@/lib/mongodb";
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { paymentStatus, paymentId } = await request.json();
-    const orderId = params.id;
+    const { id: orderId } = await params;
 
     if (!ObjectId.isValid(orderId)) {
       return NextResponse.json(
