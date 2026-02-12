@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -15,6 +16,10 @@ interface TrackingStep {
 }
 
 export default function SuccessPage() {
+  const searchParams = useSearchParams();
+  const subscriptionId = searchParams.get("subscriptionId");
+  const isSubscription = !!subscriptionId;
+
   const trackingSteps: TrackingStep[] = [
     {
       title: "Order Placed",
@@ -135,6 +140,164 @@ export default function SuccessPage() {
     if (index < 2) return "border-[#171717]";
     return "border-dashed border-[#d4d4d4]";
   };
+
+  if (isSubscription) {
+    return (
+      <main className="min-h-screen bg-[#f6f6f6] max-w-[430px] mx-auto">
+        <div className="px-2.5 pt-8 pb-10">
+          {/* Success Card */}
+          <div className="bg-white rounded-xl py-10 px-5 flex flex-col items-center gap-4">
+            <div className="w-20 h-20 relative">
+              <Image
+                src={imgCheckCircle}
+                alt="Success"
+                fill
+                className="object-contain"
+                unoptimized
+              />
+            </div>
+            <h1 className="text-2xl font-bold text-black text-center">
+              Thank You for Subscribing!
+            </h1>
+            <p className="text-sm font-medium text-[#111] text-center">
+              Subscription #{subscriptionId?.slice(-8) || "Confirmed"}
+            </p>
+          </div>
+
+          {/* Info Card */}
+          <div className="bg-white rounded-xl px-5 py-6 mt-5">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-24 h-24 bg-[rgba(245,98,21,0.1)] rounded-full flex items-center justify-center">
+                <svg
+                  className="w-12 h-12 text-[#f56215]"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-lg font-semibold text-[#111]">
+                  Your subscription is active!
+                </h2>
+                <p className="text-sm text-[#666]">
+                  We'll deliver fresh meals to your doorstep according to your schedule.
+                </p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="h-px bg-gray-200 my-6" />
+
+            {/* Benefits */}
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-[rgba(0,153,64,0.1)] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <svg
+                    className="w-5 h-5 text-[#009940]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#111]">Regular Deliveries</p>
+                  <p className="text-xs text-[#666] mt-0.5">
+                    Fresh meals delivered on your schedule
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-[rgba(245,98,21,0.1)] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <svg
+                    className="w-5 h-5 text-[#f56215]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#111]">Great Value</p>
+                  <p className="text-xs text-[#666] mt-0.5">
+                    Best prices for regular customers
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-[rgba(0,153,64,0.1)] rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                  <svg
+                    className="w-5 h-5 text-[#009940]"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[#111]">Flexible Schedule</p>
+                  <p className="text-xs text-[#666] mt-0.5">
+                    Adjust delivery times as needed
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center mt-8">
+            <p className="text-base font-medium text-black">
+              Follow us at -{" "}
+              <Link href="https://instagram.com/sochmat_fitfuel" className="underline">
+                @sochmat_fitfuel
+              </Link>
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-8 space-y-3 px-4">
+            <Link
+              href="/menu"
+              className="block w-full bg-[#f56215] text-white text-center py-3 rounded-lg font-semibold hover:bg-[#e05512] transition-colors"
+            >
+              Order More Items
+            </Link>
+            <Link
+              href="/"
+              className="block w-full bg-white border-2 border-[#02583f] text-[#02583f] text-center py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+            >
+              Back to Home
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f6f6f6] max-w-[430px] mx-auto">

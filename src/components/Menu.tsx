@@ -86,6 +86,7 @@ interface MenuProps {
   linkCategoriesToMenu?: boolean;
   className?: string;
   showOnHomePage?: boolean;
+  initialCategory?: "food" | "beverages";
 }
 
 export default function Menu({
@@ -93,13 +94,18 @@ export default function Menu({
   linkCategoriesToMenu = false,
   className = "",
   showOnHomePage = false,
+  initialCategory = "food",
 }: MenuProps) {
-  const [activeTab, setActiveTab] = useState<"food" | "beverages">("food");
+  const [activeTab, setActiveTab] = useState<"food" | "beverages">(initialCategory);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveTab(initialCategory);
+  }, [initialCategory]);
 
   useEffect(() => {
     let cancelled = false;

@@ -8,7 +8,10 @@ import { useLocation } from "@/context/LocationContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import AddAddressSheet from "@/components/AddAddressSheet";
-import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
+import {
+  distanceFromBusinessKm,
+  isWithinServiceArea,
+} from "@/helpers/distance";
 import { type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
@@ -34,7 +37,9 @@ export default function SubscribePage() {
   const { openLoginPopup } = useLoginPopup();
   const [product, setProduct] = useState<SubscribeProduct | null>(null);
   const [loading, setLoading] = useState(true);
-  const [quantityOption, setQuantityOption] = useState<"300ml" | "500ml">("300ml");
+  const [quantityOption, setQuantityOption] = useState<"300ml" | "500ml">(
+    "300ml",
+  );
   const [deliveryDate, setDeliveryDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split("T")[0];
@@ -42,10 +47,18 @@ export default function SubscribePage() {
   const [deliveryTime, setDeliveryTime] = useState("08:00");
   const [duration, setDuration] = useState<"week" | "month">("month");
   const [frequency, setFrequency] = useState<"daily" | "alternate">("daily");
-  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(
+    null,
+  );
+  const [localAddresses, setLocalAddresses] = useState<UserAddress[]>([]);
   const [showSelectAddress, setShowSelectAddress] = useState(false);
   const [showAddAddress, setShowAddAddress] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">("cash");
+  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
+    null,
+  );
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">(
+    "razorpay",
+  );
   const [placingSubscription, setPlacingSubscription] = useState(false);
 
   const fetchProduct = useCallback(async () => {
@@ -82,12 +95,41 @@ export default function SubscribePage() {
     fetchProduct();
   }, [fetchProduct]);
 
-  const addresses = user?.addresses ?? [];
   useEffect(() => {
-    if (isAuthenticated && addresses.length > 0 && !selectedAddress) {
-      setSelectedAddress(addresses[0]);
+    if (!isAuthenticated && typeof window !== "undefined") {
+      const stored = localStorage.getItem("subscription_addresses");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as UserAddress[];
+          setLocalAddresses(parsed);
+          if (parsed.length > 0 && !selectedAddress) {
+            setSelectedAddress(parsed[0]);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
-  }, [isAuthenticated, addresses.length, selectedAddress]);
+  }, [isAuthenticated, selectedAddress]);
+
+  const addresses = isAuthenticated ? (user?.addresses ?? []) : localAddresses;
+
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      user?.addresses &&
+      user.addresses.length > 0 &&
+      !selectedAddress
+    ) {
+      setSelectedAddress(user.addresses[0]);
+    } else if (
+      !isAuthenticated &&
+      localAddresses.length > 0 &&
+      !selectedAddress
+    ) {
+      setSelectedAddress(localAddresses[0]);
+    }
+  }, [isAuthenticated, user?.addresses, localAddresses, selectedAddress]);
 
   const selectedAddressServiceable = selectedAddress
     ? isWithinServiceArea(selectedAddress.lat, selectedAddress.long)
@@ -97,29 +139,71 @@ export default function SubscribePage() {
     : null;
 
   const handleSaveNewAddress = async (newAddr: UserAddress) => {
-    if (!user?._id) return;
-    try {
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          _id: user._id,
-          addresses: [...(user.addresses ?? []), newAddr],
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.user) {
-        setUser(data.user);
-        setSelectedAddress(newAddr);
-        setShowAddAddress(false);
-        setShowSelectAddress(false);
-        message.success("Address saved");
-      } else {
-        message.error(data.message ?? "Failed to save address");
+    const isEditing = editingAddress !== null;
+
+    if (isAuthenticated && user?._id) {
+      try {
+        let updatedAddresses: UserAddress[];
+        if (isEditing) {
+          updatedAddresses = (user.addresses ?? []).map((addr) =>
+            addr.id === editingAddress.id ? newAddr : addr,
+          );
+        } else {
+          updatedAddresses = [...(user.addresses ?? []), newAddr];
+        }
+
+        const res = await fetch("/api/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _id: user._id,
+            addresses: updatedAddresses,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+          setSelectedAddress(newAddr);
+          setShowAddAddress(false);
+          setShowSelectAddress(false);
+          setEditingAddress(null);
+          message.success(isEditing ? "Address updated" : "Address saved");
+        } else {
+          message.error(data.message ?? "Failed to save address");
+        }
+      } catch {
+        message.error("Failed to save address");
       }
-    } catch {
-      message.error("Failed to save address");
+    } else {
+      let updatedAddresses: UserAddress[];
+      if (isEditing) {
+        updatedAddresses = localAddresses.map((addr) =>
+          addr.id === editingAddress.id ? newAddr : addr,
+        );
+      } else {
+        updatedAddresses = [...localAddresses, newAddr];
+      }
+
+      setLocalAddresses(updatedAddresses);
+      setSelectedAddress(newAddr);
+      setShowAddAddress(false);
+      setShowSelectAddress(false);
+      setEditingAddress(null);
+      message.success(isEditing ? "Address updated" : "Address saved");
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "subscription_addresses",
+          JSON.stringify(updatedAddresses),
+        );
+      }
     }
+  };
+
+  const handleEditAddress = (addr: UserAddress) => {
+    setEditingAddress(addr);
+    setShowSelectAddress(false);
+    setShowAddAddress(true);
   };
 
   const handlePlaceSubscription = async () => {
@@ -127,14 +211,14 @@ export default function SubscribePage() {
       message.error("Product not found");
       return;
     }
-    if (!isAuthenticated || !user) {
-      message.error("Please log in to subscribe");
-      openLoginPopup();
-      return;
-    }
     if (!selectedAddress) {
       message.error("Please select a delivery address");
       setShowSelectAddress(true);
+      return;
+    }
+    if (!selectedAddress.receiverName || !selectedAddress.receiverPhone) {
+      message.error("Please enter receiver name and phone number");
+      setShowAddAddress(true);
       return;
     }
     if (selectedAddressServiceable === false) {
@@ -145,8 +229,13 @@ export default function SubscribePage() {
     }
     setPlacingSubscription(true);
     try {
-      const gstAmount = Math.round(product.price * 0.05);
-      const finalAmount = product.price + gstAmount;
+      const multiplier = duration === "week" ? 7 : 30;
+      const basePrice = product.price * multiplier;
+      const gstAmount = Math.round(basePrice * 0.05);
+      const finalAmount = basePrice + gstAmount;
+
+      const receiverName = selectedAddress.receiverName ?? "";
+      const receiverPhone = selectedAddress.receiverPhone ?? "";
 
       const subscriptionPayload = {
         productId: product.id,
@@ -156,8 +245,8 @@ export default function SubscribePage() {
         duration,
         frequency,
         receiver: {
-          name: user.name ?? selectedAddress.receiverName ?? "",
-          phone: user.phone,
+          name: receiverName,
+          phone: receiverPhone,
           address: selectedAddress.address,
         },
         totalAmount: finalAmount,
@@ -183,12 +272,30 @@ export default function SubscribePage() {
           name: "Sochmat",
           description: `Subscription #${data.subscription?.subscriptionNumber || ""}`,
           prefill: {
-            name: user.name ?? selectedAddress.receiverName ?? "",
-            email: user.email ?? "",
-            contact: user.phone,
+            name: selectedAddress.receiverName ?? "",
+            email: "",
+            contact: selectedAddress.receiverPhone ?? "",
           },
           orderId: data.subscription?._id,
-          onSuccess: () => {
+          onSuccess: async (response) => {
+            if (data.subscription?._id && response.razorpay_payment_id) {
+              try {
+                await fetch("/api/subscriptions", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    _id: data.subscription._id,
+                    paymentId: response.razorpay_payment_id,
+                    paymentStatus: "paid",
+                  }),
+                });
+              } catch (err) {
+                console.error(
+                  "Failed to update subscription with payment ID:",
+                  err,
+                );
+              }
+            }
             router.push(
               `/success${data.subscription?._id ? `?subscriptionId=${data.subscription._id}` : ""}`,
             );
@@ -223,9 +330,22 @@ export default function SubscribePage() {
   if (!product) {
     return (
       <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto p-4">
-        <Link href="/menu" className="inline-flex items-center gap-2 text-[#111] font-medium">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        <Link
+          href="/menu"
+          className="inline-flex items-center gap-2 text-[#111] font-medium"
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
           Back
         </Link>
@@ -234,9 +354,18 @@ export default function SubscribePage() {
     );
   }
 
-  const discountPct = product.originalPrice > 0
-    ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
-    : 0;
+  const discountPct =
+    product.originalPrice > 0
+      ? Math.round(
+          ((product.originalPrice - product.price) / product.originalPrice) *
+            100,
+        )
+      : 0;
+
+  const subscriptionMultiplier = duration === "week" ? 7 : 30;
+  const subscriptionBasePrice = product.price * subscriptionMultiplier;
+  const subscriptionGst = Math.round(subscriptionBasePrice * 0.05);
+  const subscriptionFinalPrice = subscriptionBasePrice + subscriptionGst;
 
   return (
     <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-24">
@@ -246,8 +375,18 @@ export default function SubscribePage() {
           className="p-2 -ml-2 text-[#111] rounded-lg hover:bg-gray-100"
           aria-label="Back"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
           </svg>
         </Link>
         <h1 className="text-lg font-bold text-[#111]">Subscribe</h1>
@@ -279,12 +418,18 @@ export default function SubscribePage() {
               </div>
             </div>
             <div className="text-right shrink-0">
-              <span className="font-semibold text-[#111]">₹{product.price}/-</span>
+              <span className="font-semibold text-[#111]">
+                ₹{product.price}/-
+              </span>
               {product.originalPrice > product.price && (
                 <>
-                  <span className="text-gray-400 text-sm line-through ml-1">₹{product.originalPrice}/-</span>
+                  <span className="text-gray-400 text-sm line-through ml-1">
+                    ₹{product.originalPrice}/-
+                  </span>
                   {discountPct > 0 && (
-                    <span className="block text-[#009940] text-xs font-medium mt-0.5">{discountPct}% off</span>
+                    <span className="block text-[#009940] text-xs font-medium mt-0.5">
+                      {discountPct}% off
+                    </span>
                   )}
                 </>
               )}
@@ -292,7 +437,10 @@ export default function SubscribePage() {
           </div>
           <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
             {(["300ml", "500ml"] as const).map((opt) => (
-              <label key={opt} className="flex items-center gap-2 cursor-pointer">
+              <label
+                key={opt}
+                className="flex items-center gap-2 cursor-pointer"
+              >
                 <input
                   type="radio"
                   name="quantity"
@@ -310,7 +458,9 @@ export default function SubscribePage() {
           <h3 className="font-semibold text-[#111] mb-3">Delivery schedule</h3>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Select delivery date</label>
+              <label className="block text-xs text-gray-500 mb-1">
+                Select delivery date
+              </label>
               <input
                 type="date"
                 value={deliveryDate}
@@ -319,7 +469,9 @@ export default function SubscribePage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Select delivery time</label>
+              <label className="block text-xs text-gray-500 mb-1">
+                Select delivery time
+              </label>
               <input
                 type="time"
                 value={deliveryTime}
@@ -331,7 +483,10 @@ export default function SubscribePage() {
               <span className="block text-xs text-gray-500 mb-2">Duration</span>
               <div className="flex gap-4">
                 {(["week", "month"] as const).map((d) => (
-                  <label key={d} className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    key={d}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="radio"
                       name="duration"
@@ -339,16 +494,23 @@ export default function SubscribePage() {
                       onChange={() => setDuration(d)}
                       className="w-4 h-4 text-[#f56215] focus:ring-[#f56215]"
                     />
-                    <span className="text-sm font-medium text-[#111]">For a {d}</span>
+                    <span className="text-sm font-medium text-[#111]">
+                      For a {d}
+                    </span>
                   </label>
                 ))}
               </div>
             </div>
             <div>
-              <span className="block text-xs text-gray-500 mb-2">Frequency</span>
+              <span className="block text-xs text-gray-500 mb-2">
+                Frequency
+              </span>
               <div className="flex gap-4">
                 {(["daily", "alternate"] as const).map((f) => (
-                  <label key={f} className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    key={f}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="radio"
                       name="frequency"
@@ -356,7 +518,9 @@ export default function SubscribePage() {
                       onChange={() => setFrequency(f)}
                       className="w-4 h-4 text-[#f56215] focus:ring-[#f56215]"
                     />
-                    <span className="text-sm font-medium text-[#111] capitalize">{f}</span>
+                    <span className="text-sm font-medium text-[#111] capitalize">
+                      {f}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -367,51 +531,87 @@ export default function SubscribePage() {
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2 min-w-0">
-              <svg className="w-5 h-5 text-[#111] shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              <svg
+                className="w-5 h-5 text-[#111] shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
               </svg>
               <div>
-                <p className="font-semibold text-[#111] text-[15px]">Delivery at</p>
-                {!isAuthenticated ? (
-                  <p className="text-sm text-[#737373] mt-1">Login to set delivery address</p>
-                ) : !selectedAddress ? (
-                  <p className="text-sm text-[#737373] mt-1">Select delivery address</p>
+                <p className="font-semibold text-[#111] text-[15px]">
+                  Delivery at
+                </p>
+                {!selectedAddress ? (
+                  <p className="text-sm text-[#737373] mt-1">
+                    Add delivery address
+                  </p>
                 ) : (
                   <>
-                    <p className="text-sm text-[#111] mt-1">{selectedAddress.address}</p>
-                    <p className="text-sm font-semibold text-[#111] mt-0.5">{selectedAddress.pincode}</p>
+                    <p className="text-sm text-[#111] mt-1">
+                      {selectedAddress.address}
+                    </p>
+                    <p className="text-sm font-semibold text-[#111] mt-0.5">
+                      {selectedAddress.pincode}
+                    </p>
+                    {selectedAddress.receiverName && (
+                      <p className="text-xs text-[#737373] mt-0.5">
+                        Deliver to: {selectedAddress.receiverName}
+                      </p>
+                    )}
                   </>
                 )}
               </div>
             </div>
-            {!isAuthenticated ? (
-              <button
-                type="button"
-                onClick={openLoginPopup}
-                className="text-[#f56215] font-semibold text-sm underline shrink-0"
-              >
-                Login
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowSelectAddress(true)}
-                className="text-[#f56215] font-semibold text-sm underline shrink-0"
-              >
-                Change
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowSelectAddress(true)}
+              className="text-[#f56215] font-semibold text-sm underline shrink-0"
+            >
+              {selectedAddress ? "Change" : "Add"}
+            </button>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="font-semibold text-[#111]">To Pay ₹{product.price + Math.round(product.price * 0.05)}</p>
+              <p className="font-semibold text-[#111]">
+                To Pay ₹{subscriptionFinalPrice}
+              </p>
               {product.originalPrice > product.price && (
-                <p className="text-[#009940] text-sm mt-0.5">₹{product.originalPrice - product.price} saved!</p>
+                <p className="text-[#009940] text-sm mt-0.5">
+                  ₹{(product.originalPrice - product.price) * subscriptionMultiplier} saved!
+                </p>
               )}
+            </div>
+          </div>
+          <div className="border-t border-gray-100 pt-3 space-y-2">
+            <div className="flex justify-between text-sm text-[#666]">
+              <span>
+                ₹{product.price} × {subscriptionMultiplier} ({duration === "week" ? "week" : "month"})
+              </span>
+              <span>₹{subscriptionBasePrice}</span>
+            </div>
+            <div className="flex justify-between text-sm text-[#666]">
+              <span>GST (5%)</span>
+              <span>₹{subscriptionGst}</span>
+            </div>
+            <div className="flex justify-between text-sm font-semibold text-[#111] pt-1">
+              <span>Total</span>
+              <span>₹{subscriptionFinalPrice}</span>
             </div>
           </div>
         </div>
@@ -436,7 +636,7 @@ export default function SubscribePage() {
             </svg>
           </div>
           <div className="flex items-center gap-2 mt-1">
-            <button
+            {/* <button
               type="button"
               onClick={() => setPaymentMethod("cash")}
               className={`px-3 py-1 rounded-md text-sm font-medium ${
@@ -446,7 +646,7 @@ export default function SubscribePage() {
               }`}
             >
               Cash
-            </button>
+            </button> */}
             <button
               type="button"
               onClick={() => setPaymentMethod("razorpay")}
@@ -464,13 +664,15 @@ export default function SubscribePage() {
           type="button"
           className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
           onClick={handlePlaceSubscription}
-          disabled={placingSubscription || !isAuthenticated || !selectedAddress}
+          disabled={placingSubscription || !selectedAddress}
         >
           <div className="flex flex-col items-start text-white">
             <span className="font-semibold">
               {placingSubscription ? "Placing…" : "Subscribe"}
             </span>
-            <span className="font-medium text-sm">₹{product.price + Math.round(product.price * 0.05)}</span>
+            <span className="font-medium text-sm">
+              ₹{subscriptionFinalPrice}
+            </span>
           </div>
           <svg
             className="w-5 h-5 text-white -rotate-90"
@@ -490,7 +692,10 @@ export default function SubscribePage() {
 
       <SelectAddressSheet
         open={showSelectAddress && !showAddAddress}
-        onClose={() => setShowSelectAddress(false)}
+        onClose={() => {
+          setShowSelectAddress(false);
+          setEditingAddress(null);
+        }}
         addresses={addresses}
         selectedAddress={selectedAddress}
         onSelect={(addr) => {
@@ -498,14 +703,20 @@ export default function SubscribePage() {
           setShowSelectAddress(false);
         }}
         onAddNew={() => {
+          setEditingAddress(null);
           setShowSelectAddress(false);
           setShowAddAddress(true);
         }}
+        onEdit={handleEditAddress}
       />
       <AddAddressSheet
         open={showAddAddress}
-        onClose={() => setShowAddAddress(false)}
+        onClose={() => {
+          setShowAddAddress(false);
+          setEditingAddress(null);
+        }}
         onSave={handleSaveNewAddress}
+        editAddress={editingAddress}
       />
     </main>
   );

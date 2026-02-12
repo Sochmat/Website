@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import CartBar from "@/components/CartBar";
 import Menu from "@/components/Menu";
 import ExpandableMenu from "@/components/ExpandableMenu";
@@ -172,6 +173,34 @@ export default function Home() {
               </svg>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Valentine's Special Banner */}
+      <div className="px-4 mt-32 mb-6">
+        <div className="relative rounded-2xl overflow-hidden shadow-lg min-h-[440px] aspect-[390/440]">
+          <Image
+            src="/valentines.png"
+            alt="Valentine's Day Special"
+            fill
+            className="object-cover"
+            sizes="(max-width: 430px) 100vw, 390px"
+          />
+          {/* CTA Buttons overlay */}
+          <div className="absolute bottom-4 left-4 right-4 flex gap-3 z-10">
+            <Link
+              href="/menu?category=beverages"
+              className="flex-1 bg-[#FF69B4] hover:bg-[#FF1493] text-white font-bold py-3 px-4 rounded-xl text-center transition-colors shadow-md"
+            >
+              Gift HER
+            </Link>
+            <Link
+              href="/menu?category=beverages"
+              className="flex-1 bg-[#8B4513] hover:bg-[#654321] text-white font-bold py-3 px-4 rounded-xl text-center transition-colors shadow-md"
+            >
+              Gift HIM
+            </Link>
+          </div>
         </div>
       </div>
 

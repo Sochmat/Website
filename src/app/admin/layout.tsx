@@ -72,6 +72,14 @@ export default function AdminLayout({
             Orders
           </Link>
           <Link
+            href="/admin/subscriptions"
+            className={`font-medium ${
+              pathname === "/admin/subscriptions" ? "underline" : "hover:underline"
+            }`}
+          >
+            Subscriptions
+          </Link>
+          <Link
             href="/admin/users"
             className={`font-medium ${
               pathname === "/admin/users" ? "underline" : "hover:underline"

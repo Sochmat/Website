@@ -15,6 +15,7 @@ interface SelectAddressSheetProps {
   selectedAddress: UserAddress | null;
   onSelect: (addr: UserAddress) => void;
   onAddNew: () => void;
+  onEdit?: (addr: UserAddress) => void;
 }
 
 export default function SelectAddressSheet({
@@ -24,6 +25,7 @@ export default function SelectAddressSheet({
   selectedAddress,
   onSelect,
   onAddNew,
+  onEdit,
 }: SelectAddressSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -94,23 +96,39 @@ export default function SelectAddressSheet({
               addresses.map((addr) => {
                 const showSelected = selectedAddress !== null && sameAddress(addr, selectedAddress);
                 return (
-                  <button
+                  <div
                     key={addr.id ?? `${addr.address}-${addr.pincode}`}
-                    type="button"
-                    onClick={() => onSelect(addr)}
-                    className="w-full text-left bg-white rounded-xl border border-[#e5e5e5] p-4 relative hover:border-[#f56215]/40 transition-colors"
+                    className="w-full bg-white rounded-xl border border-[#e5e5e5] p-4 relative hover:border-[#f56215]/40 transition-colors"
                   >
-                    {showSelected && (
-                      <span className="absolute top-3 right-3 bg-[#f56215] text-white text-xs font-medium px-2 py-1 rounded-md">
-                        Selected
-                      </span>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(addr)}
+                      className="w-full text-left pr-20"
+                    >
+                      {showSelected && (
+                        <span className="absolute top-3 right-3 bg-[#f56215] text-white text-xs font-medium px-2 py-1 rounded-md">
+                          Selected
+                        </span>
+                      )}
+                      <p className="text-sm text-[#111]">
+                        Deliver to : {addr.receiverName || "—"}
+                      </p>
+                      <p className="text-sm text-[#111] mt-1">{addr.address}</p>
+                      <p className="text-sm font-semibold text-[#111] mt-0.5">{addr.pincode}</p>
+                    </button>
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit(addr);
+                        }}
+                        className="absolute bottom-3 right-3 text-[#f56215] text-xs font-medium hover:underline"
+                      >
+                        Edit
+                      </button>
                     )}
-                    <p className="text-sm text-[#111] pr-20">
-                      Deliver to : {addr.receiverName || "—"}
-                    </p>
-                    <p className="text-sm text-[#111] mt-1">{addr.address}</p>
-                    <p className="text-sm font-semibold text-[#111] mt-0.5">{addr.pincode}</p>
-                  </button>
+                  </div>
                 );
               })
             )}

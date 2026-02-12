@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
       paymentStatus: "pending" as const,
       status: "active" as const,
       paymentMethod: body.paymentMethod ?? "cash",
+      paymentId: body.paymentId ?? undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -105,6 +106,56 @@ export async function POST(request: NextRequest) {
     console.error("Error creating subscription:", error);
     return NextResponse.json(
       { success: false, message: "Failed to create subscription" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { _id, paymentId, paymentStatus } = body;
+
+    if (!_id || !ObjectId.isValid(_id)) {
+      return NextResponse.json(
+        { success: false, message: "Valid subscription ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const { db } = await connectToDatabase();
+    const updateData: Record<string, unknown> = {
+      updatedAt: new Date(),
+    };
+
+    if (paymentId !== undefined) {
+      updateData.paymentId = paymentId;
+    }
+    if (paymentStatus !== undefined) {
+      updateData.paymentStatus = paymentStatus;
+    }
+
+    const result = await db.collection("subscriptions").updateOne(
+      { _id: new ObjectId(_id) },
+      { $set: updateData }
+    );
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json(
+        { success: false, message: "Subscription not found" },
+        { status: 404 },
+      );
+    }
+
+    const subscription = await db
+      .collection("subscriptions")
+      .findOne({ _id: new ObjectId(_id) });
+
+    return NextResponse.json({ success: true, subscription });
+  } catch (error) {
+    console.error("Error updating subscription:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to update subscription" },
       { status: 500 },
     );
   }

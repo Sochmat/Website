@@ -1,14 +1,22 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Menu from "@/components/Menu";
 import CartBar from "@/components/CartBar";
 
 export default function MenuPage() {
+  const searchParams = useSearchParams();
+  const category = searchParams.get("category");
+
   return (
     <main className="min-h-screen bg-white max-w-[430px] mx-auto pb-32">
       <div className="px-4 pt-8 pb-4">
-        <Menu showTitle={true} linkCategoriesToMenu={false} />
+        <Menu 
+          showTitle={true} 
+          linkCategoriesToMenu={false}
+          initialCategory={category === "beverages" ? "beverages" : "food"}
+        />
       </div>
 
       <CartBar />
