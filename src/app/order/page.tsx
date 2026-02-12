@@ -32,8 +32,10 @@ export default function OrderPage() {
   const { user, isAuthenticated, setUser } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(null);
+  const [localAddresses, setLocalAddresses] = useState<UserAddress[]>([]);
   const [showSelectAddress, setShowSelectAddress] = useState(false);
   const [showAddAddress, setShowAddAddress] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
   const [coupons, setCoupons] = useState<
     { code: string; discountAmount: number }[]
   >([]);
@@ -93,12 +95,32 @@ export default function OrderPage() {
     };
   }, []);
 
-  const addresses = user?.addresses ?? [];
+  const addresses = isAuthenticated ? (user?.addresses ?? []) : localAddresses;
+
   useEffect(() => {
-    if (isAuthenticated && addresses.length > 0 && !selectedAddress) {
-      setSelectedAddress(addresses[0]);
+    if (!isAuthenticated && typeof window !== "undefined") {
+      const stored = localStorage.getItem("order_addresses");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as UserAddress[];
+          setLocalAddresses(parsed);
+          if (parsed.length > 0 && !selectedAddress) {
+            setSelectedAddress(parsed[0]);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
-  }, [isAuthenticated, addresses.length, selectedAddress]);
+  }, [isAuthenticated, selectedAddress]);
+
+  useEffect(() => {
+    if (isAuthenticated && user?.addresses && user.addresses.length > 0 && !selectedAddress) {
+      setSelectedAddress(user.addresses[0]);
+    } else if (!isAuthenticated && localAddresses.length > 0 && !selectedAddress) {
+      setSelectedAddress(localAddresses[0]);
+    }
+  }, [isAuthenticated, user?.addresses, localAddresses, selectedAddress]);
 
   const selectedAddressServiceable = selectedAddress
     ? isWithinServiceArea(selectedAddress.lat, selectedAddress.long)
@@ -108,40 +130,76 @@ export default function OrderPage() {
     : null;
 
   const handleSaveNewAddress = async (newAddr: UserAddress) => {
-    if (!user?._id) return;
-    try {
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          _id: user._id,
-          addresses: [...(user.addresses ?? []), newAddr],
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.user) {
-        setUser(data.user);
-        setSelectedAddress(newAddr);
-        setShowAddAddress(false);
-        setShowSelectAddress(false);
-        message.success("Address saved");
-      } else {
-        message.error(data.message ?? "Failed to save address");
+    const isEditing = editingAddress !== null;
+
+    if (isAuthenticated && user?._id) {
+      try {
+        let updatedAddresses: UserAddress[];
+        if (isEditing) {
+          updatedAddresses = (user.addresses ?? []).map((addr) =>
+            addr.id === editingAddress.id ? newAddr : addr,
+          );
+        } else {
+          updatedAddresses = [...(user.addresses ?? []), newAddr];
+        }
+        const res = await fetch("/api/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _id: user._id,
+            addresses: updatedAddresses,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+          setSelectedAddress(newAddr);
+          setShowAddAddress(false);
+          setShowSelectAddress(false);
+          setEditingAddress(null);
+          message.success(isEditing ? "Address updated" : "Address saved");
+        } else {
+          message.error(data.message ?? "Failed to save address");
+        }
+      } catch {
+        message.error("Failed to save address");
       }
-    } catch {
-      message.error("Failed to save address");
+    } else {
+      let updatedAddresses: UserAddress[];
+      if (isEditing) {
+        updatedAddresses = localAddresses.map((addr) =>
+          addr.id === editingAddress.id ? newAddr : addr,
+        );
+      } else {
+        updatedAddresses = [...localAddresses, newAddr];
+      }
+      setLocalAddresses(updatedAddresses);
+      setSelectedAddress(newAddr);
+      setShowAddAddress(false);
+      setShowSelectAddress(false);
+      setEditingAddress(null);
+      message.success(isEditing ? "Address updated" : "Address saved");
+      if (typeof window !== "undefined") {
+        localStorage.setItem("order_addresses", JSON.stringify(updatedAddresses));
+      }
     }
   };
 
+  const handleEditAddress = (addr: UserAddress) => {
+    setEditingAddress(addr);
+    setShowSelectAddress(false);
+    setShowAddAddress(true);
+  };
+
   const handlePlaceOrder = async () => {
-    if (!isAuthenticated || !user) {
-      message.error("Please log in to place an order");
-      openLoginPopup();
-      return;
-    }
     if (!selectedAddress) {
       message.error("Please select a delivery address");
       setShowSelectAddress(true);
+      return;
+    }
+    if (!selectedAddress.receiverName || !selectedAddress.receiverPhone) {
+      message.error("Please enter receiver name and phone number");
+      setShowAddAddress(true);
       return;
     }
     if (selectedAddressServiceable === false) {
@@ -157,12 +215,15 @@ export default function OrderPage() {
       const gstAmount = Math.round((totalPrice - couponDiscountAmount) * 0.05);
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
 
+      const receiverName = selectedAddress.receiverName ?? "";
+      const receiverPhone = selectedAddress.receiverPhone ?? "";
+
       const orderPayload: Order = {
         paymentStatus: paymentMethod === "razorpay" ? "pending" : "pending",
         status: "pending",
         receiver: {
-          name: user.name ?? selectedAddress.receiverName ?? "",
-          phone: user.phone,
+          name: isAuthenticated && user?.name ? user.name : receiverName,
+          phone: isAuthenticated && user?.phone ? user.phone : receiverPhone,
           address: selectedAddress.address,
         },
         orderItems: items.map((item) => ({
@@ -195,9 +256,9 @@ export default function OrderPage() {
           name: "Sochmat",
           description: `Order #${data.order?.orderNumber || ""}`,
           prefill: {
-            name: user.name ?? selectedAddress.receiverName ?? "",
-            email: user.email ?? "",
-            contact: user.phone,
+            name: (isAuthenticated ? user?.name : null) ?? selectedAddress.receiverName ?? "",
+            email: user?.email ?? "",
+            contact: (isAuthenticated ? user?.phone : null) ?? selectedAddress.receiverPhone ?? "",
           },
           orderId: data.order?._id,
           onSuccess: () => {
@@ -330,35 +391,26 @@ export default function OrderPage() {
               </svg>
               <div>
                 <p className="font-semibold text-[#111] text-[15px]">Delivery at</p>
-                {!isAuthenticated ? (
-                  <p className="text-sm text-[#737373] mt-1">Login to set delivery address</p>
-                ) : !selectedAddress ? (
-                  <p className="text-sm text-[#737373] mt-1">Select delivery address</p>
+                {!selectedAddress ? (
+                  <p className="text-sm text-[#737373] mt-1">Add delivery address</p>
                 ) : (
                   <>
                     <p className="text-sm text-[#111] mt-1">{selectedAddress.address}</p>
                     <p className="text-sm font-semibold text-[#111] mt-0.5">{selectedAddress.pincode}</p>
+                    {selectedAddress.receiverName && (
+                      <p className="text-xs text-[#737373] mt-0.5">Deliver to: {selectedAddress.receiverName}</p>
+                    )}
                   </>
                 )}
               </div>
             </div>
-            {!isAuthenticated ? (
-              <button
-                type="button"
-                onClick={openLoginPopup}
-                className="text-[#f56215] font-semibold text-sm underline shrink-0"
-              >
-                Login
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowSelectAddress(true)}
-                className="text-[#f56215] font-semibold text-sm underline shrink-0"
-              >
-                Change
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowSelectAddress(true)}
+              className="text-[#f56215] font-semibold text-sm underline shrink-0"
+            >
+              {selectedAddress ? "Change" : "Add"}
+            </button>
           </div>
         </div>
 
@@ -623,7 +675,7 @@ export default function OrderPage() {
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={handlePlaceOrder}
-            disabled={placingOrder || !isAuthenticated || !selectedAddress}
+            disabled={placingOrder || !selectedAddress}
           >
             <div className="flex flex-col items-start text-white">
               <span className="font-semibold">
@@ -650,7 +702,10 @@ export default function OrderPage() {
 
       <SelectAddressSheet
         open={showSelectAddress && !showAddAddress}
-        onClose={() => setShowSelectAddress(false)}
+        onClose={() => {
+          setShowSelectAddress(false);
+          setEditingAddress(null);
+        }}
         addresses={addresses}
         selectedAddress={selectedAddress}
         onSelect={(addr) => {
@@ -658,14 +713,20 @@ export default function OrderPage() {
           setShowSelectAddress(false);
         }}
         onAddNew={() => {
+          setEditingAddress(null);
           setShowSelectAddress(false);
           setShowAddAddress(true);
         }}
+        onEdit={handleEditAddress}
       />
       <AddAddressSheet
         open={showAddAddress}
-        onClose={() => setShowAddAddress(false)}
+        onClose={() => {
+          setShowAddAddress(false);
+          setEditingAddress(null);
+        }}
         onSave={handleSaveNewAddress}
+        editAddress={editingAddress}
       />
     </main>
   );
