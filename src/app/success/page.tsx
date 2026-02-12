@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -15,7 +16,7 @@ interface TrackingStep {
   icon: React.ReactNode;
 }
 
-export default function SuccessPage() {
+function SuccessContent() {
   const searchParams = useSearchParams();
   const subscriptionId = searchParams.get("subscriptionId");
   const isSubscription = !!subscriptionId;
@@ -397,5 +398,19 @@ export default function SuccessPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-[#f6f6f6] max-w-[430px] mx-auto flex items-center justify-center">
+          <p className="text-gray-500">Loading...</p>
+        </main>
+      }
+    >
+      <SuccessContent />
+    </Suspense>
   );
 }
