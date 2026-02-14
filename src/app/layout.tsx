@@ -7,6 +7,7 @@ import { UserProvider } from "@/context/UserContext";
 import { LoginPopupProvider } from "@/context/LoginPopupContext";
 import LocationPrompt from "@/components/LocationPrompt";
 import LoginPopup from "@/components/LoginPopup";
+import OrderPromptModal from "@/components/OrderPromptModal";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,6 +35,7 @@ export default function RootLayout({
                 <LocationPrompt />
                 {children}
                 <LoginPopup />
+                <OrderPromptModal />
               </LocationProvider>
             </CartProvider>
           </LoginPopupProvider>
