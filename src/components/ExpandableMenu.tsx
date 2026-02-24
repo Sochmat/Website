@@ -73,14 +73,6 @@ export default function ExpandableMenu() {
             Menu
           </Link>
 
-          <a
-            href="tel:+917042816413"
-            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white text-[#02583f] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors"
-          >
-            <Phone className="w-6 h-6 shrink-0" />
-            Order Now
-          </a>
-
           {isAuthenticated && (
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
               <User className="w-6 h-6 shrink-0" />
@@ -93,7 +85,7 @@ export default function ExpandableMenu() {
             </div>
           )}
 
-          {/* {isAuthenticated ? (
+          {isAuthenticated ? (
             <button
               type="button"
               onClick={handleUserLogout}
@@ -114,7 +106,15 @@ export default function ExpandableMenu() {
               <LogIn className="w-6 h-6 shrink-0" />
               Login
             </button>
-          )} */}
+          )}
+
+          <a
+            href="tel:+917042816413"
+            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white text-[#02583f] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors"
+          >
+            <Phone className="w-6 h-6 shrink-0" />
+            Order Now
+          </a>
         </div>
       )}
     </>

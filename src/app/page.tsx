@@ -8,10 +8,8 @@ import ExpandableMenu from "@/components/ExpandableMenu";
 
 const imgHeroFood =
   "https://www.figma.com/api/mcp/asset/b672fe8e-1927-4bea-b6a2-3f01ef15169a";
-const imgZomato =
-  "https://www.figma.com/api/mcp/asset/14a79d1d-09a6-43d9-9c8e-7f7d8dd02cc1";
-const imgSwiggy =
-  "https://www.figma.com/api/mcp/asset/73332e12-19a4-46fe-9819-8dbb9550c040";
+const imgZomato = "/zomato.svg";
+const imgSwiggy = "/swiggy.svg";
 const imgPhoneMockup =
   "https://www.figma.com/api/mcp/asset/679b98b1-16b2-48a2-820c-6eaf386f3be8";
 const imgCoreValuesBg =
@@ -32,45 +30,35 @@ const imgLogoRight =
 export default function Home() {
   const coreValues = [
     {
-      icon: (
-        <div className="w-7 h-7 bg-[#9eea01] rounded-full flex items-center justify-center">
-          <svg
-            className="w-4 h-4 text-[#02583f]"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
-          </svg>
-        </div>
-      ),
-      image: null,
+      icon: null,
+      image: "/body.svg",
       title: "High-Protein, Purpose-Driven Nutrition",
       description:
         "Food that provide meaningful protein that supports strength, recovery, and everyday energy.",
     },
     {
       icon: null,
-      image: imgSugar,
+      image: "/noSugar.svg",
       title: "No Added Sugar",
       description: "Sweetness comes naturally from real ingredients.",
     },
     {
       icon: null,
-      image: imgHerbal,
+      image: "/clean.svg",
       title: "Clean & Natural Ingredients",
       description:
         "Only simple, recognizable ingredients. No artificial colors, flavors, or unnecessary additives.",
     },
     {
       icon: null,
-      image: imgCustomer,
+      image: "/customer.svg",
       title: "Customer First Approach",
       description:
         "We listen, improve, and build our products around real customer needs, feedback, and lifestyles.",
     },
     {
       icon: null,
-      image: imgBalance,
+      image: "/balanced.svg",
       title: "Balanced, Not Extreme",
       description:
         "Food that supports a sustainable, long-term healthy lifestyle, not crash diets or fads.",
@@ -140,9 +128,9 @@ export default function Home() {
           <Image
             src={imgSwiggy}
             alt="Swiggy"
-            width={56}
+            width={40}
             height={56}
-            className="h-14 w-14 rounded-lg object-cover"
+            className="h-14 w-14 rounded-lg object-contain"
             unoptimized
           />
         </div>
@@ -169,7 +157,7 @@ export default function Home() {
       </div>
 
       {/* Valentine's Special Banner */}
-      <div className="px-4 mt-32">
+      {/* <div className="px-4 mt-32">
         <div className="relative rounded-2xl overflow-hidden shadow-lg min-h-[440px] aspect-[390/440]">
           <Image
             src="/valentines.png"
@@ -178,7 +166,6 @@ export default function Home() {
             className="object-cover"
             sizes="(max-width: 430px) 100vw, 390px"
           />
-          {/* Sprouting hearts */}
           {[
             { left: "15%", bottom: "25%", delay: "0s", size: 14 },
             { left: "28%", bottom: "35%", delay: "0.4s", size: 10 },
@@ -232,7 +219,7 @@ export default function Home() {
             Gift HIM
           </Link>
         </div>
-      </div>
+      </div> */}
 
       {/* Menu Section */}
       <div className="px-4 pt-16 pb-6 mt-4">

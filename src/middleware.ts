@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 const ALLOWED_PATHS = ["/", "/menu", "/admin", "/api"];
 
 function isAllowed(pathname: string): boolean {
-  // Normalize pathname: consider only the initial matching allowed prefix
+  return true;
   return ALLOWED_PATHS.some(
     (allowedPath) =>
       pathname === allowedPath || pathname.startsWith(allowedPath + "/"),
