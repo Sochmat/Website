@@ -37,6 +37,41 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PUT(request: NextRequest) {
+  try {
+    const { db } = await connectToDatabase();
+    const { _id, ...data } = (await request.json()) as Category & {
+      _id?: string;
+    };
+
+    if (!_id) {
+      return NextResponse.json(
+        { success: false, message: "Category ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const result = await db
+      .collection("categories")
+      .updateOne({ _id: new ObjectId(_id) }, { $set: data });
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json(
+        { success: false, message: "Category not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error updating category:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to update category" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();

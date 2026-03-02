@@ -74,6 +74,34 @@ button {
   pointer-events: none;
 }
 
+@keyframes bounce-x-right {
+  0%,
+  100% {
+    transform: translateY(-50%) translateX(0);
+  }
+  50% {
+    transform: translateY(-50%) translateX(5px);
+  }
+}
+
+@keyframes bounce-x-left {
+  0%,
+  100% {
+    transform: translateY(-50%) translateX(0);
+  }
+  50% {
+    transform: translateY(-50%) translateX(-5px);
+  }
+}
+
+.animate-bounce-x-right {
+  animation: bounce-x-right 1s ease-in-out infinite;
+}
+
+.animate-bounce-x-left {
+  animation: bounce-x-left 1s ease-in-out infinite;
+}
+
 .font-squada {
   font-family: "Squada One", sans-serif;
 }

@@ -156,77 +156,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Valentine's Special Banner */}
-      {/* <div className="px-4 mt-32">
-        <div className="relative rounded-2xl overflow-hidden shadow-lg min-h-[440px] aspect-[390/440]">
-          <Image
-            src="/valentines.png"
-            alt="Valentine's Day Special"
-            fill
-            className="object-cover"
-            sizes="(max-width: 430px) 100vw, 390px"
-          />
-          {[
-            { left: "15%", bottom: "25%", delay: "0s", size: 14 },
-            { left: "28%", bottom: "35%", delay: "0.4s", size: 10 },
-            { left: "45%", bottom: "28%", delay: "0.8s", size: 16 },
-            { left: "62%", bottom: "32%", delay: "0.2s", size: 12 },
-            { left: "78%", bottom: "26%", delay: "0.6s", size: 11 },
-            { left: "22%", bottom: "45%", delay: "1s", size: 9 },
-            { left: "55%", bottom: "42%", delay: "0.3s", size: 13 },
-            { left: "72%", bottom: "48%", delay: "0.7s", size: 10 },
-            { left: "38%", bottom: "38%", delay: "0.5s", size: 8 },
-            { left: "85%", bottom: "38%", delay: "0.9s", size: 12 },
-          ].map((h, i) => (
-            <div
-              key={i}
-              className="absolute animate-heart-sprout"
-              style={{
-                left: h.left,
-                bottom: h.bottom,
-                width: h.size,
-                height: h.size,
-                animationDelay: h.delay,
-                animationDuration: "2.8s",
-              }}
-              aria-hidden
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="w-full h-full drop-shadow-sm"
-              >
-                <path
-                  d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                  fill="#e91e63"
-                  fillOpacity={0.85}
-                />
-              </svg>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-3 mt-4">
-          <Link
-            href="/menu?category=beverages"
-            className="flex-1 bg-[#FF69B4] hover:bg-[#FF1493] text-white font-bold py-3 px-4 rounded-xl text-center transition-colors shadow-md"
-          >
-            Gift HER
-          </Link>
-          <Link
-            href="/menu?category=beverages"
-            className="flex-1 bg-[#8B4513] hover:bg-[#654321] text-white font-bold py-3 px-4 rounded-xl text-center transition-colors shadow-md"
-          >
-            Gift HIM
-          </Link>
-        </div>
-      </div> */}
-
       {/* Menu Section */}
       <div className="px-4 pt-16 pb-6 mt-4">
         <Menu
           showTitle={true}
           linkCategoriesToMenu={true}
-          showOnHomePage={true}
+          showOnHomePage={false}
         />
       </div>
 

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { CheckCircleIcon } from "lucide-react";
 
 const imgDelivery =
   "https://www.figma.com/api/mcp/asset/a5506fec-aaf3-4884-9aa6-625d4f483d7c";
@@ -188,7 +189,8 @@ function SuccessContent() {
                   Your subscription is active!
                 </h2>
                 <p className="text-sm text-[#666]">
-                  We'll deliver fresh meals to your doorstep according to your schedule.
+                  We'll deliver fresh meals to your doorstep according to your
+                  schedule.
                 </p>
               </div>
             </div>
@@ -215,7 +217,9 @@ function SuccessContent() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[#111]">Regular Deliveries</p>
+                  <p className="text-sm font-semibold text-[#111]">
+                    Regular Deliveries
+                  </p>
                   <p className="text-xs text-[#666] mt-0.5">
                     Fresh meals delivered on your schedule
                   </p>
@@ -238,7 +242,9 @@ function SuccessContent() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[#111]">Great Value</p>
+                  <p className="text-sm font-semibold text-[#111]">
+                    Great Value
+                  </p>
                   <p className="text-xs text-[#666] mt-0.5">
                     Best prices for regular customers
                   </p>
@@ -261,7 +267,9 @@ function SuccessContent() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[#111]">Flexible Schedule</p>
+                  <p className="text-sm font-semibold text-[#111]">
+                    Flexible Schedule
+                  </p>
                   <p className="text-xs text-[#666] mt-0.5">
                     Adjust delivery times as needed
                   </p>
@@ -274,7 +282,10 @@ function SuccessContent() {
           <div className="text-center mt-8">
             <p className="text-base font-medium text-black">
               Follow us at -{" "}
-              <Link href="https://instagram.com/sochmat_fitfuel" className="underline">
+              <Link
+                href="https://instagram.com/sochmat_fitfuel"
+                className="underline"
+              >
                 @sochmat_fitfuel
               </Link>
             </p>
@@ -306,13 +317,7 @@ function SuccessContent() {
         {/* Success Card */}
         <div className="bg-white rounded-xl py-10 px-5 flex flex-col items-center gap-2">
           <div className="w-16 h-16 relative">
-            <Image
-              src={imgCheckCircle}
-              alt="Success"
-              fill
-              className="object-contain"
-              unoptimized
-            />
+            <CheckCircleIcon className="w-16 h-16 text-[#f56215]" />
           </div>
           <h1 className="text-xl font-semibold text-black text-center">
             We have received your order!
@@ -332,7 +337,7 @@ function SuccessContent() {
             </div>
             <div className="w-20 h-[60px] relative">
               <Image
-                src={imgDelivery}
+                src="/ride.svg"
                 alt="Delivery"
                 fill
                 className="object-contain"
@@ -362,7 +367,7 @@ function SuccessContent() {
                 {/* Step Circle */}
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-[0px_0px_0px_8px_white] relative z-10 ${getStepBgColor(
-                    step.status
+                    step.status,
                   )}`}
                 >
                   {step.icon}
@@ -381,7 +386,10 @@ function SuccessContent() {
         <div className="text-center mt-16">
           <p className="text-base font-medium text-black">
             Follow us at -{" "}
-            <Link href="https://instagram.com/sochmat" className="underline">
+            <Link
+              href="https://instagram.com/sochmat_fitfuel"
+              className="underline"
+            >
               @sochmat
             </Link>
           </p>

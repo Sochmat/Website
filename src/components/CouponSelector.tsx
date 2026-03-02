@@ -149,7 +149,7 @@ export default function CouponSelector({
             <button
               type="button"
               onClick={handleApplyOrRemove}
-              className="h-10 px-4 rounded-md border border-[#f56215] text-[#f56215] text-sm font-medium bg-[rgba(245,98,21,0.06)]"
+              className="h-8 px-4 rounded-md border border-[#f56215] text-[#f56215] text-sm font-medium bg-[rgba(245,98,21,0.06)]"
             >
               {appliedCouponCode ? "Remove" : "Apply"}
             </button>
