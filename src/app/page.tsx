@@ -108,7 +108,7 @@ export default function Home() {
           src={"/bg1.png"}
           alt="Delicious food"
           fill
-          className="object-cover blur-[2px]"
+          className="object-cover blur-[1px]"
         />
       </div>
 

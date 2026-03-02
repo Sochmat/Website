@@ -13,7 +13,10 @@ export async function GET() {
       coupons: coupons.map((c) => ({
         _id: c._id,
         code: c.code,
-        discountAmount: c.discountAmount,
+        discountType: c.discountType ?? "flat",
+        discountAmount: c.discountAmount ?? 0,
+        discountPercent: c.discountPercent ?? 0,
+        maxDiscount: c.maxDiscount ?? 0,
       })),
     });
   } catch (error) {

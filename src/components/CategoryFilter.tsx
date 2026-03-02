@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { cn } from "@/lib/cn";
 
 interface Category {
   id: string;
@@ -22,6 +23,7 @@ export default function CategoryFilter({
   activeCategory,
   onCategoryChange,
 }: CategoryFilterProps) {
+  console.log({ categories, activeCategory });
   return (
     <div className="flex gap-4 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide">
       {categories
@@ -32,21 +34,27 @@ export default function CategoryFilter({
             onClick={() => onCategoryChange(cat.id)}
             className="flex flex-col items-center shrink-0"
           >
-            <div className="w-[78px] h-[78px] rounded-full border border-white p-1.5">
+            <div
+              className={cn(
+                "relative w-[78px] h-[78px] border-5 border-[#02583f] rounded-full",
+                activeCategory === cat.id
+                  ? "border-[#02583f]"
+                  : "border-[#e6e6e6]",
+              )}
+            >
               <div
-                className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden transition-colors ${
-                  activeCategory === cat.id ? "bg-[#02583f]" : "bg-[#f0f0f0]"
+                className={`absolute inset-0 rounded-full transition-colors ${
+                  activeCategory === cat.id ? "bg-[#02583f]" : "bg-transparent"
                 }`}
-              >
-                <Image
-                  src={cat.image}
-                  alt={cat.name}
-                  width={70}
-                  height={70}
-                  className="object-cover scale-150 -translate-y-2"
-                  unoptimized
-                />
-              </div>
+              />
+              <Image
+                src={cat.image}
+                alt={cat.name}
+                width={78}
+                height={78}
+                className="relative w-[78px] h-[78px] object-cover rounded-full"
+                unoptimized
+              />
             </div>
             <span className="text-[#222] text-xs font-semibold mt-2">
               {cat.name}

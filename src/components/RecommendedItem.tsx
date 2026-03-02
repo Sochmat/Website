@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
+import { PlusIcon } from "lucide-react";
 
 interface RecommendedItemProps {
   product: Product;
@@ -35,21 +36,9 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
         />
         <button
           onClick={handleAddClick}
-          className="absolute right-2 bottom-2 bg-[#2d5cf2] p-1.5 rounded-lg shadow-md"
+          className="absolute right-2 bottom-2 bg-white p-1.5 rounded-lg shadow-md border border-[#f56215]"
         >
-          <svg
-            className="w-5 h-5 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
+          <PlusIcon className="w-5 h-5 text-[#f56215]" />
         </button>
         <div className="absolute left-2 bottom-2">
           <div
@@ -85,7 +74,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
             </span>
           </div>
           <span className="border border-[#8bc11a] text-[#8bc11a] text-[11px] font-semibold px-2 py-0.5 rounded-full">
-            {product.discount}
+            {product.discount} %
           </span>
         </div>
       </div>

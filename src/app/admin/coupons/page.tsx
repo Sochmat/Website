@@ -6,7 +6,10 @@ import { Coupon } from "@/lib/types";
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [code, setCode] = useState("");
+  const [discountType, setDiscountType] = useState<"flat" | "percent">("flat");
   const [discountAmount, setDiscountAmount] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("");
+  const [maxDiscount, setMaxDiscount] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -32,12 +35,18 @@ export default function AdminCouponsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: code.trim(),
-          discountAmount: Number(discountAmount) || 0,
+          discountType,
+          discountAmount: discountType === "flat" ? Number(discountAmount) || 0 : 0,
+          discountPercent: discountType === "percent" ? Number(discountPercent) || 0 : 0,
+          maxDiscount: discountType === "percent" ? Number(maxDiscount) || 0 : 0,
           active: true,
         }),
       });
       setCode("");
+      setDiscountType("flat");
       setDiscountAmount("");
+      setDiscountPercent("");
+      setMaxDiscount("");
       fetchCoupons();
     } catch (err) {
       console.error("Failed to create coupon:", err);
@@ -75,17 +84,80 @@ export default function AdminCouponsPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Discount (₹)
+              Discount Type
             </label>
-            <input
-              type="number"
-              value={discountAmount}
-              onChange={(e) => setDiscountAmount(e.target.value)}
-              placeholder="e.g., 150"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
-              required
-            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDiscountType("flat")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  discountType === "flat"
+                    ? "bg-[#02583f] text-white border-[#02583f]"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Flat (₹)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType("percent")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  discountType === "percent"
+                    ? "bg-[#02583f] text-white border-[#02583f]"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Percentage (%)
+              </button>
+            </div>
           </div>
+
+          {discountType === "flat" ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Discount (₹)
+              </label>
+              <input
+                type="number"
+                value={discountAmount}
+                onChange={(e) => setDiscountAmount(e.target.value)}
+                placeholder="e.g., 150"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                required
+              />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Discount (%)
+                </label>
+                <input
+                  type="number"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value)}
+                  placeholder="e.g., 20"
+                  min={1}
+                  max={100}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Discount (₹)
+                </label>
+                <input
+                  type="number"
+                  value={maxDiscount}
+                  onChange={(e) => setMaxDiscount(e.target.value)}
+                  placeholder="e.g., 100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  required
+                />
+              </div>
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
@@ -112,7 +184,9 @@ export default function AdminCouponsPage() {
                 <div>
                   <p className="font-medium text-gray-800">{coupon.code}</p>
                   <p className="text-sm text-gray-500">
-                    ₹{coupon.discountAmount} off
+                    {coupon.discountType === "percent"
+                      ? `${coupon.discountPercent}% off upto ₹${coupon.maxDiscount}`
+                      : `₹${coupon.discountAmount} off`}
                   </p>
                   <span
                     className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${

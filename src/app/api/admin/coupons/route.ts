@@ -21,11 +21,22 @@ export async function POST(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();
     const data: Coupon = await request.json();
-    const coupon = {
+    const discountType = data.discountType === "percent" ? "percent" : "flat";
+    const coupon: Record<string, unknown> = {
       code: data.code.trim().toUpperCase(),
-      discountAmount: Number(data.discountAmount) || 0,
+      discountType,
       active: data.active !== false,
     };
+
+    if (discountType === "percent") {
+      coupon.discountPercent = Number(data.discountPercent) || 0;
+      coupon.maxDiscount = Number(data.maxDiscount) || 0;
+      coupon.discountAmount = 0;
+    } else {
+      coupon.discountAmount = Number(data.discountAmount) || 0;
+      coupon.discountPercent = 0;
+      coupon.maxDiscount = 0;
+    }
     const result = await db.collection("coupons").insertOne(coupon);
     return NextResponse.json({
       success: true,

@@ -35,7 +35,10 @@ export interface Category {
 export interface Coupon {
   _id?: ObjectId | string;
   code: string;
+  discountType: "flat" | "percent";
   discountAmount: number;
+  discountPercent?: number;
+  maxDiscount?: number;
   active: boolean;
   createdAt?: Date;
 }
