@@ -105,10 +105,10 @@ export default function Home() {
       {/* Hero Image */}
       <div className="relative h-[520px] mt-[20px] mx-4 rounded-t-xl overflow-hidden z-0">
         <Image
-          src={imgHeroFood}
+          src={"/bg1.png"}
           alt="Delicious food"
           fill
-          className="object-cover"
+          className="object-cover blur-[2px]"
         />
       </div>
 

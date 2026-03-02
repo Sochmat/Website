@@ -23,11 +23,13 @@
     "@locator/webpack-loader": "^0.5.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "code-inspector-plugin": "^1.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "nodemailer": "^8.0.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

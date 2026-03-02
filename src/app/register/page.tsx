@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/context/UserContext";
 
 export default function RegisterPage() {
-  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"details" | "otp">("details");
   const [error, setError] = useState("");
@@ -31,7 +31,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/users/otp/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, name }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), name: name.trim() }),
       });
 
       const data = await res.json();
@@ -58,7 +58,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/users/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), otp }),
       });
 
       const data = await res.json();
@@ -87,7 +87,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/users/otp/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, name }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), name: name.trim() }),
       });
 
       const data = await res.json();
@@ -113,7 +113,7 @@ export default function RegisterPage() {
           <p className="text-gray-600">
             {step === "details"
               ? "Create your account to get started"
-              : "Enter the OTP sent to your phone"}
+              : "Enter the OTP sent to your email"}
           </p>
         </div>
 
@@ -135,15 +135,15 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
               </label>
               <input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Enter your phone number"
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email address"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                 required
               />
