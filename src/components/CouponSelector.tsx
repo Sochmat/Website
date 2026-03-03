@@ -9,6 +9,7 @@ type Coupon = {
   discountAmount: number;
   discountPercent: number;
   maxDiscount: number;
+  minAmount?: number;
 };
 
 export type AppliedCoupon = {
@@ -66,6 +67,13 @@ export default function CouponSelector({
     [coupons, appliedCouponCode],
   );
 
+  useEffect(() => {
+    if (appliedCoupon?.minAmount && totalPrice < appliedCoupon.minAmount) {
+      setAppliedCouponCode(null);
+      onCouponChange(null);
+    }
+  }, [totalPrice, appliedCoupon, onCouponChange]);
+
   const handleApplyOrRemove = () => {
     if (appliedCouponCode) {
       setAppliedCouponCode(null);
@@ -118,29 +126,38 @@ export default function CouponSelector({
               popupMatchSelectWidth={false}
               optionFilterProp="label"
               options={coupons.map((coupon) => {
+                const meetsMin = !coupon.minAmount || totalPrice >= coupon.minAmount;
                 const label =
                   coupon.discountType === "percent"
                     ? `${coupon.code} - ${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`
                     : `${coupon.code} - Save Rs ${coupon.discountAmount}`;
-                return { value: coupon.code, label, title: coupon.code };
+                return { value: coupon.code, label, title: coupon.code, disabled: !meetsMin };
               })}
               optionRender={(option) => {
                 const coupon = coupons.find(
                   (item) => item.code === option.value,
                 );
                 if (!coupon) return option.label;
+                const meetsMin = !coupon.minAmount || totalPrice >= coupon.minAmount;
                 const desc =
                   coupon.discountType === "percent"
                     ? `${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`
                     : `Save Rs ${coupon.discountAmount}`;
                 return (
-                  <div className="flex items-center justify-between gap-6">
-                    <span className="font-medium text-[#111]">
-                      {coupon.code}
-                    </span>
-                    <span className="text-[#00a86e] text-xs font-medium">
-                      {desc}
-                    </span>
+                  <div>
+                    <div className="flex items-center justify-between gap-6">
+                      <span className={`font-medium ${meetsMin ? "text-[#111]" : "text-gray-400"}`}>
+                        {coupon.code}
+                      </span>
+                      <span className={`text-xs font-medium ${meetsMin ? "text-[#00a86e]" : "text-gray-400"}`}>
+                        {desc}
+                      </span>
+                    </div>
+                    {!meetsMin && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        Min order: Rs {coupon.minAmount}
+                      </p>
+                    )}
                   </div>
                 );
               }}

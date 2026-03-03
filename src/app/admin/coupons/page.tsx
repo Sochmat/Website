@@ -5,11 +5,13 @@ import { Coupon } from "@/lib/types";
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [discountType, setDiscountType] = useState<"flat" | "percent">("flat");
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [maxDiscount, setMaxDiscount] = useState("");
+  const [minAmount, setMinAmount] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -26,30 +28,49 @@ export default function AdminCouponsPage() {
     }
   };
 
+  const resetForm = () => {
+    setEditingId(null);
+    setCode("");
+    setDiscountType("flat");
+    setDiscountAmount("");
+    setDiscountPercent("");
+    setMaxDiscount("");
+    setMinAmount("");
+  };
+
+  const handleEdit = (coupon: Coupon) => {
+    setEditingId(coupon._id != null ? String(coupon._id) : null);
+    setCode(coupon.code);
+    setDiscountType(coupon.discountType);
+    setDiscountAmount(coupon.discountAmount ? String(coupon.discountAmount) : "");
+    setDiscountPercent(coupon.discountPercent ? String(coupon.discountPercent) : "");
+    setMaxDiscount(coupon.maxDiscount ? String(coupon.maxDiscount) : "");
+    setMinAmount(coupon.minAmount ? String(coupon.minAmount) : "");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const payload = {
+        ...(editingId ? { id: editingId } : {}),
+        code: code.trim(),
+        discountType,
+        discountAmount: discountType === "flat" ? Number(discountAmount) || 0 : 0,
+        discountPercent: discountType === "percent" ? Number(discountPercent) || 0 : 0,
+        maxDiscount: discountType === "percent" ? Number(maxDiscount) || 0 : 0,
+        minAmount: Number(minAmount) || 0,
+        active: true,
+      };
       await fetch("/api/admin/coupons", {
-        method: "POST",
+        method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code.trim(),
-          discountType,
-          discountAmount: discountType === "flat" ? Number(discountAmount) || 0 : 0,
-          discountPercent: discountType === "percent" ? Number(discountPercent) || 0 : 0,
-          maxDiscount: discountType === "percent" ? Number(maxDiscount) || 0 : 0,
-          active: true,
-        }),
+        body: JSON.stringify(payload),
       });
-      setCode("");
-      setDiscountType("flat");
-      setDiscountAmount("");
-      setDiscountPercent("");
-      setMaxDiscount("");
+      resetForm();
       fetchCoupons();
     } catch (err) {
-      console.error("Failed to create coupon:", err);
+      console.error("Failed to save coupon:", err);
     }
     setLoading(false);
   };
@@ -67,7 +88,20 @@ export default function AdminCouponsPage() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="bg-white rounded-xl shadow-lg p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">Add Coupon</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-800">
+            {editingId ? "Edit Coupon" : "Add Coupon"}
+          </h2>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="text-sm text-gray-500 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -158,12 +192,27 @@ export default function AdminCouponsPage() {
               </div>
             </div>
           )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Minimum Order Amount (₹)
+            </label>
+            <input
+              type="number"
+              value={minAmount}
+              onChange={(e) => setMinAmount(e.target.value)}
+              placeholder="e.g., 500 (0 = no minimum)"
+              min={0}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+            />
+          </div>
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
           >
-            {loading ? "Adding..." : "Add Coupon"}
+            {loading
+              ? (editingId ? "Saving..." : "Adding...")
+              : (editingId ? "Save Changes" : "Add Coupon")}
           </button>
         </form>
       </div>
@@ -187,6 +236,7 @@ export default function AdminCouponsPage() {
                     {coupon.discountType === "percent"
                       ? `${coupon.discountPercent}% off upto ₹${coupon.maxDiscount}`
                       : `₹${coupon.discountAmount} off`}
+                    {coupon.minAmount ? ` · Min ₹${coupon.minAmount}` : ""}
                   </p>
                   <span
                     className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${
@@ -198,27 +248,48 @@ export default function AdminCouponsPage() {
                     {coupon.active ? "Active" : "Inactive"}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleDelete(coupon._id != null ? String(coupon._id) : "")
-                  }
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(coupon)}
+                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleDelete(coupon._id != null ? String(coupon._id) : "")
+                    }
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))
           )}

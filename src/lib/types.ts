@@ -39,6 +39,7 @@ export interface Coupon {
   discountAmount: number;
   discountPercent?: number;
   maxDiscount?: number;
+  minAmount?: number;
   active: boolean;
   createdAt?: Date;
 }

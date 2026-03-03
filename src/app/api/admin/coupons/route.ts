@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
       code: data.code.trim().toUpperCase(),
       discountType,
       active: data.active !== false,
+      minAmount: Number(data.minAmount) || 0,
     };
 
     if (discountType === "percent") {
@@ -46,6 +47,49 @@ export async function POST(request: NextRequest) {
     console.error("Error creating coupon:", error);
     return NextResponse.json(
       { success: false, message: "Failed to create coupon" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { db } = await connectToDatabase();
+    const data = await request.json();
+    const { id, ...fields } = data;
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "id required" },
+        { status: 400 }
+      );
+    }
+
+    const discountType = fields.discountType === "percent" ? "percent" : "flat";
+    const update: Record<string, unknown> = {
+      code: String(fields.code ?? "").trim().toUpperCase(),
+      discountType,
+      active: fields.active !== false,
+      minAmount: Number(fields.minAmount) || 0,
+    };
+
+    if (discountType === "percent") {
+      update.discountPercent = Number(fields.discountPercent) || 0;
+      update.maxDiscount = Number(fields.maxDiscount) || 0;
+      update.discountAmount = 0;
+    } else {
+      update.discountAmount = Number(fields.discountAmount) || 0;
+      update.discountPercent = 0;
+      update.maxDiscount = 0;
+    }
+
+    await db
+      .collection("coupons")
+      .updateOne({ _id: new ObjectId(id) }, { $set: update });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error updating coupon:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to update coupon" },
       { status: 500 }
     );
   }

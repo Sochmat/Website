@@ -16,6 +16,7 @@ export async function GET() {
         discountType: c.discountType ?? "flat",
         discountAmount: c.discountAmount ?? 0,
         discountPercent: c.discountPercent ?? 0,
+        minAmount: c.minAmount ?? 0,
         maxDiscount: c.maxDiscount ?? 0,
       })),
     });
@@ -23,7 +24,7 @@ export async function GET() {
     console.error("Error fetching coupons:", error);
     return NextResponse.json(
       { success: false, message: "Failed to fetch coupons" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

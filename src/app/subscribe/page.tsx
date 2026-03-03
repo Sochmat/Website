@@ -26,6 +26,7 @@ interface SubscribeProduct {
   discount?: string;
   image: string;
   isVeg: boolean;
+  type?: string;
 }
 
 function SubscribeContent() {
@@ -82,6 +83,7 @@ function SubscribeContent() {
             discount: item.discount,
             image: item.image,
             isVeg: item.isVeg,
+            type: item.type,
           });
         }
       }
@@ -229,7 +231,8 @@ function SubscribeContent() {
     }
     setPlacingSubscription(true);
     try {
-      const multiplier = duration === "week" ? 7 : 30;
+      const days = duration === "week" ? 7 : 30;
+      const multiplier = frequency === "alternate" ? Math.ceil(days / 2) : days;
       const basePrice = product.price * multiplier;
       const gstAmount = Math.round(basePrice * 0.05);
       const finalAmount = basePrice + gstAmount;
@@ -239,7 +242,7 @@ function SubscribeContent() {
 
       const subscriptionPayload = {
         productId: product.id,
-        quantityOption,
+        ...(product.type !== "food" ? { quantityOption } : {}),
         deliveryDate,
         deliveryTime,
         duration,
@@ -362,7 +365,8 @@ function SubscribeContent() {
         )
       : 0;
 
-  const subscriptionMultiplier = duration === "week" ? 7 : 30;
+  const totalDays = duration === "week" ? 7 : 30;
+  const subscriptionMultiplier = frequency === "alternate" ? Math.ceil(totalDays / 2) : totalDays;
   const subscriptionBasePrice = product.price * subscriptionMultiplier;
   const subscriptionGst = Math.round(subscriptionBasePrice * 0.05);
   const subscriptionFinalPrice = subscriptionBasePrice + subscriptionGst;
@@ -435,23 +439,25 @@ function SubscribeContent() {
               )}
             </div>
           </div>
-          <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
-            {(["300ml", "500ml"] as const).map((opt) => (
-              <label
-                key={opt}
-                className="flex items-center gap-2 cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name="quantity"
-                  checked={quantityOption === opt}
-                  onChange={() => setQuantityOption(opt)}
-                  className="w-4 h-4 text-[#f56215] focus:ring-[#f56215]"
-                />
-                <span className="text-sm font-medium text-[#111]">{opt}</span>
-              </label>
-            ))}
-          </div>
+          {product.type !== "food" && (
+            <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
+              {(["300ml", "500ml"] as const).map((opt) => (
+                <label
+                  key={opt}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name="quantity"
+                    checked={quantityOption === opt}
+                    onChange={() => setQuantityOption(opt)}
+                    className="w-4 h-4 text-[#f56215] focus:ring-[#f56215]"
+                  />
+                  <span className="text-sm font-medium text-[#111]">{opt}</span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -593,7 +599,7 @@ function SubscribeContent() {
               </p>
               {product.originalPrice > product.price && (
                 <p className="text-[#009940] text-sm mt-0.5">
-                  ₹{(product.originalPrice - product.price) * subscriptionMultiplier} saved!
+                  ₹{(product.originalPrice - product.price) * subscriptionMultiplier} saved
                 </p>
               )}
             </div>
@@ -601,7 +607,7 @@ function SubscribeContent() {
           <div className="border-t border-gray-100 pt-3 space-y-2">
             <div className="flex justify-between text-sm text-[#666]">
               <span>
-                ₹{product.price} × {subscriptionMultiplier} ({duration === "week" ? "week" : "month"})
+                ₹{product.price} × {subscriptionMultiplier} deliveries
               </span>
               <span>₹{subscriptionBasePrice}</span>
             </div>
