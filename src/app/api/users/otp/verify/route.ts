@@ -7,11 +7,13 @@ export async function POST(request: NextRequest) {
     const phone = String(body.phone ?? "")
       .trim()
       .replace(/\D/g, "");
+    const email = String(body.email ?? "").trim().toLowerCase();
     const otp = String(body.otp ?? "").trim();
-    
-    if (!phone) {
+    const isEmailFlow = Boolean(email);
+
+    if (!phone && !email) {
       return NextResponse.json(
-        { success: false, message: "Phone number is required" },
+        { success: false, message: "Phone number or email is required" },
         { status: 400 }
       );
     }
@@ -24,8 +26,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { db } = await connectToDatabase();
-    const otpRecord = await db.collection("otps").findOne({ phone });
-    
+    const query = isEmailFlow ? { email } : { phone };
+    const otpRecord = await db.collection("otps").findOne(query);
+
     if (!otpRecord) {
       return NextResponse.json(
         { success: false, message: "OTP not found. Please request a new OTP." },
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (new Date() > otpRecord.expiresAt) {
-      await db.collection("otps").deleteOne({ phone });
+      await db.collection("otps").deleteOne(query);
       return NextResponse.json(
         { success: false, message: "OTP has expired. Please request a new one." },
         { status: 400 }
@@ -48,8 +51,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await db.collection("users").findOne({ phone });
-    
+    const user = await db.collection("users").findOne(query);
+
     if (!user) {
       return NextResponse.json(
         { success: false, message: "User not found" },
@@ -57,7 +60,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await db.collection("otps").deleteOne({ phone });
+    await db.collection("otps").deleteOne(query);
 
     const token = Buffer.from(`${user._id}:${Date.now()}`).toString("base64");
     
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
       token,
       user: {
         _id: user._id,
-        phone: user.phone,
+        phone: user.phone ?? "",
         name: user.name,
         email: user.email,
         address: user.address,

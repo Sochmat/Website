@@ -10,12 +10,18 @@ import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import AddAddressSheet from "@/components/AddAddressSheet";
+import CouponSelector, { type AppliedCoupon } from "@/components/CouponSelector";
 import { useRouter } from "next/navigation";
-import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
+import {
+  distanceFromBusinessKm,
+  isWithinServiceArea,
+} from "@/helpers/distance";
 import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
-import { handleRazorpayPayment } from "@/helpers/razorpay";
+import { handleRazorpayPayment, type UpiApp } from "@/helpers/razorpay";
+import PaymentSheet from "@/components/PaymentSheet";
+import { ArrowRightIcon } from "lucide-react";
 
 export default function OrderPage() {
   const {
@@ -31,19 +37,24 @@ export default function OrderPage() {
   const { distanceFromStoreKm, isServiceable } = useLocation();
   const { user, isAuthenticated, setUser } = useUser();
   const { openLoginPopup } = useLoginPopup();
-  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(
+    null,
+  );
   const [localAddresses, setLocalAddresses] = useState<UserAddress[]>([]);
   const [showSelectAddress, setShowSelectAddress] = useState(false);
   const [showAddAddress, setShowAddAddress] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
-  const [coupons, setCoupons] = useState<
-    { code: string; discountAmount: number }[]
-  >([]);
-  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
+    null,
+  );
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">(
+    "razorpay",
+  );
+  const [selectedUpiApp, setSelectedUpiApp] = useState<UpiApp | null>(null);
+  const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -79,22 +90,6 @@ export default function OrderPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/coupons")
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled && data.success && Array.isArray(data.coupons)) {
-          setCoupons(data.coupons);
-          setAppliedCoupon((prev) => prev || (data.coupons[0]?.code ?? null));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const addresses = isAuthenticated ? (user?.addresses ?? []) : localAddresses;
 
   useEffect(() => {
@@ -115,9 +110,18 @@ export default function OrderPage() {
   }, [isAuthenticated, selectedAddress]);
 
   useEffect(() => {
-    if (isAuthenticated && user?.addresses && user.addresses.length > 0 && !selectedAddress) {
+    if (
+      isAuthenticated &&
+      user?.addresses &&
+      user.addresses.length > 0 &&
+      !selectedAddress
+    ) {
       setSelectedAddress(user.addresses[0]);
-    } else if (!isAuthenticated && localAddresses.length > 0 && !selectedAddress) {
+    } else if (
+      !isAuthenticated &&
+      localAddresses.length > 0 &&
+      !selectedAddress
+    ) {
       setSelectedAddress(localAddresses[0]);
     }
   }, [isAuthenticated, user?.addresses, localAddresses, selectedAddress]);
@@ -180,7 +184,10 @@ export default function OrderPage() {
       setEditingAddress(null);
       message.success(isEditing ? "Address updated" : "Address saved");
       if (typeof window !== "undefined") {
-        localStorage.setItem("order_addresses", JSON.stringify(updatedAddresses));
+        localStorage.setItem(
+          "order_addresses",
+          JSON.stringify(updatedAddresses),
+        );
       }
     }
   };
@@ -190,6 +197,8 @@ export default function OrderPage() {
     setShowSelectAddress(false);
     setShowAddAddress(true);
   };
+
+  console.log({ selectedAddress, isAuthenticated, user });
 
   const handlePlaceOrder = async () => {
     if (!selectedAddress) {
@@ -210,8 +219,7 @@ export default function OrderPage() {
     }
     setPlacingOrder(true);
     try {
-      const applied = coupons.find((c) => c.code === appliedCoupon);
-      const couponDiscountAmount = applied?.discountAmount ?? 0;
+      const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       const gstAmount = Math.round((totalPrice - couponDiscountAmount) * 0.05);
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
 
@@ -235,7 +243,7 @@ export default function OrderPage() {
         discountAmount: couponDiscountAmount,
         tax: gstAmount,
         paymentMethod: paymentMethod,
-        couponCode: appliedCoupon ?? undefined,
+        couponCode: appliedCoupon?.code ?? undefined,
       };
 
       const res = await fetch("/api/orders", {
@@ -256,11 +264,18 @@ export default function OrderPage() {
           name: "Sochmat",
           description: `Order #${data.order?.orderNumber || ""}`,
           prefill: {
-            name: (isAuthenticated ? user?.name : null) ?? selectedAddress.receiverName ?? "",
-            email: user?.email ?? "",
-            contact: (isAuthenticated ? user?.phone : null) ?? selectedAddress.receiverPhone ?? "",
+            name:
+              (isAuthenticated ? user?.name : null) ??
+              selectedAddress.receiverName ??
+              "",
+            email: user?.email ?? "vectorharsh@gmail.com",
+            contact:
+              (isAuthenticated ? user?.phone : null) ??
+              selectedAddress.receiverPhone ??
+              "",
           },
           orderId: data.order?._id,
+          upiApp: selectedUpiApp ?? undefined,
           onSuccess: () => {
             clearCart();
             router.push(
@@ -269,6 +284,7 @@ export default function OrderPage() {
           },
           onError: (error) => {
             message.error(error.message || "Payment failed");
+            console.error(error);
             setPlacingOrder(false);
           },
         });
@@ -280,6 +296,7 @@ export default function OrderPage() {
       }
     } catch (error: any) {
       message.error(error.message || "Failed to place order");
+      console.error(error);
     } finally {
       if (paymentMethod !== "razorpay") {
         setPlacingOrder(false);
@@ -287,8 +304,7 @@ export default function OrderPage() {
     }
   };
 
-  const appliedCouponData = coupons.find((c) => c.code === appliedCoupon);
-  const couponDiscount = appliedCouponData?.discountAmount ?? 0;
+  const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const gst = Math.round((totalPrice - couponDiscount) * 0.05);
   const finalPrice = totalPrice - couponDiscount + gst;
 
@@ -390,15 +406,25 @@ export default function OrderPage() {
                 />
               </svg>
               <div>
-                <p className="font-semibold text-[#111] text-[15px]">Delivery at</p>
+                <p className="font-semibold text-[#111] text-[15px]">
+                  Delivery at
+                </p>
                 {!selectedAddress ? (
-                  <p className="text-sm text-[#737373] mt-1">Add delivery address</p>
+                  <p className="text-sm text-[#737373] mt-1">
+                    Add delivery address
+                  </p>
                 ) : (
                   <>
-                    <p className="text-sm text-[#111] mt-1">{selectedAddress.address}</p>
-                    <p className="text-sm font-semibold text-[#111] mt-0.5">{selectedAddress.pincode}</p>
+                    <p className="text-sm text-[#111] mt-1">
+                      {selectedAddress.address}
+                    </p>
+                    <p className="text-sm font-semibold text-[#111] mt-0.5">
+                      {selectedAddress.pincode}
+                    </p>
                     {selectedAddress.receiverName && (
-                      <p className="text-xs text-[#737373] mt-0.5">Deliver to: {selectedAddress.receiverName}</p>
+                      <p className="text-xs text-[#737373] mt-0.5">
+                        Deliver to: {selectedAddress.receiverName}
+                      </p>
                     )}
                   </>
                 )}
@@ -458,93 +484,7 @@ export default function OrderPage() {
           </div>
         )}
 
-        <div className="bg-white rounded-xl p-3 space-y-3">
-          {coupons.length > 0 ? (
-            coupons.map((coupon) => (
-              <div key={coupon.code} className="flex items-start gap-2">
-                <svg
-                  className="w-5 h-5 text-[#f56215] mt-1 shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                  />
-                </svg>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium text-sm text-black">
-                      Save ₹{coupon.discountAmount} with &quot;{coupon.code}
-                      &quot;
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setAppliedCoupon(coupon.code)}
-                      className="bg-[rgba(245,98,21,0.06)] border border-[#f56215] text-[#f56215] text-sm font-medium px-3 py-1 rounded-md"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-gray-500">No coupons available</p>
-          )}
-        </div>
-
-        {appliedCoupon && (
-          <div className="bg-white rounded-xl p-3">
-            <div className="flex items-start gap-2">
-              <svg
-                className="w-5 h-5 text-[#00a86e] mt-1 shrink-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                />
-              </svg>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-sm text-black">
-                    Save ₹{couponDiscount} with "{appliedCoupon}"
-                  </p>
-                  <button
-                    onClick={() => setAppliedCoupon(null)}
-                    className="text-[#f56215] text-sm font-medium py-1"
-                  >
-                    Remove
-                  </button>
-                </div>
-                <button className="flex items-center gap-0.5 text-[#666] text-xs mt-1">
-                  View all coupons
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <CouponSelector totalPrice={totalPrice} onCouponChange={setAppliedCoupon} />
 
         <div className="bg-white rounded-xl p-3">
           <button
@@ -622,18 +562,22 @@ export default function OrderPage() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex flex-col">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex flex-col z-50">
         <div className="bg-[#E1EBE8] rounded-t-2xl pt-2 pb-5 text-center">
           <span className="text-[#02583f] font-semibold text-sm">
             {totalKcal} kcal | {totalProtein}g Protein
           </span>
         </div>
         <div className="bg-white px-6 py-5 flex items-center justify-between rounded-t-2xl -mt-3">
-          <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setShowPaymentSheet(true)}
+            className="flex flex-col"
+          >
             <div className="flex items-center gap-1.5">
-              <span className="text-[#222] text-sm">Payment Type</span>
+              <span className="text-[#222] text-sm">Payment</span>
               <svg
-                className="w-5 h-5 text-[#666] -rotate-90"
+                className="w-4 h-4 text-[#666]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -642,35 +586,23 @@ export default function OrderPage() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 5l7 7-7 7"
+                  d="M5 15l7-7 7 7"
                 />
               </svg>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("cash")}
-                className={`px-3 py-1 rounded-md text-sm font-medium ${
-                  paymentMethod === "cash"
-                    ? "bg-[#f56215] text-white"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                Cash
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod("razorpay")}
-                className={`px-3 py-1 rounded-md text-sm font-medium ${
-                  paymentMethod === "razorpay"
-                    ? "bg-[#f56215] text-white"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                Online
-              </button>
-            </div>
-          </div>
+            <span className="text-[#f56215] text-sm font-semibold text-left">
+              {paymentMethod === "cash"
+                ? "Cash on Delivery"
+                : selectedUpiApp
+                  ? {
+                      google_pay: "Google Pay",
+                      phonepe: "PhonePe",
+                      paytm: "Paytm",
+                      bhim: "BHIM",
+                    }[selectedUpiApp]
+                  : "UPI"}
+            </span>
+          </button>
           <button
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
@@ -683,19 +615,7 @@ export default function OrderPage() {
               </span>
               <span className="font-medium text-sm">₹{finalPrice}</span>
             </div>
-            <svg
-              className="w-5 h-5 text-white -rotate-90"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
+            <ArrowRightIcon className="w-5 h-5 text-white" />
           </button>
         </div>
       </div>
@@ -727,6 +647,23 @@ export default function OrderPage() {
         }}
         onSave={handleSaveNewAddress}
         editAddress={editingAddress}
+      />
+
+      <PaymentSheet
+        open={showPaymentSheet}
+        selectedUpiApp={selectedUpiApp}
+        paymentMethod={paymentMethod}
+        onSelectUpi={(app) => {
+          setSelectedUpiApp(app);
+          setPaymentMethod("razorpay");
+          setShowPaymentSheet(false);
+        }}
+        onSelectCod={() => {
+          setSelectedUpiApp(null);
+          setPaymentMethod("cash");
+          setShowPaymentSheet(false);
+        }}
+        onClose={() => setShowPaymentSheet(false)}
       />
     </main>
   );

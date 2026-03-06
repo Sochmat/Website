@@ -37,22 +37,9 @@ export default function CartItem({ item }: CartItemProps) {
             </span>
           </div>
         </div>
-        <button className="flex items-center gap-0.5 text-[#111] text-xs">
+        {/* <button className="flex items-center gap-0.5 text-[#111] text-xs">
           Edit
-          <svg
-            className="w-4 h-4 text-[#666]"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
+        </button> */}
       </div>
 
       <div className="flex flex-col gap-2 items-end">

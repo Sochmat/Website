@@ -127,7 +127,7 @@ export default function Menu({
               type: c.type,
             })),
           );
-          setActiveCategory(null);
+          setActiveCategory(data.categories[0]?.id ?? null);
         }
       } catch {
         if (!cancelled) setError("Failed to load menu");
@@ -188,7 +188,7 @@ export default function Menu({
         </button>
       </div>
 
-      {linkCategoriesToMenu ? (
+      {/* {linkCategoriesToMenu ? (
         <Link
           href="/menu"
           className="flex gap-4 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide"
@@ -221,14 +221,14 @@ export default function Menu({
               </div>
             ))}
         </Link>
-      ) : (
-        <CategoryFilter
-          activeTab={activeTab}
-          categories={categories}
-          activeCategory={activeCategory}
-          onCategoryChange={setActiveCategory}
-        />
-      )}
+      ) : ( */}
+      <CategoryFilter
+        activeTab={activeTab}
+        categories={categories}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+      />
+      {/* )} */}
 
       <div className="py-4 flex flex-col gap-5">
         {loading ? (

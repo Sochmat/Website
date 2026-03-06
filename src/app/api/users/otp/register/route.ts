@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
+import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -12,31 +13,36 @@ export async function POST(request: NextRequest) {
     const phone = String(body.phone ?? "")
       .trim()
       .replace(/\D/g, "");
+    const email = String(body.email ?? "").trim().toLowerCase();
     const name = body.name ? String(body.name).trim() : "";
-    
-    if (!phone) {
+    const isEmailFlow = Boolean(email);
+
+    if (!phone && !email) {
       return NextResponse.json(
-        { success: false, message: "Phone number is required" },
+        { success: false, message: "Phone number or email is required" },
         { status: 400 }
       );
     }
 
     const { db } = await connectToDatabase();
-    
-    let user = await db.collection("users").findOne({ phone });
-    
+    const query = isEmailFlow ? { email } : { phone };
+
+    let user = await db.collection("users").findOne(query);
+
     if (user && name) {
       await db.collection("users").updateOne(
-        { phone },
+        query,
         { $set: { name, updatedAt: new Date() } }
       );
     } else if (!user) {
-      const newUser = {
-        phone,
+      const newUser: Record<string, unknown> = {
+        phone: isEmailFlow ? "" : phone,
         name: name || "",
+        addresses: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      if (isEmailFlow) newUser.email = email;
       const result = await db.collection("users").insertOne(newUser);
       user = { _id: result.insertedId, ...newUser };
     }
@@ -44,28 +50,45 @@ export async function POST(request: NextRequest) {
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+    const otpSet: Record<string, unknown> = {
+      otp,
+      channel: isEmailFlow ? "email" : "sms",
+      expiresAt,
+      createdAt: new Date(),
+    };
+    if (isEmailFlow) otpSet.email = email;
+    else otpSet.phone = phone;
+
     await db.collection("otps").updateOne(
-      { phone },
-      {
-        $set: {
-          otp,
-          expiresAt,
-          createdAt: new Date(),
-        },
-      },
+      query,
+      { $set: otpSet },
       { upsert: true }
     );
 
-    if (isKaleyraConfigured()) {
-      const result = await sendOTPSMS(phone, otp);
-      if (!result.success) {
-        return NextResponse.json(
-          { success: false, message: result.error || "Failed to send OTP" },
-          { status: 502 }
-        );
+    if (isEmailFlow) {
+      if (isEmailConfigured()) {
+        const result = await sendOTPEmail(email, otp);
+        if (!result.success) {
+          return NextResponse.json(
+            { success: false, message: result.error || "Failed to send OTP email" },
+            { status: 502 }
+          );
+        }
+      } else {
+        console.log(`Email OTP for ${email}: ${otp}`);
       }
     } else {
-      console.log(`OTP for ${phone}: ${otp}`);
+      if (isKaleyraConfigured()) {
+        const result = await sendOTPSMS(phone, otp);
+        if (!result.success) {
+          return NextResponse.json(
+            { success: false, message: result.error || "Failed to send OTP" },
+            { status: 502 }
+          );
+        }
+      } else {
+        console.log(`SMS OTP for ${phone}: ${otp}`);
+      }
     }
 
     return NextResponse.json({

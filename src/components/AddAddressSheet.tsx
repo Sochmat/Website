@@ -39,6 +39,7 @@ export default function AddAddressSheet({
     () => editAddress?.receiverPhone ?? "",
   );
   const [locationLoading, setLocationLoading] = useState(false);
+  const [pickupAtStore, setPickupAtStore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [locationData, setLocationData] = useState<{
     lat: number;
@@ -103,6 +104,7 @@ export default function AddAddressSheet({
     });
     // if (!locality) {
     setLocality("Store Location, Gurgaon");
+    setPickupAtStore(true);
     // }
   };
 
@@ -192,13 +194,15 @@ export default function AddAddressSheet({
             </h2>
           </div>
 
-          <input
-            type="text"
-            placeholder="E.g. Floor, Flat no., Tower"
-            value={flat}
-            onChange={(e) => setFlat(e.target.value)}
-            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
-          />
+          {!pickupAtStore && (
+            <input
+              type="text"
+              placeholder="E.g. Floor, Flat no., Tower"
+              value={flat}
+              onChange={(e) => setFlat(e.target.value)}
+              className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
+            />
+          )}
           <input
             type="text"
             placeholder="E.g. Office Building, Locality Name"
@@ -253,7 +257,7 @@ export default function AddAddressSheet({
                   d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
                 />
               </svg>
-              Store
+              Pick up at store
             </button>
           </div>
 
