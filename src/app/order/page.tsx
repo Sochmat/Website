@@ -10,7 +10,9 @@ import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import AddAddressSheet from "@/components/AddAddressSheet";
-import CouponSelector, { type AppliedCoupon } from "@/components/CouponSelector";
+import CouponSelector, {
+  type AppliedCoupon,
+} from "@/components/CouponSelector";
 import { useRouter } from "next/navigation";
 import {
   distanceFromBusinessKm,
@@ -46,7 +48,9 @@ export default function OrderPage() {
   const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
     null,
   );
-  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(
+    null,
+  );
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
@@ -474,7 +478,7 @@ export default function OrderPage() {
         {recommendedProducts.length > 0 && (
           <div className="bg-white rounded-xl p-3">
             <p className="font-medium text-[13px] text-black mb-2.5">
-              Recommended Add Ons
+              Recommended Items
             </p>
             <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
               {recommendedProducts.map((product) => (
@@ -484,7 +488,10 @@ export default function OrderPage() {
           </div>
         )}
 
-        <CouponSelector totalPrice={totalPrice} onCouponChange={setAppliedCoupon} />
+        <CouponSelector
+          totalPrice={totalPrice}
+          onCouponChange={setAppliedCoupon}
+        />
 
         <div className="bg-white rounded-xl p-3">
           <button
