@@ -68,9 +68,17 @@ async function verifyPayment(
   return res.json();
 }
 
+/** Razorpay UPI intent app names (see UPI Intent MWeb docs). */
+const UPI_APP_TO_RAZORPAY: Record<UpiApp, string> = {
+  google_pay: "gpay",
+  phonepe: "phonepe",
+  paytm: "paytm",
+  bhim: "bhim",
+};
+
 /**
  * UPI Intent flow via Razorpay Custom Checkout (razorpay.js).
- * Opens the UPI app directly on the user's phone; Razorpay monitors payment status.
+ * Opens the selected UPI app directly; no Razorpay app-selection sheet.
  */
 async function handleUpiIntent(options: RazorpayOptions, order: any) {
   const loaded = await loadScript(CUSTOM_SDK);
@@ -99,22 +107,23 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
   });
 
   rzp.on("payment.error", (resp: any) => {
-    const desc = resp;
-    resp?.error?.description ??
+    const desc =
+      resp?.error?.description ??
       resp?.detail?.error?.description ??
       "Payment failed";
     options.onError?.(desc);
   });
 
-  rzp.createPayment({
+  const paymentData = {
     amount: order.amount,
     currency: order.currency,
     order_id: order.id,
     email: options.prefill?.email || "",
     contact: options.prefill?.contact || "",
     method: "upi",
-    upi: { flow: "intent" },
-  });
+  };
+  const app = options.upiApp ? UPI_APP_TO_RAZORPAY[options.upiApp] : "any";
+  rzp.createPayment(paymentData, { app });
 }
 
 /**
@@ -165,8 +174,9 @@ export const handleRazorpayPayment = async (options: RazorpayOptions) => {
 
   const isSecureOrigin =
     typeof window !== "undefined" && window.location.protocol === "https:";
+  const useUpiIntent = options.upiApp && isSecureOrigin;
 
-  if (options.upiApp && isSecureOrigin) {
+  if (useUpiIntent) {
     await handleUpiIntent(options, order);
   } else {
     await handleStandardCheckout(options, order);
