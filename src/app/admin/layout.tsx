@@ -56,6 +56,22 @@ export default function AdminLayout({
             Menu
           </Link>
           <Link
+            href="/admin/banner"
+            className={`font-medium ${
+              pathname === "/admin/banner" ? "underline" : "hover:underline"
+            }`}
+          >
+            Banner
+          </Link>
+          <Link
+            href="/admin/tiles"
+            className={`font-medium ${
+              pathname === "/admin/tiles" ? "underline" : "hover:underline"
+            }`}
+          >
+            Tiles
+          </Link>
+          <Link
             href="/admin/coupons"
             className={`font-medium ${
               pathname === "/admin/coupons" ? "underline" : "hover:underline"
