@@ -11,6 +11,10 @@ export interface MenuItem {
   rating?: number;
   reviews?: string;
   badge?: string | null;
+  description?: string;
+  fiber?: number;
+  carbs?: number;
+  ingredients?: string[];
   image: string;
   isVeg: boolean;
   isAddOn?: boolean;
@@ -89,12 +93,13 @@ export interface UserAddress {
   receiverPhone?: string;
 }
 
-export interface FeaturedCard {
+export interface MealCard {
   _id?: ObjectId | string;
   title: string;
   subtitle: string;
-  image: string;
+  images: string[];
   startingPrice: number;
+  category?: string;
   link?: string;
   order: number;
   active: boolean;

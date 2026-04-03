@@ -2,15 +2,12 @@
 
 import Image from "next/image";
 import CartBar from "@/components/CartBar";
-import FeaturedMeal from "@/components/FeaturedMeal";
 import ExpandableMenu from "@/components/ExpandableMenu";
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoryTiles from "@/components/CategoryTiles";
+import MealCards from "@/components/MealCards";
 import { useLocation } from "@/context/LocationContext";
 import { getCurrentLocation } from "@/helpers/currentLocation";
-
-const imgCoreValuesBg =
-  "https://www.figma.com/api/mcp/asset/13a72c05-0e57-45af-979e-a58004f76dcb";
 
 export default function Home() {
   const { location, setLocation } = useLocation();
@@ -23,38 +20,6 @@ export default function Home() {
       // ignore
     }
   };
-
-  const coreValues = [
-    {
-      image: "/body.svg",
-      title: "High-Protein, Purpose-Driven Nutrition",
-      description:
-        "Food that provide meaningful protein that supports strength, recovery, and everyday energy.",
-    },
-    {
-      image: "/noSugar.svg",
-      title: "No Added Sugar",
-      description: "Sweetness comes naturally from real ingredients.",
-    },
-    {
-      image: "/clean.svg",
-      title: "Clean & Natural Ingredients",
-      description:
-        "Only simple, recognizable ingredients. No artificial colors, flavors, or unnecessary additives.",
-    },
-    {
-      image: "/customer.svg",
-      title: "Customer First Approach",
-      description:
-        "We listen, improve, and build our products around real customer needs, feedback, and lifestyles.",
-    },
-    {
-      image: "/balanced.svg",
-      title: "Balanced, Not Extreme",
-      description:
-        "Food that supports a sustainable, long-term healthy lifestyle, not crash diets or fads.",
-    },
-  ];
 
   const marqueeItems = [
     "High Protein",
@@ -79,24 +44,69 @@ export default function Home() {
         onClick={handleLocationClick}
         className="mx-4 mt-4 w-[calc(100%-32px)] flex items-center gap-2 border border-[#595959] rounded-[50px] px-4 py-2.5 text-left cursor-pointer hover:border-[#02583f] transition-colors"
       >
-        <svg className="w-4 h-4 text-[#595959] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        <svg
+          className="w-4 h-4 text-[#595959] shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
         </svg>
         <span className="text-[#595959] text-sm flex-1 truncate">
           {location?.address ? location.address : "Select Location"}
         </span>
-        <svg className="w-4 h-4 text-[#595959] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        <svg
+          className="w-4 h-4 text-[#595959] shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+          />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+          />
         </svg>
       </button>
 
       {/* Hero Banner Carousel */}
       <HeroCarousel />
+      {/* <div className="bg-[#f56215] py-4 overflow-hidden mt-2">
+        <div className="flex animate-marquee whitespace-nowrap">
+          {[...marqueeItems, ...marqueeItems].map((item, index) => (
+            <div key={index} className="flex items-center gap-2 mx-2">
+              <span className="text-white font-semibold text-lg uppercase tracking-tight">
+                {item}
+              </span>
+              <svg
+                className="w-4 h-4 text-white rotate-45"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+              </svg>
+            </div>
+          ))}
+        </div>
+      </div> */}
 
       {/* Also Available On */}
       <div className="flex items-center justify-center gap-5 bg-white border border-[#d9d9d9] rounded-xl p-4 mx-4 mt-4 shadow-sm">
-        <span className="text-black font-medium text-sm">Also available on</span>
+        <span className="text-black font-medium text-sm">
+          Also available on
+        </span>
         <div className="flex items-center gap-4">
           <Image
             src="/zomato.svg"
@@ -117,72 +127,16 @@ export default function Home() {
           />
         </div>
       </div>
+      {/* Marquee */}
 
       {/* Category Tiles */}
       <CategoryTiles />
 
-      {/* Marquee */}
-      <div className="bg-[#f56215] py-4 overflow-hidden mt-6">
-        <div className="flex animate-marquee whitespace-nowrap">
-          {[...marqueeItems, ...marqueeItems].map((item, index) => (
-            <div key={index} className="flex items-center gap-2 mx-2">
-              <span className="text-white font-semibold text-lg uppercase tracking-tight">
-                {item}
-              </span>
-              <svg
-                className="w-4 h-4 text-white rotate-45"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Featured Meal */}
-      <FeaturedMeal />
+      {/* Meal Cards */}
+      <MealCards />
 
       {/* Core Values Section */}
-      <div className="relative bg-[#02583f] min-h-[700px]">
-        <div className="absolute inset-0 mix-blend-multiply opacity-30">
-          <Image
-            src={imgCoreValuesBg}
-            alt=""
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        </div>
-        <div className="relative z-10 px-5 py-16">
-          <h2 className="text-white text-5xl text-center font-bold uppercase tracking-wider mb-12">
-            CORE VALUES
-          </h2>
-          <div className="flex flex-col gap-6">
-            {coreValues.map((value, index) => (
-              <div key={index} className="flex gap-3">
-                <div className="w-7 h-7 shrink-0">
-                  <Image
-                    src={value.image}
-                    alt=""
-                    width={28}
-                    height={28}
-                    className="object-contain"
-                    unoptimized
-                  />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <h3 className="text-[#9eea01] text-base">{value.title}</h3>
-                  <p className="text-white text-sm font-light leading-5">
-                    {value.description}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* <CoreValues /> */}
 
       {/* Footer */}
       <footer className="bg-[#f56215] px-5 py-16">
@@ -205,7 +159,10 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col items-center gap-4">
-          <p className="text-white text-xl uppercase tracking-wider text-center" style={{ fontFamily: "Squada One, sans-serif" }}>
+          <p
+            className="text-white text-xl uppercase tracking-wider text-center"
+            style={{ fontFamily: "Squada One, sans-serif" }}
+          >
             Follow The Healthy!
           </p>
           <div className="flex items-center gap-6">

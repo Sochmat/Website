@@ -52,6 +52,10 @@ function mapApiItemToProduct(item: {
   rating?: number;
   reviews?: string;
   badge?: string | null;
+  description?: string;
+  fiber?: number;
+  carbs?: number;
+  ingredients?: string[];
   image: string;
   isVeg: boolean;
   category?: string;
@@ -71,6 +75,10 @@ function mapApiItemToProduct(item: {
     rating: item.rating ?? 0,
     reviews: item.reviews ?? "",
     badge: item.badge ?? null,
+    description: item.description ?? "",
+    fiber: item.fiber ?? 0,
+    carbs: item.carbs ?? 0,
+    ingredients: item.ingredients ?? [],
     image: item.image,
     isVeg: item.isVeg,
     category: item.category,
@@ -87,6 +95,8 @@ interface MenuProps {
   className?: string;
   showOnHomePage?: boolean;
   initialCategory?: "food" | "beverages";
+  initialActiveCategory?: string | null;
+  hideHeader?: boolean;
 }
 
 export default function Menu({
@@ -95,11 +105,13 @@ export default function Menu({
   className = "",
   showOnHomePage = false,
   initialCategory = "food",
+  initialActiveCategory = null,
+  hideHeader = false,
 }: MenuProps) {
   const [activeTab, setActiveTab] = useState<"food" | "beverages">(
     initialCategory,
   );
-  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(initialActiveCategory);
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,6 +128,7 @@ export default function Menu({
         const res = await fetch("/api/menu");
         const data = await res.json();
         if (cancelled || !data.success) return;
+        console.log({ data });
         const items = (data.items ?? []).map(mapApiItemToProduct);
         setProducts(items);
         if (data.categories?.length) {
@@ -127,7 +140,9 @@ export default function Menu({
               type: c.type,
             })),
           );
-          setActiveCategory(data.categories[0]?.id ?? null);
+          if (!initialActiveCategory) {
+            setActiveCategory(data.categories[0]?.id ?? null);
+          }
         }
       } catch {
         if (!cancelled) setError("Failed to load menu");
@@ -149,86 +164,52 @@ export default function Menu({
         p.category === activeCategory),
   );
 
-  const displayProducts =
-    listProducts.length > 0
-      ? listProducts
-      : products.filter((p) => (p.type ?? "food") === activeTab);
+  const displayProducts = listProducts;
 
   return (
     <div className={className}>
-      {showTitle && (
-        <div className="text-center mb-2">
-          <h2 className="font-squada text-[48px] text-[#02583f] uppercase tracking-tight">
-            Menu
-          </h2>
-          <p className="font-satisfy text-[#f56215] text-2xl -rotate-2">
-            Healthy Meals
-          </p>
-        </div>
+      {!hideHeader && (
+        <>
+          {showTitle && (
+            <div className="text-center mb-2">
+              <h2 className="font-squada text-[48px] text-[#02583f] uppercase tracking-tight">
+                Menu
+              </h2>
+              <p className="font-satisfy text-[#f56215] text-2xl -rotate-2">
+                Healthy Meals
+              </p>
+            </div>
+          )}
+
+          <div className="bg-[#f0f0f0] p-0.5 rounded-lg flex mt-6">
+            <button
+              onClick={() => setActiveTab("food")}
+              className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
+                activeTab === "food" ? "bg-[#02583f] text-white" : "text-[#111]"
+              }`}
+            >
+              Food
+            </button>
+            <button
+              onClick={() => setActiveTab("beverages")}
+              className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
+                activeTab === "beverages"
+                  ? "bg-[#02583f] text-white"
+                  : "text-[#111]"
+              }`}
+            >
+              Beverages
+            </button>
+          </div>
+
+          <CategoryFilter
+            activeTab={activeTab}
+            categories={categories}
+            activeCategory={activeCategory}
+            onCategoryChange={setActiveCategory}
+          />
+        </>
       )}
-
-      <div className="bg-[#f0f0f0] p-0.5 rounded-lg flex mt-6">
-        <button
-          onClick={() => setActiveTab("food")}
-          className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-            activeTab === "food" ? "bg-[#02583f] text-white" : "text-[#111]"
-          }`}
-        >
-          Food
-        </button>
-        <button
-          onClick={() => setActiveTab("beverages")}
-          className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-            activeTab === "beverages"
-              ? "bg-[#02583f] text-white"
-              : "text-[#111]"
-          }`}
-        >
-          Beverages
-        </button>
-      </div>
-
-      {/* {linkCategoriesToMenu ? (
-        <Link
-          href="/menu"
-          className="flex gap-4 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide"
-        >
-          {categories
-            .filter((cat) => cat.type === activeTab)
-            .map((cat) => (
-              <div key={cat.id} className="flex flex-col items-center shrink-0">
-                <div className="w-[78px] h-[78px] rounded-full border border-white p-1.5">
-                  <div
-                    className={`w-full h-full rounded-full flex items-center justify-center overflow-hidden ${
-                      activeCategory === cat.id
-                        ? "bg-[#02583f]"
-                        : "bg-[#f0f0f0]"
-                    }`}
-                  >
-                    <Image
-                      src={cat.image}
-                      alt={cat.name}
-                      width={70}
-                      height={70}
-                      className="object-cover scale-150 -translate-y-2"
-                      unoptimized
-                    />
-                  </div>
-                </div>
-                <span className="text-[#222] text-xs font-semibold mt-2">
-                  {cat.name}
-                </span>
-              </div>
-            ))}
-        </Link>
-      ) : ( */}
-      <CategoryFilter
-        activeTab={activeTab}
-        categories={categories}
-        activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
-      />
-      {/* )} */}
 
       <div className="py-4 flex flex-col gap-5">
         {loading ? (

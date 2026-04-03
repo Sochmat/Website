@@ -6,25 +6,31 @@ import { Select } from "antd";
 
 type FormState = Omit<
   MenuItem,
-  "price" | "originalPrice" | "kcal" | "protein" | "rating"
+  "price" | "originalPrice" | "kcal" | "protein" | "rating" | "fiber" | "carbs"
 > & {
   price: string;
   originalPrice: string;
   kcal: string;
   protein: string;
   rating: string;
+  fiber: string;
+  carbs: string;
 };
 
 const initialFormState: FormState = {
   name: "",
+  description: "",
   kcal: "",
   protein: "",
+  fiber: "",
+  carbs: "",
   price: "",
   originalPrice: "",
   discount: "",
   rating: "",
   reviews: "",
   badge: null,
+  ingredients: [],
   image: "",
   isVeg: true,
   isAddOn: false,
@@ -127,6 +133,8 @@ export default function AdminMenuPage() {
       discount: discount || undefined,
       kcal: Number(formData.kcal) || 0,
       protein: Number(formData.protein) || 0,
+      fiber: Number(formData.fiber) || 0,
+      carbs: Number(formData.carbs) || 0,
       rating: Number(formData.rating) || 0,
     };
   };
@@ -161,11 +169,15 @@ export default function AdminMenuPage() {
   const handleEdit = (item: MenuItem) => {
     setFormData({
       ...item,
+      description: item.description ?? "",
+      ingredients: item.ingredients ?? [],
       addOns: item.addOns ?? [],
       price: String(item.price),
       originalPrice: String(item.originalPrice),
       kcal: String(item.kcal),
       protein: String(item.protein),
+      fiber: String(item.fiber ?? 0),
+      carbs: String(item.carbs ?? 0),
       rating: String(item.rating),
     });
     setEditingId(item._id?.toString() || null);
@@ -252,6 +264,20 @@ export default function AdminMenuPage() {
                   required
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={formData.description || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, description: e.target.value })
+                  }
+                  placeholder="e.g., Protein-rich soya & potato patty pan toasted in olive oil with fresh veggies..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent resize-none"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Price (₹)
@@ -322,6 +348,32 @@ export default function AdminMenuPage() {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fiber (g)
+                </label>
+                <input
+                  type="number"
+                  value={formData.fiber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fiber: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Carbs (g)
+                </label>
+                <input
+                  type="number"
+                  value={formData.carbs}
+                  onChange={(e) =>
+                    setFormData({ ...formData, carbs: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                 />
               </div>
               <div>
@@ -438,6 +490,25 @@ export default function AdminMenuPage() {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
                   placeholder="Optional"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ingredients (one per line)
+                </label>
+                <textarea
+                  value={(formData.ingredients ?? []).join("\n")}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      ingredients: e.target.value
+                        .split("\n")
+                        .filter((line) => line.trim() !== ""),
+                    })
+                  }
+                  placeholder={"Harvest Gold Multigrain buns\nSoya patty\nLettuce"}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent resize-none"
                 />
               </div>
               <div className="col-span-2">

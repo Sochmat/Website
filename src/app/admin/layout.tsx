@@ -72,12 +72,12 @@ export default function AdminLayout({
             Tiles
           </Link>
           <Link
-            href="/admin/featured-cards"
+            href="/admin/meal-cards"
             className={`font-medium ${
-              pathname === "/admin/featured-cards" ? "underline" : "hover:underline"
+              pathname === "/admin/meal-cards" ? "underline" : "hover:underline"
             }`}
           >
-            Featured
+            Meals
           </Link>
           <Link
             href="/admin/coupons"

@@ -13,6 +13,10 @@ export interface Product {
   rating: number;
   reviews: string;
   badge: string | null;
+  description?: string;
+  fiber?: number;
+  carbs?: number;
+  ingredients?: string[];
   image: string;
   isVeg: boolean;
   isAvailableForSubscription?: boolean;
