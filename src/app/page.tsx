@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import CartBar from "@/components/CartBar";
-import Menu from "@/components/Menu";
+import FeaturedMeal from "@/components/FeaturedMeal";
 import ExpandableMenu from "@/components/ExpandableMenu";
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoryTiles from "@/components/CategoryTiles";
@@ -141,14 +141,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Menu Section */}
-      <div className="px-4 pt-6 pb-6">
-        <Menu
-          showTitle={true}
-          linkCategoriesToMenu={true}
-          showOnHomePage={false}
-        />
-      </div>
+      {/* Featured Meal */}
+      <FeaturedMeal />
 
       {/* Core Values Section */}
       <div className="relative bg-[#02583f] min-h-[700px]">

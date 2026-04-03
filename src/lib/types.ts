@@ -89,6 +89,19 @@ export interface UserAddress {
   receiverPhone?: string;
 }
 
+export interface FeaturedCard {
+  _id?: ObjectId | string;
+  title: string;
+  subtitle: string;
+  image: string;
+  startingPrice: number;
+  link?: string;
+  order: number;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface User {
   _id?: ObjectId | string;
   phone: string;
