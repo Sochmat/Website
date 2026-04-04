@@ -9,7 +9,7 @@ import { useLoginPopup } from "@/context/LoginPopupContext";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
-import AddAddressSheet from "@/components/AddAddressSheet";
+// AddAddressSheet is now used internally by LocationSelector
 import CouponSelector, {
   type AppliedCoupon,
 } from "@/components/CouponSelector";
@@ -22,8 +22,8 @@ import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment, type UpiApp } from "@/helpers/razorpay";
-import PaymentSheet from "@/components/PaymentSheet";
 import { ArrowRightIcon } from "lucide-react";
+import LocationSelector from "@/components/LocationSelector";
 
 export default function OrderPage() {
   const {
@@ -53,12 +53,10 @@ export default function OrderPage() {
   );
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "razorpay">(
-    "razorpay",
-  );
-  const [selectedUpiApp, setSelectedUpiApp] = useState<UpiApp | null>(null);
-  const [showPaymentSheet, setShowPaymentSheet] = useState(false);
+  const paymentMethod = "razorpay" as const;
+  const selectedUpiApp: UpiApp | null = null;
   const router = useRouter();
 
   useEffect(() => {
@@ -137,72 +135,11 @@ export default function OrderPage() {
     ? distanceFromBusinessKm(selectedAddress.lat, selectedAddress.long)
     : null;
 
-  const handleSaveNewAddress = async (newAddr: UserAddress) => {
-    const isEditing = editingAddress !== null;
-
-    if (isAuthenticated && user?._id) {
-      try {
-        let updatedAddresses: UserAddress[];
-        if (isEditing) {
-          updatedAddresses = (user.addresses ?? []).map((addr) =>
-            addr.id === editingAddress.id ? newAddr : addr,
-          );
-        } else {
-          updatedAddresses = [...(user.addresses ?? []), newAddr];
-        }
-        const res = await fetch("/api/users", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            _id: user._id,
-            addresses: updatedAddresses,
-          }),
-        });
-        const data = await res.json();
-        if (data.success && data.user) {
-          setUser(data.user);
-          setSelectedAddress(newAddr);
-          setShowAddAddress(false);
-          setShowSelectAddress(false);
-          setEditingAddress(null);
-          message.success(isEditing ? "Address updated" : "Address saved");
-        } else {
-          message.error(data.message ?? "Failed to save address");
-        }
-      } catch {
-        message.error("Failed to save address");
-      }
-    } else {
-      let updatedAddresses: UserAddress[];
-      if (isEditing) {
-        updatedAddresses = localAddresses.map((addr) =>
-          addr.id === editingAddress.id ? newAddr : addr,
-        );
-      } else {
-        updatedAddresses = [...localAddresses, newAddr];
-      }
-      setLocalAddresses(updatedAddresses);
-      setSelectedAddress(newAddr);
-      setShowAddAddress(false);
-      setShowSelectAddress(false);
-      setEditingAddress(null);
-      message.success(isEditing ? "Address updated" : "Address saved");
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          "order_addresses",
-          JSON.stringify(updatedAddresses),
-        );
-      }
-    }
-  };
-
   const handleEditAddress = (addr: UserAddress) => {
     setEditingAddress(addr);
     setShowSelectAddress(false);
-    setShowAddAddress(true);
+    setShowLocationSelector(true);
   };
-
-  console.log({ selectedAddress, isAuthenticated, user });
 
   const handlePlaceOrder = async () => {
     if (!selectedAddress) {
@@ -237,6 +174,8 @@ export default function OrderPage() {
           name: isAuthenticated && user?.name ? user.name : receiverName,
           phone: isAuthenticated && user?.phone ? user.phone : receiverPhone,
           address: selectedAddress.address,
+          lat: selectedAddress.lat,
+          lng: selectedAddress.long,
         },
         orderItems: items.map((item) => ({
           productId: item.id,
@@ -522,7 +461,7 @@ export default function OrderPage() {
                 </span>
               </div>
               <p className="text-[#00a86e] text-[11px] font-medium text-left">
-                ₹{totalOriginalPrice - finalPrice} saved!
+                ₹{Number(totalOriginalPrice - finalPrice).toFixed(2)} saved!
               </p>
             </div>
             <svg
@@ -576,40 +515,10 @@ export default function OrderPage() {
           </span>
         </div>
         <div className="bg-white px-6 py-5 flex items-center justify-between rounded-t-2xl -mt-3">
-          <button
-            type="button"
-            onClick={() => setShowPaymentSheet(true)}
-            className="flex flex-col"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="text-[#222] text-sm">Payment</span>
-              <svg
-                className="w-4 h-4 text-[#666]"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 15l7-7 7 7"
-                />
-              </svg>
-            </div>
-            <span className="text-[#f56215] text-sm font-semibold text-left">
-              {paymentMethod === "cash"
-                ? "Cash on Delivery"
-                : selectedUpiApp
-                  ? {
-                      google_pay: "Google Pay",
-                      phonepe: "PhonePe",
-                      paytm: "Paytm",
-                      bhim: "BHIM",
-                    }[selectedUpiApp]
-                  : "UPI"}
-            </span>
-          </button>
+          <div className="flex flex-col">
+            <span className="text-[#222] text-sm">Payment</span>
+            <span className="text-[#f56215] text-sm font-semibold">UPI</span>
+          </div>
           <button
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
@@ -638,39 +547,46 @@ export default function OrderPage() {
         onSelect={(addr) => {
           setSelectedAddress(addr);
           setShowSelectAddress(false);
+          if (!isWithinServiceArea(addr.lat, addr.long)) {
+            const dist = distanceFromBusinessKm(addr.lat, addr.long);
+            message.error(
+              `Delivery not available at this address. You're ${dist.toFixed(1)} km away; we deliver within 10 km only.`,
+            );
+          }
         }}
         onAddNew={() => {
           setEditingAddress(null);
           setShowSelectAddress(false);
-          setShowAddAddress(true);
+          setShowLocationSelector(true);
         }}
         onEdit={handleEditAddress}
       />
-      <AddAddressSheet
-        open={showAddAddress}
+      <LocationSelector
+        open={showLocationSelector}
         onClose={() => {
-          setShowAddAddress(false);
+          setShowLocationSelector(false);
           setEditingAddress(null);
         }}
-        onSave={handleSaveNewAddress}
         editAddress={editingAddress}
-      />
-
-      <PaymentSheet
-        open={showPaymentSheet}
-        selectedUpiApp={selectedUpiApp}
-        paymentMethod={paymentMethod}
-        onSelectUpi={(app) => {
-          setSelectedUpiApp(app);
-          setPaymentMethod("razorpay");
-          setShowPaymentSheet(false);
+        onSaved={(addr) => {
+          setSelectedAddress(addr);
+          setEditingAddress(null);
+          if (!isWithinServiceArea(addr.lat, addr.long)) {
+            const dist = distanceFromBusinessKm(addr.lat, addr.long);
+            message.error(
+              `Delivery not available at this address. You're ${dist.toFixed(1)} km away; we deliver within 10 km only.`,
+            );
+          }
+          // Refresh local addresses from localStorage for non-authenticated users
+          if (!isAuthenticated && typeof window !== "undefined") {
+            try {
+              const stored = localStorage.getItem("order_addresses");
+              if (stored) setLocalAddresses(JSON.parse(stored));
+            } catch {
+              /* ignore */
+            }
+          }
         }}
-        onSelectCod={() => {
-          setSelectedUpiApp(null);
-          setPaymentMethod("cash");
-          setShowPaymentSheet(false);
-        }}
-        onClose={() => setShowPaymentSheet(false)}
       />
     </main>
   );

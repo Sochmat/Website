@@ -25,6 +25,9 @@ interface OrderRow {
   userName: string;
   receiverName: string;
   receiverPhone: string;
+  receiverAddress: string;
+  receiverLat: number;
+  receiverLng: number;
   totalAmount: number;
   status: string;
   paymentStatus: string;
@@ -54,6 +57,9 @@ export default function AdminOrdersPage() {
               userName: (o.user as { name?: string })?.name ?? "-",
               receiverName: (o.receiver as { name?: string })?.name ?? "-",
               receiverPhone: (o.receiver as { phone?: string })?.phone ?? "-",
+              receiverAddress: (o.receiver as { address?: string })?.address ?? "-",
+              receiverLat: (o.receiver as { lat?: number })?.lat ?? 0,
+              receiverLng: (o.receiver as { lng?: number })?.lng ?? 0,
               totalAmount: Number(o.totalAmount ?? 0),
               status: String(o.status ?? ""),
               paymentStatus: String(o.paymentStatus ?? ""),
@@ -120,6 +126,28 @@ export default function AdminOrdersPage() {
       dataIndex: "receiverPhone",
       key: "receiverPhone",
       width: 120,
+    },
+    {
+      title: "Address",
+      dataIndex: "receiverAddress",
+      key: "receiverAddress",
+      width: 220,
+      ellipsis: true,
+      render: (_: string, record: OrderRow) => (
+        <div>
+          <span style={{ fontSize: 12 }}>{record.receiverAddress}</span>
+          {record.receiverLat !== 0 && record.receiverLng !== 0 && (
+            <a
+              href={`https://www.google.com/maps?q=${record.receiverLat},${record.receiverLng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "block", fontSize: 11, color: "#1890ff", marginTop: 2 }}
+            >
+              View on Maps ↗
+            </a>
+          )}
+        </div>
+      ),
     },
     {
       title: "Amount (₹)",
@@ -190,7 +218,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1420 }}
       />
     </div>
   );

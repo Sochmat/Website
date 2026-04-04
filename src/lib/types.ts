@@ -72,7 +72,7 @@ export interface Order {
   paymentSignature?: string;
 
   orderItems: OrderItem[];
-  receiver?: User;
+  receiver?: User & { lat?: number; lng?: number };
   address?: string;
   city?: string;
   state?: string;

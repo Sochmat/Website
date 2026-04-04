@@ -1,23 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCurrentLocation } from "@/helpers/currentLocation";
 import { BUSINESS_LAT, BUSINESS_LNG } from "@/helpers/distance";
+import { useUser } from "@/context/UserContext";
 import type { UserAddress } from "@/lib/types";
+import { Divider } from "antd";
+import { message } from "antd";
 
 interface AddAddressSheetProps {
   open: boolean;
   onClose: () => void;
-  onSave: (addr: UserAddress) => void;
+  onSaved?: (addr: UserAddress) => void;
   editAddress?: UserAddress | null;
+  /** Legacy prop — if provided, skip internal save logic */
+  onSave?: (addr: UserAddress) => void;
 }
 
 export default function AddAddressSheet({
   open,
   onClose,
-  onSave,
+  onSaved,
   editAddress,
+  onSave,
 }: AddAddressSheetProps) {
+  const { user, isAuthenticated, setUser } = useUser();
+
   const parseAddress = (address: string) => {
     const parts = address.split(",").map((p) => p.trim());
     if (parts.length >= 2) {
@@ -38,7 +45,6 @@ export default function AddAddressSheet({
   const [receiverPhone, setReceiverPhone] = useState(
     () => editAddress?.receiverPhone ?? "",
   );
-  const [locationLoading, setLocationLoading] = useState(false);
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [locationData, setLocationData] = useState<{
@@ -77,24 +83,6 @@ export default function AddAddressSheet({
     }
   }, [open, editAddress]);
 
-  const handleUseCurrentLocation = async () => {
-    setLocationLoading(true);
-    try {
-      const res = await getCurrentLocation();
-      setLocationData({
-        lat: res.lat,
-        lng: res.lng,
-        address: res.address,
-        pincode: res.pincode,
-      });
-      if (res.address) setLocality(res.address);
-    } catch {
-      // ignore
-    } finally {
-      setLocationLoading(false);
-    }
-  };
-
   const handleUseStoreLocation = () => {
     setLocationData({
       lat: BUSINESS_LAT,
@@ -102,10 +90,8 @@ export default function AddAddressSheet({
       address: "Store Location",
       pincode: "122001",
     });
-    // if (!locality) {
     setLocality("Store Location, Gurgaon");
     setPickupAtStore(true);
-    // }
   };
 
   const handleSave = async () => {
@@ -117,21 +103,86 @@ export default function AddAddressSheet({
     const long = locationData?.lng ?? 0;
     const pincode = locationData?.pincode ?? "";
     setSaving(true);
+
+    const newAddr: UserAddress = {
+      id:
+        editAddress?.id ??
+        (typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : undefined),
+      address: addressStr.trim(),
+      lat,
+      long,
+      pincode: pincode.trim() || "—",
+      receiverName: receiverName.trim(),
+      receiverPhone: receiverPhone.trim(),
+    };
+
     try {
-      const newAddr: UserAddress = {
-        id:
-          editAddress?.id ??
-          (typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : undefined),
-        address: addressStr.trim(),
-        lat,
-        long,
-        pincode: pincode.trim() || "—",
-        receiverName: receiverName.trim(),
-        receiverPhone: receiverPhone.trim(),
-      };
-      onSave(newAddr);
+      // If legacy onSave prop is provided, use that instead
+      if (onSave) {
+        onSave(newAddr);
+        if (!editAddress) {
+          setFlat("");
+          setLocality("");
+          setReceiverName("");
+          setReceiverPhone("");
+          setLocationData(null);
+        }
+        onClose();
+        return;
+      }
+
+      const isEditing = editAddress?.id != null;
+
+      if (isAuthenticated && user?._id) {
+        let updatedAddresses: UserAddress[];
+        if (isEditing) {
+          updatedAddresses = (user.addresses ?? []).map((addr) =>
+            addr.id === editAddress!.id ? newAddr : addr,
+          );
+        } else {
+          updatedAddresses = [...(user.addresses ?? []), newAddr];
+        }
+        const res = await fetch("/api/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            _id: user._id,
+            addresses: updatedAddresses,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+          message.success(isEditing ? "Address updated" : "Address saved");
+        } else {
+          message.error(data.message ?? "Failed to save address");
+          return;
+        }
+      } else {
+        // Save to localStorage
+        const stored = typeof window !== "undefined"
+          ? localStorage.getItem("order_addresses")
+          : null;
+        let addresses: UserAddress[] = [];
+        try {
+          if (stored) addresses = JSON.parse(stored);
+        } catch { /* ignore */ }
+
+        if (isEditing) {
+          addresses = addresses.map((addr) =>
+            addr.id === editAddress!.id ? newAddr : addr,
+          );
+        } else {
+          addresses.push(newAddr);
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem("order_addresses", JSON.stringify(addresses));
+        }
+        message.success(isEditing ? "Address updated" : "Address saved");
+      }
+
       if (!editAddress) {
         setFlat("");
         setLocality("");
@@ -139,7 +190,10 @@ export default function AddAddressSheet({
         setReceiverPhone("");
         setLocationData(null);
       }
+      onSaved?.(newAddr);
       onClose();
+    } catch {
+      message.error("Failed to save address");
     } finally {
       setSaving(false);
     }
@@ -148,10 +202,12 @@ export default function AddAddressSheet({
   if (!open) return null;
 
   const addressStr = [flat, locality].filter(Boolean).join(", ");
+  const phoneDigits = receiverPhone.replace(/\D/g, "");
+  const validPhone = phoneDigits.length === 10;
   const canSave =
     addressStr.trim().length > 0 &&
     receiverName.trim().length > 0 &&
-    receiverPhone.trim().length > 0;
+    validPhone;
 
   return (
     <>
@@ -168,7 +224,7 @@ export default function AddAddressSheet({
       >
         <div className="w-12 h-1 bg-[#e5e5e5] rounded-full mx-auto mt-3 shrink-0" />
         <div className="px-4 pb-8 pt-2">
-          <div className="flex items-center gap-2 mb-6">
+          <div className="flex items-center gap-2 mb-4">
             <button
               type="button"
               onClick={onClose}
@@ -190,7 +246,7 @@ export default function AddAddressSheet({
               </svg>
             </button>
             <h2 className="text-lg font-semibold text-[#111]">
-              {editAddress ? "Edit Address" : "Add New Address"}
+              {editAddress?.id ? "Edit Address" : "Add New Address"}
             </h2>
           </div>
 
@@ -208,58 +264,10 @@ export default function AddAddressSheet({
             placeholder="E.g. Office Building, Locality Name"
             value={locality}
             onChange={(e) => setLocality(e.target.value)}
-            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-4"
+            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-2"
           />
 
-          <div className="flex gap-3 mb-6">
-            <button
-              type="button"
-              onClick={handleUseCurrentLocation}
-              disabled={locationLoading}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[rgba(245,98,21,0.1)] text-[#f56215] font-medium disabled:opacity-60"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-              </svg>
-              {locationLoading ? "Getting…" : "Current"}
-            </button>
-            <button
-              type="button"
-              onClick={handleUseStoreLocation}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[rgba(0,153,64,0.1)] text-[#009940] font-medium"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                />
-              </svg>
-              Pick up at store
-            </button>
-          </div>
+          <Divider style={{ margin: "8px 0px" }} />
 
           <input
             type="text"
@@ -271,12 +279,22 @@ export default function AddAddressSheet({
           />
           <input
             type="tel"
-            placeholder="Enter Phone Number *"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="Enter 10-digit Phone Number *"
             value={receiverPhone}
-            onChange={(e) => setReceiverPhone(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+              setReceiverPhone(val);
+            }}
             required
-            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-6"
+            className={`w-full border rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent ${receiverPhone.length > 0 && !validPhone ? "border-red-400 mb-1" : "border-[#e5e5e5] mb-6"}`}
           />
+          {receiverPhone.length > 0 && !validPhone && (
+            <p className="text-red-500 text-xs mb-4">
+              Phone number must be exactly 10 digits
+            </p>
+          )}
 
           <button
             type="button"
@@ -286,7 +304,7 @@ export default function AddAddressSheet({
           >
             {saving
               ? "Saving…"
-              : editAddress
+              : editAddress?.id
                 ? "Update Address"
                 : "Save Address"}
           </button>

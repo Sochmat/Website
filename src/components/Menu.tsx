@@ -111,7 +111,9 @@ export default function Menu({
   const [activeTab, setActiveTab] = useState<"food" | "beverages">(
     initialCategory,
   );
-  const [activeCategory, setActiveCategory] = useState<string | null>(initialActiveCategory);
+  const [activeCategory, setActiveCategory] = useState<string | null>(
+    initialActiveCategory,
+  );
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,7 +130,6 @@ export default function Menu({
         const res = await fetch("/api/menu");
         const data = await res.json();
         if (cancelled || !data.success) return;
-        console.log({ data });
         const items = (data.items ?? []).map(mapApiItemToProduct);
         setProducts(items);
         if (data.categories?.length) {

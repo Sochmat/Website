@@ -166,7 +166,6 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
 }
 
 export const handleRazorpayPayment = async (options: RazorpayOptions) => {
-  console.log({ options });
   const order = await createRazorpayOrder(
     options.amount,
     options.currency || "INR",

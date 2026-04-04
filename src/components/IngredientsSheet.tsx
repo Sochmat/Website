@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Product } from "@/context/CartContext";
 
 interface IngredientsSheetProps {
@@ -14,8 +14,15 @@ export default function IngredientsSheet({
   onClose,
   product,
 }: IngredientsSheetProps) {
+  const [closing, setClosing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ startY: 0, isDragging: false });
+
   useEffect(() => {
     if (open) {
+      setClosing(false);
+      setExpanded(false);
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -25,20 +32,71 @@ export default function IngredientsSheet({
     };
   }, [open]);
 
-  if (!open) return null;
+  const closeWithSlide = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 250);
+  }, [onClose]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    dragRef.current.startY = e.touches[0].clientY;
+    dragRef.current.isDragging = true;
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!dragRef.current.isDragging || !sheetRef.current) return;
+    const deltaY = e.touches[0].clientY - dragRef.current.startY;
+    // Allow dragging down (positive) freely, and up (negative) to hint expand
+    sheetRef.current.style.transform = `translateY(${deltaY > 0 ? deltaY : deltaY * 0.3}px)`;
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!dragRef.current.isDragging || !sheetRef.current) return;
+    dragRef.current.isDragging = false;
+    const raw = sheetRef.current.style.transform;
+    const match = raw.match(/translateY\(([-.0-9]+)px\)/);
+    const deltaY = match ? parseFloat(match[1]) : 0;
+    sheetRef.current.style.transform = "";
+    if (deltaY > 100) {
+      closeWithSlide();
+    } else if (deltaY < -30) {
+      setExpanded(true);
+    } else {
+      setExpanded(false);
+    }
+  }, [closeWithSlide]);
+
+  if (!open && !closing) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 z-100 flex items-end justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/40 ${closing ? "animate-fade-out" : ""}`}
+        onClick={closeWithSlide}
       />
 
       {/* Sheet */}
-      <div className="relative bg-white rounded-t-[12px] w-full max-w-[430px] max-h-[85vh] overflow-y-auto animate-slide-up shadow-[0px_-2px_10px_rgba(0,0,0,0.1)]">
+
+      <div
+        ref={sheetRef}
+        className={`relative bg-white w-full max-w-[430px] overflow-y-auto shadow-[0px_-2px_10px_rgba(0,0,0,0.1)] ${closing ? "animate-slide-down" : "animate-slide-up"} ${expanded ? "rounded-t-[0px]" : "rounded-t-[12px]"}`}
+        style={{
+          maxHeight: expanded ? "100vh" : "85vh",
+          transition: dragRef.current.isDragging
+            ? "none"
+            : "transform 0.25s ease-out, max-height 0.3s ease-out, border-radius 0.3s ease-out",
+        }}
+      >
         {/* Handle bar */}
-        <div className="sticky top-0 bg-white pt-[10px] pb-[6px] flex justify-center rounded-t-[12px] z-10">
+        <div
+          className="sticky top-0 bg-white pt-[10px] pb-[6px] flex justify-center rounded-t-[12px] z-10 cursor-grab"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="w-[40px] h-[4px] bg-[#d9d9d9] rounded-full" />
         </div>
 
@@ -166,8 +224,30 @@ export default function IngredientsSheet({
             transform: translateY(0);
           }
         }
+        @keyframes slide-down {
+          from {
+            transform: translateY(0);
+          }
+          to {
+            transform: translateY(100%);
+          }
+        }
+        @keyframes fade-out {
+          from {
+            opacity: 1;
+          }
+          to {
+            opacity: 0;
+          }
+        }
         .animate-slide-up {
           animation: slide-up 0.3s ease-out;
+        }
+        .animate-slide-down {
+          animation: slide-down 0.25s ease-in forwards;
+        }
+        .animate-fade-out {
+          animation: fade-out 0.25s ease-in forwards;
         }
       `}</style>
     </div>

@@ -18,8 +18,6 @@ export default function MenuItem({ product }: MenuItemProps) {
   const cartItem = items.find((item) => item.id === product.id);
   const quantity = cartItem?.quantity || 0;
 
-  console.log({ product });
-
   const handleAddClick = () => {
     if (product.isAvailableForSubscription) {
       setSubscriptionSheetOpen(true);
@@ -84,9 +82,9 @@ export default function MenuItem({ product }: MenuItemProps) {
           ) : (
             <button
               onClick={handleAddClick}
-              className="relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] w-[84px] px-[12px] py-[6px] text-center leading-[18px] mb-[9px] mt-[11px] block ml-auto"
+              className="flex items-center justify-center relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] w-[84px] px-[12px] py-[6px] text-center leading-[18px] mb-[9px] mt-[11px] block ml-auto"
             >
-              Add<span className="text-[14px] font-medium">+</span>
+              Add<span className="text-[14px] font-medium ml-1">+</span>
             </button>
           )}
         </div>
@@ -126,8 +124,18 @@ export default function MenuItem({ product }: MenuItemProps) {
             className="bg-[#e6e6e6] text-[#333] text-[12px] font-medium pl-[12px] pr-[8px] py-[4px] rounded-[50px] leading-[16px] flex items-center gap-[8px]"
           >
             View Ingredients
-            <svg className="w-[16px] h-[16px] -rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <svg
+              className="w-[16px] h-[16px] -rotate-90"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
             </svg>
           </button>
         </div>

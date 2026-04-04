@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if (!lat || !lng) {
     return NextResponse.json(
       { error: "lat and lng required" },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -18,33 +18,32 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
   }
 
+  const apiKey = process.env.GOOGLE_MAPS_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing API key" }, { status: 500 });
+  }
+
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latNum}&lon=${lngNum}&format=json`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "SochmatWebsite/1.0 (contact@sochmat.com)",
-      },
-    });
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latNum},${lngNum}&key=${apiKey}`;
+    const res = await fetch(url);
     if (!res.ok) {
       return NextResponse.json({ error: "Geocoding failed" }, { status: 502 });
     }
-    const data = (await res.json()) as {
-      display_name?: string;
-      address?: Record<string, string>;
-    };
-    const address = data.display_name ?? null;
-    let pincode: string | null =
-      (data.address?.postcode ?? data.address?.postalcode) || null;
-    if (!pincode && address && /\b\d{6}\b/.test(address)) {
-      const match = address.match(/\b(\d{6})\b/);
-      if (match) pincode = match[1];
-    }
+    const data = await res.json();
+    const result = data.results?.[0];
+    const address = result?.formatted_address ?? null;
+    const components = result?.address_components ?? [];
+    const pincodeComp = components.find((c: { types: string[] }) =>
+      c.types.includes("postal_code"),
+    );
+    const pincode: string | null = pincodeComp?.long_name ?? null;
+
     return NextResponse.json({ address, pincode });
   } catch (err) {
     console.error("Reverse geocode error:", err);
     return NextResponse.json(
       { error: "Failed to get address" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

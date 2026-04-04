@@ -1,25 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import CartBar from "@/components/CartBar";
 import ExpandableMenu from "@/components/ExpandableMenu";
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoryTiles from "@/components/CategoryTiles";
 import MealCards from "@/components/MealCards";
+import LocationSelector from "@/components/LocationSelector";
 import { useLocation } from "@/context/LocationContext";
-import { getCurrentLocation } from "@/helpers/currentLocation";
 
 export default function Home() {
-  const { location, setLocation } = useLocation();
-
-  const handleLocationClick = async () => {
-    try {
-      const { lat, lng, address, pincode } = await getCurrentLocation();
-      setLocation({ lat, lng, address, pincode, timestamp: Date.now() });
-    } catch {
-      // ignore
-    }
-  };
+  const { location, isServiceable } = useLocation();
+  const [locationOpen, setLocationOpen] = useState(false);
 
   const marqueeItems = [
     "High Protein",
@@ -38,10 +31,10 @@ export default function Home() {
         <ExpandableMenu />
       </div>
 
-      {/* Location Selector */}
+      {/* Location Trigger */}
       <button
         type="button"
-        onClick={handleLocationClick}
+        onClick={() => setLocationOpen(true)}
         className="mx-4 mt-4 w-[calc(100%-32px)] flex items-center gap-2 border border-[#595959] rounded-[50px] px-4 py-2.5 text-left cursor-pointer hover:border-[#02583f] transition-colors"
       >
         <svg
@@ -60,6 +53,13 @@ export default function Home() {
         <span className="text-[#595959] text-sm flex-1 truncate">
           {location?.address ? location.address : "Select Location"}
         </span>
+        {location && (
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              isServiceable ? "bg-green-500" : "bg-red-500"
+            }`}
+          />
+        )}
         <svg
           className="w-4 h-4 text-[#595959] shrink-0"
           fill="none"
@@ -80,6 +80,9 @@ export default function Home() {
           />
         </svg>
       </button>
+
+      {/* Location Selector */}
+      <LocationSelector open={locationOpen} onClose={() => setLocationOpen(false)} />
 
       {/* Hero Banner Carousel */}
       <HeroCarousel />
