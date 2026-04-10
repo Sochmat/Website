@@ -491,7 +491,9 @@ export default function OrderPage() {
                     <span className="text-[#666] line-through text-[13px]">
                       ₹{totalOriginalPrice}
                     </span>
-                    <span className="text-[#00a86e]">₹{totalPrice}</span>
+                    <span className="text-[#00a86e]">
+                      ₹{Math.round(totalPrice)}
+                    </span>
                   </div>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -517,13 +519,20 @@ export default function OrderPage() {
         <div className="bg-white px-6 py-5 flex items-center justify-between rounded-t-2xl -mt-3">
           <div className="flex flex-col">
             <span className="text-[#222] text-sm">Payment</span>
-            <span className="text-[#f56215] text-sm font-semibold">UPI</span>
+            <span className="text-[#f56215] text-sm font-semibold">Online</span>
           </div>
           <button
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
-            onClick={handlePlaceOrder}
-            disabled={placingOrder || !selectedAddress}
+            onClick={() => {
+              if (!selectedAddress) {
+                message.error("Please select a delivery address first");
+                setShowSelectAddress(true);
+                return;
+              }
+              handlePlaceOrder();
+            }}
+            disabled={placingOrder}
           >
             <div className="flex flex-col items-start text-white">
               <span className="font-semibold">

@@ -28,17 +28,18 @@ export default function MealCards() {
   if (cards.length === 0) return null;
 
   return (
-    <div className="pt-6 pb-6">
-      <div
-        className="flex gap-4 overflow-x-auto px-4 pb-2 snap-x snap-mandatory"
-        style={{ scrollbarWidth: "none" }}
-      >
+    <div className="pt-6 pb-6 px-[20px]">
+      <div className="flex flex-col gap-4" style={{ scrollbarWidth: "none" }}>
         {cards.map((card) => (
           <Link
             key={card._id}
-            href={card.category ? `/menu?mealCategory=${card.category}&mealCardId=${card._id}` : (card.link || "/menu")}
-            className="shrink-0 snap-start"
-            style={{ width: "calc(100% - 32px)" }}
+            href={
+              card.category
+                ? `/menu?mealCategory=${card.category}&mealCardId=${card._id}`
+                : card.link || "/menu"
+            }
+            // className="shrink-0 snap-start"
+            // style={{ width: "calc(100% - 32px)" }}
           >
             <div className="bg-white rounded-[12px] shadow-[0px_1px_2px_0px_rgba(0,0,0,0.12)] overflow-hidden relative h-[314px] cursor-pointer">
               {/* Image area with bottom-right notch */}
@@ -85,7 +86,7 @@ export default function MealCards() {
       </div>
 
       {/* Card scroll dots */}
-      {cards.length > 1 && (
+      {/* {cards.length > 1 && (
         <div className="flex justify-center gap-1.5 mt-2">
           {cards.map((card) => (
             <div
@@ -94,7 +95,7 @@ export default function MealCards() {
             />
           ))}
         </div>
-      )}
+      )} */}
     </div>
   );
 }

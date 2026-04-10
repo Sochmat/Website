@@ -82,7 +82,10 @@ export default function Home() {
       </button>
 
       {/* Location Selector */}
-      <LocationSelector open={locationOpen} onClose={() => setLocationOpen(false)} />
+      <LocationSelector
+        open={locationOpen}
+        onClose={() => setLocationOpen(false)}
+      />
 
       {/* Hero Banner Carousel */}
       <HeroCarousel />
@@ -106,7 +109,7 @@ export default function Home() {
       </div> */}
 
       {/* Also Available On */}
-      <div className="flex items-center justify-center gap-5 bg-white border border-[#d9d9d9] rounded-xl p-4 mx-4 mt-4 shadow-sm">
+      {/* <div className="flex items-center justify-center gap-5 bg-white border border-[#d9d9d9] rounded-xl p-4 mx-4 mt-4 shadow-sm">
         <span className="text-black font-medium text-sm">
           Also available on
         </span>
@@ -129,7 +132,7 @@ export default function Home() {
             unoptimized
           />
         </div>
-      </div>
+      </div> */}
       {/* Marquee */}
 
       {/* Category Tiles */}

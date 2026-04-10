@@ -14,12 +14,60 @@ interface Tile {
 }
 
 const FALLBACK_TILES: Tile[] = [
-  { _id: "1", label: "Protein", sublabel: "Shakes", href: "/menu", emoji: "🥤", bgStyle: "gradient", order: 0 },
-  { _id: "2", label: "FOOD", sublabel: "", href: "/menu", emoji: "🥗", bgStyle: "bordered", order: 1 },
-  { _id: "3", label: "Chef", sublabel: "Special", href: "/menu", emoji: "👨‍🍳", bgStyle: "bordered", order: 2 },
-  { _id: "4", label: "MEALS", sublabel: "SUBSCRIPTION", href: "/subscribe", emoji: "📅", bgStyle: "bordered", order: 3 },
-  { _id: "5", label: "MEMBERSHIP", sublabel: "@₹99", href: "/subscribe", emoji: "", bgStyle: "bordered", order: 4 },
-  { _id: "6", label: "MEALS", sublabel: "@₹149", href: "/menu", emoji: "", bgStyle: "bordered", order: 5 },
+  {
+    _id: "1",
+    label: "Protein",
+    sublabel: "Shakes",
+    href: "/menu",
+    emoji: "🥤",
+    bgStyle: "gradient",
+    order: 0,
+  },
+  {
+    _id: "2",
+    label: "FOOD",
+    sublabel: "",
+    href: "/menu",
+    emoji: "🥗",
+    bgStyle: "bordered",
+    order: 1,
+  },
+  {
+    _id: "3",
+    label: "Chef",
+    sublabel: "Special",
+    href: "/menu",
+    emoji: "👨‍🍳",
+    bgStyle: "bordered",
+    order: 2,
+  },
+  {
+    _id: "4",
+    label: "MEALS",
+    sublabel: "SUBSCRIPTION",
+    href: "/subscribe",
+    emoji: "📅",
+    bgStyle: "bordered",
+    order: 3,
+  },
+  {
+    _id: "5",
+    label: "MEMBERSHIP",
+    sublabel: "@₹99",
+    href: "/subscribe",
+    emoji: "",
+    bgStyle: "bordered",
+    order: 4,
+  },
+  {
+    _id: "6",
+    label: "MEALS",
+    sublabel: "@₹149",
+    href: "/menu",
+    emoji: "",
+    bgStyle: "bordered",
+    order: 5,
+  },
 ];
 
 export default function CategoryTiles() {
@@ -57,7 +105,9 @@ export default function CategoryTiles() {
           >
             <p
               className={`text-[13.2px] font-semibold text-center uppercase leading-[14.4px] px-1 ${
-                tile.bgStyle === "gradient" ? "text-black font-bold" : "text-black"
+                tile.bgStyle === "gradient"
+                  ? "text-black font-bold"
+                  : "text-black"
               }`}
             >
               {tile.label}
@@ -68,8 +118,8 @@ export default function CategoryTiles() {
                   tile.sublabel.startsWith("@")
                     ? "text-[24px] text-[#02583f]"
                     : tile.sublabel.length > 8
-                    ? "text-[9.6px] text-[#02583f]"
-                    : "text-[13.2px] text-[#02583f]"
+                      ? "text-[9.6px] text-[#02583f]"
+                      : "text-[13.2px] text-[#02583f]"
                 }`}
               >
                 {tile.sublabel}

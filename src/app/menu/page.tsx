@@ -113,12 +113,15 @@ function MealCardCarousel({ images, alt }: { images: string[]; alt: string }) {
   );
 }
 
-function MenuContent() {
-  const searchParams = useSearchParams();
-  const category = searchParams.get("category");
-  const mealCategory = searchParams.get("mealCategory");
-  const mealCardId = searchParams.get("mealCardId");
-
+function MenuContent({
+  category,
+  mealCategory,
+  mealCardId,
+}: {
+  category: string | null;
+  mealCategory: string | null;
+  mealCardId: string | null;
+}) {
   return (
     <div className="px-4 pt-8 pb-4">
       {mealCardId && <MealCardHeader cardId={mealCardId} />}
@@ -134,6 +137,10 @@ function MenuContent() {
 }
 
 export default function MenuPage() {
+  const searchParams = useSearchParams();
+  const category = searchParams.get("category");
+  const mealCategory = searchParams.get("mealCategory");
+  const mealCardId = searchParams.get("mealCardId");
   return (
     <main className="min-h-screen bg-white max-w-[430px] mx-auto pb-32">
       <Suspense
@@ -143,29 +150,31 @@ export default function MenuPage() {
           </div>
         }
       >
-        <MenuContent />
+        <MenuContent category={category} mealCategory={mealCategory} mealCardId={mealCardId} />
       </Suspense>
 
       <CartBar />
 
-      {/* <Link
-        href="/"
-        className="fixed top-20 left-4 bg-white p-2 rounded-full shadow-md z-50"
-      >
-        <svg
-          className="w-5 h-5 text-[#111]"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+      {!mealCardId && (
+        <Link
+          href="/"
+          className="fixed top-20 left-4 bg-white p-2 rounded-full shadow-md z-50"
         >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 19l-7-7 7-7"
-          />
-        </svg>
-      </Link> */}
+          <svg
+            className="w-5 h-5 text-[#111]"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+        </Link>
+      )}
     </main>
   );
 }
