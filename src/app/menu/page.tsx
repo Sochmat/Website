@@ -113,45 +113,24 @@ function MealCardCarousel({ images, alt }: { images: string[]; alt: string }) {
   );
 }
 
-function MenuContent({
-  category,
-  mealCategory,
-  mealCardId,
-}: {
-  category: string | null;
-  mealCategory: string | null;
-  mealCardId: string | null;
-}) {
-  return (
-    <div className="px-4 pt-8 pb-4">
-      {mealCardId && <MealCardHeader cardId={mealCardId} />}
-      <Menu
-        showTitle={!mealCardId}
-        linkCategoriesToMenu={false}
-        initialCategory={category === "beverages" ? "beverages" : "food"}
-        initialActiveCategory={mealCategory || category || null}
-        hideHeader={!!mealCardId}
-      />
-    </div>
-  );
-}
-
-export default function MenuPage() {
+function MenuContent() {
   const searchParams = useSearchParams();
   const category = searchParams.get("category");
   const mealCategory = searchParams.get("mealCategory");
   const mealCardId = searchParams.get("mealCardId");
+
   return (
-    <main className="min-h-screen bg-white max-w-[430px] mx-auto pb-32">
-      <Suspense
-        fallback={
-          <div className="px-4 pt-8 pb-4 text-center text-gray-500 py-12">
-            Loading menu...
-          </div>
-        }
-      >
-        <MenuContent category={category} mealCategory={mealCategory} mealCardId={mealCardId} />
-      </Suspense>
+    <>
+      <div className="px-4 pt-8 pb-4">
+        {mealCardId && <MealCardHeader cardId={mealCardId} />}
+        <Menu
+          showTitle={!mealCardId}
+          linkCategoriesToMenu={false}
+          initialCategory={category === "beverages" ? "beverages" : "food"}
+          initialActiveCategory={mealCategory || category || null}
+          hideHeader={!!mealCardId}
+        />
+      </div>
 
       <CartBar />
 
@@ -175,6 +154,22 @@ export default function MenuPage() {
           </svg>
         </Link>
       )}
+    </>
+  );
+}
+
+export default function MenuPage() {
+  return (
+    <main className="min-h-screen bg-white max-w-[430px] mx-auto pb-32">
+      <Suspense
+        fallback={
+          <div className="px-4 pt-8 pb-4 text-center text-gray-500 py-12">
+            Loading menu...
+          </div>
+        }
+      >
+        <MenuContent />
+      </Suspense>
     </main>
   );
 }
