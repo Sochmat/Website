@@ -7,6 +7,7 @@ import ExpandableMenu from "@/components/ExpandableMenu";
 import HeroCarousel from "@/components/HeroCarousel";
 import CategoryTiles from "@/components/CategoryTiles";
 import MealCards from "@/components/MealCards";
+import HomeCategoryScroll from "@/components/HomeCategoryScroll";
 import LocationSelector from "@/components/LocationSelector";
 import { useLocation } from "@/context/LocationContext";
 
@@ -137,6 +138,9 @@ export default function Home() {
 
       {/* Category Tiles */}
       <CategoryTiles />
+
+      {/* Category Scroll - Pick what you crave for */}
+      <HomeCategoryScroll />
 
       {/* Meal Cards */}
       <MealCards />

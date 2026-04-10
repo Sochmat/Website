@@ -133,15 +133,23 @@ export default function Menu({
         const items = (data.items ?? []).map(mapApiItemToProduct);
         setProducts(items);
         if (data.categories?.length) {
-          setCategories(
-            data.categories.map((c: Category) => ({
-              id: c.id,
-              name: c.name,
-              image: c.image ?? defaultCategories[0]?.image ?? "",
-              type: c.type,
-            })),
-          );
-          if (!initialActiveCategory) {
+          const cats = data.categories.map((c: Category) => ({
+            id: c.id,
+            name: c.name,
+            image: c.image ?? defaultCategories[0]?.image ?? "",
+            type: c.type,
+          }));
+          setCategories(cats);
+          if (initialActiveCategory) {
+            // Set the correct tab based on the category's type
+            const matchedCat = cats.find(
+              (c: Category) => c.id === initialActiveCategory,
+            );
+            if (matchedCat) {
+              setActiveTab(matchedCat.type);
+            }
+            setActiveCategory(initialActiveCategory);
+          } else {
             setActiveCategory(data.categories[0]?.id ?? null);
           }
         }

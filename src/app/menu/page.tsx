@@ -129,7 +129,7 @@ function MenuContent({
         showTitle={!mealCardId}
         linkCategoriesToMenu={false}
         initialCategory={category === "beverages" ? "beverages" : "food"}
-        initialActiveCategory={mealCategory || null}
+        initialActiveCategory={mealCategory || category || null}
         hideHeader={!!mealCardId}
       />
     </div>
