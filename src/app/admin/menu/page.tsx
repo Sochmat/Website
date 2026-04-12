@@ -333,7 +333,6 @@ export default function AdminMenuPage() {
                     setFormData({ ...formData, kcal: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
-                  required
                 />
               </div>
               <div>
@@ -347,7 +346,6 @@ export default function AdminMenuPage() {
                     setFormData({ ...formData, protein: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
-                  required
                 />
               </div>
               <div>
@@ -506,7 +504,9 @@ export default function AdminMenuPage() {
                         .filter((line) => line.trim() !== ""),
                     })
                   }
-                  placeholder={"Harvest Gold Multigrain buns\nSoya patty\nLettuce"}
+                  placeholder={
+                    "Harvest Gold Multigrain buns\nSoya patty\nLettuce"
+                  }
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent resize-none"
                 />
@@ -614,11 +614,14 @@ export default function AdminMenuPage() {
                     onClick={() =>
                       setFormData((prev) => ({
                         ...prev,
-                        isAvailableForSubscription: !prev.isAvailableForSubscription,
+                        isAvailableForSubscription:
+                          !prev.isAvailableForSubscription,
                       }))
                     }
                     className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
-                      formData.isAvailableForSubscription ? "bg-[#02583f]" : "bg-gray-300"
+                      formData.isAvailableForSubscription
+                        ? "bg-[#02583f]"
+                        : "bg-gray-300"
                     }`}
                   >
                     <span
