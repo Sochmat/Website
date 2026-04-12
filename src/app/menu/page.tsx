@@ -121,7 +121,7 @@ function MenuContent() {
 
   return (
     <>
-      <div className="px-4 pt-8 pb-4">
+      <div className="px-4 pt-8 pb-4 flex flex-col h-screen">
         {mealCardId && <MealCardHeader cardId={mealCardId} />}
         <Menu
           showTitle={!mealCardId}
@@ -160,7 +160,7 @@ function MenuContent() {
 
 export default function MenuPage() {
   return (
-    <main className="min-h-screen bg-white max-w-[430px] mx-auto pb-32">
+    <main className="h-screen bg-white max-w-[430px] mx-auto overflow-hidden">
       <Suspense
         fallback={
           <div className="px-4 pt-8 pb-4 text-center text-gray-500 py-12">

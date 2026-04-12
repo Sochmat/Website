@@ -92,7 +92,6 @@ function mapApiItemToProduct(item: {
 interface MenuProps {
   showTitle?: boolean;
   linkCategoriesToMenu?: boolean;
-  className?: string;
   showOnHomePage?: boolean;
   initialCategory?: "food" | "beverages";
   initialActiveCategory?: string | null;
@@ -102,7 +101,6 @@ interface MenuProps {
 export default function Menu({
   showTitle = true,
   linkCategoriesToMenu = false,
-  className = "",
   showOnHomePage = false,
   initialCategory = "food",
   initialActiveCategory = null,
@@ -122,6 +120,16 @@ export default function Menu({
   useEffect(() => {
     setActiveTab(initialCategory);
   }, [initialCategory]);
+
+  // When switching tabs, ensure the active category belongs to the new tab
+  useEffect(() => {
+    if (categories.length === 0) return;
+    const currentCat = categories.find((c) => c.id === activeCategory);
+    if (!currentCat || currentCat.type !== activeTab) {
+      const firstForTab = categories.find((c) => c.type === activeTab);
+      setActiveCategory(firstForTab?.id ?? null);
+    }
+  }, [activeTab, categories, activeCategory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +158,11 @@ export default function Menu({
             }
             setActiveCategory(initialActiveCategory);
           } else {
-            setActiveCategory(data.categories[0]?.id ?? null);
+            // Default to the first category of the active tab
+            const firstForTab = cats.find(
+              (c: Category) => c.type === initialCategory,
+            );
+            setActiveCategory(firstForTab?.id ?? cats[0]?.id ?? null);
           }
         }
       } catch {
@@ -176,7 +188,7 @@ export default function Menu({
   const displayProducts = listProducts;
 
   return (
-    <div className={className}>
+    <div className="flex flex-col h-full overflow-hidden">
       {!hideHeader && (
         <>
           {showTitle && (
@@ -220,7 +232,7 @@ export default function Menu({
         </>
       )}
 
-      <div className="py-4 flex flex-col gap-5">
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide py-4 flex flex-col gap-5">
         {loading ? (
           <p className="text-center text-gray-500 py-8">Loading menu...</p>
         ) : error ? (
@@ -230,7 +242,11 @@ export default function Menu({
             .filter((product) =>
               showOnHomePage ? product.showOnHomePage : true,
             )
-            .map((product) => <MenuItem key={product.id} product={product} />)
+            .map((product) => (
+              <div key={product.id} className="shrink-0">
+                <MenuItem product={product} />
+              </div>
+            ))
         )}
       </div>
     </div>
