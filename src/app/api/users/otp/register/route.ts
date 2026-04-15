@@ -36,13 +36,13 @@ export async function POST(request: NextRequest) {
       );
     } else if (!user) {
       const newUser: Record<string, unknown> = {
-        phone: isEmailFlow ? "" : phone,
         name: name || "",
         addresses: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
       if (isEmailFlow) newUser.email = email;
+      else newUser.phone = phone;
       const result = await db.collection("users").insertOne(newUser);
       user = { _id: result.insertedId, ...newUser };
     }
@@ -61,7 +61,10 @@ export async function POST(request: NextRequest) {
 
     await db.collection("otps").updateOne(
       query,
-      { $set: otpSet },
+      {
+        $set: otpSet,
+        $unset: isEmailFlow ? { phone: "" } : { email: "" },
+      },
       { upsert: true }
     );
 
@@ -97,8 +100,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Error sending registration OTP:", error);
+    const message =
+      error instanceof Error && error.message ? error.message : "Failed to send OTP";
     return NextResponse.json(
-      { success: false, message: "Failed to send OTP" },
+      { success: false, message },
       { status: 500 }
     );
   }
