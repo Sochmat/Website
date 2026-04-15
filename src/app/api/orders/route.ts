@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("_id");
+    const userId = searchParams.get("userId");
     const gte = searchParams.get("gte");
     const lte = searchParams.get("lte");
 
@@ -25,10 +26,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, order });
     }
 
-    let filter: { createdAt?: { $gte?: Date; $lte?: Date } } = {};
+    let filter: {
+      createdAt?: { $gte?: Date; $lte?: Date };
+      userId?: ObjectId;
+    } = {};
     if (gte || lte) {
       if (gte) filter.createdAt = { $gte: new Date(gte) };
       if (lte) filter.createdAt = { $lte: new Date(lte) };
+    }
+    if (userId) {
+      try {
+        filter.userId = new ObjectId(userId);
+      } catch {
+        return NextResponse.json({ success: true, orders: [] });
+      }
     }
 
     const orders = await db
@@ -119,8 +130,18 @@ export async function POST(request: NextRequest) {
     const tax = Number(body.tax) ?? 0;
     const orderNumber = generateOrderNumber();
 
+    let resolvedUserId: ObjectId | undefined = user._id;
+    if (body.userId) {
+      try {
+        resolvedUserId = new ObjectId(String(body.userId));
+      } catch {
+        // fall back to phone-resolved user
+      }
+    }
+
     const orderDoc: Order = {
       orderNumber,
+      userId: resolvedUserId,
       receiver: body.receiver
         ? {
             name: body.receiver.name ?? "",

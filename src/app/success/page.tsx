@@ -1,10 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { CheckCircleIcon } from "lucide-react";
+import { Order } from "@/lib/types";
 
 const imgDelivery =
   "https://www.figma.com/api/mcp/asset/a5506fec-aaf3-4884-9aa6-625d4f483d7c";
@@ -17,15 +18,58 @@ interface TrackingStep {
   icon: React.ReactNode;
 }
 
+const STATUS_STEP_INDEX: Record<NonNullable<Order["status"]>, number> = {
+  pending: 1,
+  confirmed: 2,
+  shipped: 3,
+  delivered: 4,
+  cancelled: 0,
+};
+
 function SuccessContent() {
   const searchParams = useSearchParams();
   const subscriptionId = searchParams.get("subscriptionId");
+  const orderId = searchParams.get("orderId");
   const isSubscription = !!subscriptionId;
+  const [order, setOrder] = useState<Order | null>(null);
 
-  const trackingSteps: TrackingStep[] = [
+  useEffect(() => {
+    if (!orderId) return;
+    let cancelled = false;
+    const fetchOrder = async () => {
+      try {
+        const res = await fetch(`/api/orders?_id=${orderId}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!cancelled && data?.success && data.order) {
+          setOrder(data.order as Order);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchOrder();
+    const interval = window.setInterval(fetchOrder, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [orderId]);
+
+  const activeIndex = order?.status ? STATUS_STEP_INDEX[order.status] : 1;
+  const isCancelled = order?.status === "cancelled";
+
+  const stepStatus = (index: number): TrackingStep["status"] => {
+    if (isCancelled) return "pending";
+    if (index < activeIndex) return "completed";
+    if (index === activeIndex) return "active";
+    return "pending";
+  };
+
+  const baseSteps: Omit<TrackingStep, "status">[] = [
     {
       title: "Order Placed",
-      status: "completed",
       icon: (
         <svg
           className="w-4 h-4 text-white"
@@ -44,7 +88,6 @@ function SuccessContent() {
     },
     {
       title: "Preparing Order",
-      status: "active",
       icon: (
         <svg
           className="w-4 h-4 text-white"
@@ -63,7 +106,6 @@ function SuccessContent() {
     },
     {
       title: "Out for Delivery",
-      status: "pending",
       icon: (
         <svg
           className="w-4 h-4 text-white"
@@ -82,7 +124,6 @@ function SuccessContent() {
     },
     {
       title: "Arrived at Location",
-      status: "pending",
       icon: (
         <svg
           className="w-4 h-4 text-gray-500"
@@ -106,7 +147,6 @@ function SuccessContent() {
     },
     {
       title: "Delivered",
-      status: "pending",
       icon: (
         <svg
           className="w-4 h-4 text-gray-500"
@@ -125,6 +165,11 @@ function SuccessContent() {
     },
   ];
 
+  const trackingSteps: TrackingStep[] = baseSteps.map((s, i) => ({
+    ...s,
+    status: stepStatus(i),
+  }));
+
   const getStepBgColor = (status: TrackingStep["status"]) => {
     switch (status) {
       case "completed":
@@ -136,11 +181,6 @@ function SuccessContent() {
       default:
         return "bg-[#f5f5f5]";
     }
-  };
-
-  const getLineColor = (index: number) => {
-    if (index < 2) return "border-[#171717]";
-    return "border-dashed border-[#d4d4d4]";
   };
 
   if (isSubscription) {
@@ -320,11 +360,18 @@ function SuccessContent() {
             <CheckCircleIcon className="w-16 h-16 text-[#f56215]" />
           </div>
           <h1 className="text-xl font-semibold text-black text-center">
-            We have received your order!
+            {isCancelled
+              ? "Your order was cancelled"
+              : "We have received your order!"}
           </h1>
           <p className="text-sm font-medium text-[#111] text-center">
-            Order ID : #001
+            Order ID : {order?.orderNumber ?? (orderId ? `#${String(orderId).slice(-6)}` : "#001")}
           </p>
+          {order?.status && !isCancelled && (
+            <p className="text-xs text-[#737373] text-center capitalize">
+              Status: {order.status}
+            </p>
+          )}
         </div>
 
         {/* Tracking Card */}
@@ -357,7 +404,7 @@ function SuccessContent() {
                 {index < trackingSteps.length - 1 && (
                   <div
                     className={`absolute left-4 top-8 w-px h-6 ${
-                      index < 2
+                      index < activeIndex
                         ? "bg-[#171717]"
                         : "border-l border-dashed border-[#d4d4d4]"
                     }`}

@@ -57,6 +57,7 @@ export interface OrderItem {
 export interface Order {
   _id?: ObjectId | string;
   orderNumber?: string;
+  userId?: ObjectId | string;
   couponCode?: ObjectId | string;
 
   discountAmount?: number;

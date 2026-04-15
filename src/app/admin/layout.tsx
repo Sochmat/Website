@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+
+const LAST_SEEN_KEY = "admin_orders_last_seen";
+const SOUND_ENABLED_KEY = "admin_sound_enabled";
+const POLL_INTERVAL_MS = 20_000;
+const SOUND_PATH = "/sounds/new-order.mp3";
+const SOUND_MAX_MS = 5_000;
 
 export default function AdminLayout({
   children,
@@ -12,6 +18,9 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const stopTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -25,6 +34,101 @@ export default function AdminLayout({
       router.replace("/admin/login");
     }
   }, [mounted, pathname, router]);
+
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    audioRef.current = new Audio(SOUND_PATH);
+    audioRef.current.preload = "auto";
+    setSoundEnabled(localStorage.getItem(SOUND_ENABLED_KEY) === "1");
+  }, [mounted]);
+
+  const playSuccessTone = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      audio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {
+        localStorage.removeItem(SOUND_ENABLED_KEY);
+        setSoundEnabled(false);
+      });
+    }
+    if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+    stopTimerRef.current = window.setTimeout(() => {
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {
+        // ignore
+      }
+    }, SOUND_MAX_MS);
+  };
+
+  const enableSound = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      audio.muted = true;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+      localStorage.setItem(SOUND_ENABLED_KEY, "1");
+      setSoundEnabled(true);
+    } catch {
+      setSoundEnabled(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    if (pathname === "/admin/login") return;
+    const token = localStorage.getItem("adminToken");
+    if (!token) return;
+
+    if (!localStorage.getItem(LAST_SEEN_KEY)) {
+      localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
+    }
+
+    let cancelled = false;
+
+    const checkForNewOrders = async () => {
+      try {
+        const lastSeen =
+          localStorage.getItem(LAST_SEEN_KEY) ?? new Date().toISOString();
+        const res = await fetch(
+          `/api/orders?gte=${encodeURIComponent(lastSeen)}`,
+          { cache: "no-store" },
+        );
+        const data = await res.json();
+        if (cancelled || !data?.success || !Array.isArray(data.orders)) return;
+        const fresh = data.orders.filter((o: { createdAt?: string }) => {
+          if (!o.createdAt) return false;
+          return new Date(o.createdAt).getTime() > new Date(lastSeen).getTime();
+        });
+        if (fresh.length === 0) return;
+        const newest = fresh.reduce((max: string, o: { createdAt?: string }) => {
+          const t = o.createdAt ?? "";
+          return new Date(t).getTime() > new Date(max).getTime() ? t : max;
+        }, lastSeen);
+        localStorage.setItem(LAST_SEEN_KEY, newest);
+        playSuccessTone();
+      } catch {
+        // ignore
+      }
+    };
+
+    const interval = window.setInterval(checkForNewOrders, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
+    };
+  }, [mounted, pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
@@ -119,6 +223,21 @@ export default function AdminLayout({
           </button>
         </nav>
       </header>
+      {!soundEnabled && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-3 flex items-center justify-between gap-3">
+          <span className="text-sm text-yellow-900">
+            🔔 Enable order notification sound. Chrome blocks autoplay until you
+            interact with the page.
+          </span>
+          <button
+            type="button"
+            onClick={enableSound}
+            className="bg-[#02583f] text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-[#024731]"
+          >
+            Enable sound
+          </button>
+        </div>
+      )}
       <main className="p-6 max-w-7xl mx-auto">{children}</main>
     </div>
   );

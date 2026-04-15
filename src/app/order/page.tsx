@@ -37,8 +37,14 @@ export default function OrderPage() {
     clearCart,
   } = useCart();
   const { distanceFromStoreKm, isServiceable } = useLocation();
-  const { user, isAuthenticated, setUser } = useUser();
+  const { user, isAuthenticated } = useUser();
   const { openLoginPopup } = useLoginPopup();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      openLoginPopup();
+    }
+  }, [isAuthenticated, openLoginPopup]);
   const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(
     null,
   );
@@ -135,6 +141,14 @@ export default function OrderPage() {
     ? distanceFromBusinessKm(selectedAddress.lat, selectedAddress.long)
     : null;
 
+  const requireLogin = () => {
+    if (!isAuthenticated) {
+      openLoginPopup();
+      return false;
+    }
+    return true;
+  };
+
   const handleEditAddress = (addr: UserAddress) => {
     setEditingAddress(addr);
     setShowSelectAddress(false);
@@ -142,6 +156,10 @@ export default function OrderPage() {
   };
 
   const handlePlaceOrder = async () => {
+    if (!isAuthenticated) {
+      openLoginPopup();
+      return;
+    }
     if (!selectedAddress) {
       message.error("Please select a delivery address");
       setShowSelectAddress(true);
@@ -170,6 +188,7 @@ export default function OrderPage() {
       const orderPayload: Order = {
         paymentStatus: paymentMethod === "razorpay" ? "pending" : "pending",
         status: "pending",
+        userId: isAuthenticated && user?._id ? String(user._id) : undefined,
         receiver: {
           name: isAuthenticated && user?.name ? user.name : receiverName,
           phone: isAuthenticated && user?.phone ? user.phone : receiverPhone,
@@ -375,7 +394,10 @@ export default function OrderPage() {
             </div>
             <button
               type="button"
-              onClick={() => setShowSelectAddress(true)}
+              onClick={() => {
+                if (!requireLogin()) return;
+                setShowSelectAddress(true);
+              }}
               className="text-[#f56215] font-semibold text-sm underline shrink-0"
             >
               {selectedAddress ? "Change" : "Add"}
@@ -525,6 +547,7 @@ export default function OrderPage() {
             type="button"
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={() => {
+              if (!requireLogin()) return;
               if (!selectedAddress) {
                 message.error("Please select a delivery address first");
                 setShowSelectAddress(true);

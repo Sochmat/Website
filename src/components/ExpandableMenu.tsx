@@ -12,6 +12,7 @@ import {
   LogOut,
   User,
   Phone,
+  ReceiptText,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
@@ -72,6 +73,17 @@ export default function ExpandableMenu() {
             <UtensilsCrossed className="w-6 h-6 shrink-0" />
             Menu
           </Link>
+
+          {isAuthenticated && (
+            <Link
+              href="/orders"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium text-lg transition-colors"
+            >
+              <ReceiptText className="w-6 h-6 shrink-0" />
+              My Orders
+            </Link>
+          )}
 
           {isAuthenticated && (
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
