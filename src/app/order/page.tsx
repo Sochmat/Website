@@ -179,7 +179,7 @@ export default function OrderPage() {
     setPlacingOrder(true);
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
-      const gstAmount = Math.round((totalPrice - couponDiscountAmount) * 0.05);
+      const gstAmount = Math.round(totalPrice * 0.05);
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
 
       const receiverName = selectedAddress.receiverName ?? "";
@@ -267,7 +267,7 @@ export default function OrderPage() {
   };
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
-  const gst = Math.round((totalPrice - couponDiscount) * 0.05);
+  const gst = Math.round(totalPrice * 0.05);
   const finalPrice = totalPrice - couponDiscount + gst;
 
   if (totalItems === 0) {

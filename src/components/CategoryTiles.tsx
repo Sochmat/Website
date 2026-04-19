@@ -78,9 +78,9 @@ export default function CategoryTiles() {
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.tiles.length > 0) setTiles(data.tiles);
-        else setTiles(FALLBACK_TILES);
+        else setTiles([]);
       })
-      .catch(() => setTiles(FALLBACK_TILES));
+      .catch(() => setTiles([]));
   }, []);
 
   if (tiles.length === 0) return null;

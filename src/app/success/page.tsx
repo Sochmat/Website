@@ -60,6 +60,16 @@ function SuccessContent() {
   const activeIndex = order?.status ? STATUS_STEP_INDEX[order.status] : 1;
   const isCancelled = order?.status === "cancelled";
 
+  const STEP_ETA: Record<number, string> = {
+    0: "30 min",
+    1: "25 min",
+    2: "10 min",
+    3: "2 min",
+    4: "Delivered",
+  };
+  const etaLabel = STEP_ETA[activeIndex] ?? "30 min";
+  const etaHeading = activeIndex >= 4 ? "Status" : "Arriving in";
+
   const stepStatus = (index: number): TrackingStep["status"] => {
     if (isCancelled) return "pending";
     if (index < activeIndex) return "completed";
@@ -126,7 +136,7 @@ function SuccessContent() {
       title: "Arrived at Location",
       icon: (
         <svg
-          className="w-4 h-4 text-gray-500"
+          className="w-4 h-4 text-white"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -149,7 +159,7 @@ function SuccessContent() {
       title: "Delivered",
       icon: (
         <svg
-          className="w-4 h-4 text-gray-500"
+          className="w-4 h-4 text-white"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -365,7 +375,9 @@ function SuccessContent() {
               : "We have received your order!"}
           </h1>
           <p className="text-sm font-medium text-[#111] text-center">
-            Order ID : {order?.orderNumber ?? (orderId ? `#${String(orderId).slice(-6)}` : "#001")}
+            Order ID :{" "}
+            {order?.orderNumber ??
+              (orderId ? `#${String(orderId).slice(-6)}` : "#001")}
           </p>
           {order?.status && !isCancelled && (
             <p className="text-xs text-[#737373] text-center capitalize">
@@ -379,8 +391,10 @@ function SuccessContent() {
           {/* Arriving Info */}
           <div className="flex items-center justify-between">
             <div className="flex flex-col">
-              <span className="text-sm text-[#555]">Arriving in</span>
-              <span className="text-2xl font-bold text-[#f56215]">30 min</span>
+              <span className="text-sm text-[#555]">{etaHeading}</span>
+              <span className="text-2xl font-bold text-[#f56215]">
+                {etaLabel}
+              </span>
             </div>
             <div className="w-20 h-[60px] relative">
               <Image

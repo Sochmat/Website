@@ -189,65 +189,69 @@ export default function Menu({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {!hideHeader && (
-        <>
-          {showTitle && (
-            <div className="text-center mb-2">
-              <h2 className="font-squada text-[48px] text-[#02583f] uppercase tracking-tight">
-                Menu
-              </h2>
-              <p className="font-satisfy text-[#f56215] text-2xl -rotate-2">
-                Healthy Meals
-              </p>
-            </div>
-          )}
-
-          <div className="bg-[#f0f0f0] p-0.5 rounded-lg flex mt-6">
-            <button
-              onClick={() => setActiveTab("food")}
-              className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-                activeTab === "food" ? "bg-[#02583f] text-white" : "text-[#111]"
-              }`}
-            >
-              Food
-            </button>
-            <button
-              onClick={() => setActiveTab("beverages")}
-              className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-                activeTab === "beverages"
-                  ? "bg-[#02583f] text-white"
-                  : "text-[#111]"
-              }`}
-            >
-              Beverages
-            </button>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide flex flex-col">
+        {!hideHeader && showTitle && (
+          <div className="text-center mb-2">
+            <h2 className="font-squada text-[48px] text-[#02583f] uppercase tracking-tight">
+              Menu
+            </h2>
+            <p className="font-satisfy text-[#f56215] text-2xl -rotate-2">
+              Healthy Meals
+            </p>
           </div>
-
-          <CategoryFilter
-            activeTab={activeTab}
-            categories={categories}
-            activeCategory={activeCategory}
-            onCategoryChange={setActiveCategory}
-          />
-        </>
-      )}
-
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide py-4 flex flex-col gap-5">
-        {loading ? (
-          <p className="text-center text-gray-500 py-8">Loading menu...</p>
-        ) : error ? (
-          <p className="text-center text-red-500 py-8">{error}</p>
-        ) : (
-          displayProducts
-            .filter((product) =>
-              showOnHomePage ? product.showOnHomePage : true,
-            )
-            .map((product) => (
-              <div key={product.id} className="shrink-0">
-                <MenuItem product={product} />
-              </div>
-            ))
         )}
+
+        {!hideHeader && (
+          <div className="sticky top-0 z-10 bg-white">
+            <div className="bg-[#f0f0f0] p-0.5 rounded-lg flex mt-6">
+              <button
+                onClick={() => setActiveTab("food")}
+                className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
+                  activeTab === "food"
+                    ? "bg-[#02583f] text-white"
+                    : "text-[#111]"
+                }`}
+              >
+                Food
+              </button>
+              <button
+                onClick={() => setActiveTab("beverages")}
+                className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
+                  activeTab === "beverages"
+                    ? "bg-[#02583f] text-white"
+                    : "text-[#111]"
+                }`}
+              >
+                Beverages
+              </button>
+            </div>
+
+            <CategoryFilter
+              activeTab={activeTab}
+              categories={categories}
+              activeCategory={activeCategory}
+              onCategoryChange={setActiveCategory}
+            />
+          </div>
+        )}
+
+        <div className="py-4 flex flex-col gap-5">
+          {loading ? (
+            <p className="text-center text-gray-500 py-8">Loading menu...</p>
+          ) : error ? (
+            <p className="text-center text-red-500 py-8">{error}</p>
+          ) : (
+            displayProducts
+              .filter((product) =>
+                showOnHomePage ? product.showOnHomePage : true,
+              )
+              .map((product) => (
+                <div key={product.id} className="shrink-0">
+                  <MenuItem product={product} />
+                </div>
+              ))
+          )}
+        </div>
       </div>
     </div>
   );
