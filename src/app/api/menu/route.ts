@@ -4,8 +4,14 @@ import { connectToDatabase } from "@/lib/mongodb";
 export async function GET() {
   try {
     const { db } = await connectToDatabase();
-    const items = await db.collection("menuItems").find({}).toArray();
-    const categories = await db.collection("categories").find({}).toArray();
+    const items = await db
+      .collection("menuItems")
+      .find({ hidden: { $ne: true } })
+      .toArray();
+    const categories = await db
+      .collection("categories")
+      .find({ hidden: { $ne: true } })
+      .toArray();
 
     const formattedItems = items.map((item) => ({
       id: item._id.toString(),

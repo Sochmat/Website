@@ -21,6 +21,7 @@ export interface MenuItem {
   isRecommended?: boolean;
   showOnHomePage?: boolean;
   isAvailableForSubscription?: boolean;
+  hidden?: boolean;
   addOns?: string[];
   category: string;
   type: "food" | "beverages";
@@ -34,6 +35,7 @@ export interface Category {
   name: string;
   image: string;
   type: "food" | "beverages";
+  hidden?: boolean;
 }
 
 export interface Coupon {

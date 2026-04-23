@@ -37,6 +37,7 @@ const initialFormState: FormState = {
   isRecommended: false,
   showOnHomePage: false,
   isAvailableForSubscription: false,
+  hidden: false,
   addOns: [],
   category: "",
   type: "food",
@@ -60,6 +61,7 @@ export default function AdminMenuPage() {
     name: "",
     image: "",
     type: "food" as "food" | "beverages",
+    hidden: false,
   });
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
@@ -212,7 +214,13 @@ export default function AdminMenuPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setCategoryForm({ id: "", name: "", image: "", type: "food" });
+      setCategoryForm({
+        id: "",
+        name: "",
+        image: "",
+        type: "food",
+        hidden: false,
+      });
       setEditingCategoryId(null);
       fetchCategories();
     } catch (err) {
@@ -237,8 +245,37 @@ export default function AdminMenuPage() {
       name: cat.name,
       image: cat.image,
       type: cat.type,
+      hidden: cat.hidden ?? false,
     });
     setEditingCategoryId(cat._id != null ? String(cat._id) : null);
+  };
+
+  const toggleMenuItemHidden = async (item: MenuItem) => {
+    if (!item._id) return;
+    try {
+      await fetch("/api/admin/menu", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...item, hidden: !item.hidden, _id: String(item._id) }),
+      });
+      fetchMenuItems();
+    } catch (err) {
+      console.error("Failed to toggle menu item visibility:", err);
+    }
+  };
+
+  const toggleCategoryHidden = async (cat: Category) => {
+    if (!cat._id) return;
+    try {
+      await fetch("/api/admin/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cat, hidden: !cat.hidden, _id: String(cat._id) }),
+      });
+      fetchCategories();
+    } catch (err) {
+      console.error("Failed to toggle category visibility:", err);
+    }
   };
 
   return (
@@ -636,6 +673,33 @@ export default function AdminMenuPage() {
                     Available for subscription
                   </span>
                 </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={formData.hidden ?? false}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        hidden: !prev.hidden,
+                      }))
+                    }
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
+                      formData.hidden ? "bg-[#1c1c1c]" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                        formData.hidden
+                          ? "translate-x-5 ml-0.5"
+                          : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Hidden from website
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex gap-3">
@@ -672,7 +736,9 @@ export default function AdminMenuPage() {
               menuItems.map((item) => (
                 <div
                   key={item._id?.toString() || ""}
-                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                  className={`flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 ${
+                    item.hidden ? "opacity-60" : ""
+                  }`}
                 >
                   <img
                     src={item.image ? item.image : "/food.png"}
@@ -704,6 +770,52 @@ export default function AdminMenuPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleMenuItemHidden(item)}
+                      title={item.hidden ? "Show on website" : "Hide from website"}
+                      className={`p-2 rounded-lg transition-colors ${
+                        item.hidden
+                          ? "text-gray-500 hover:bg-gray-100"
+                          : "text-green-600 hover:bg-green-50"
+                      }`}
+                    >
+                      {item.hidden ? (
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                      )}
+                    </button>
                     <button
                       onClick={() => handleEdit(item)}
                       className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -820,6 +932,30 @@ export default function AdminMenuPage() {
                 <option value="beverages">Beverages</option>
               </select>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={categoryForm.hidden}
+                onClick={() =>
+                  setCategoryForm((prev) => ({ ...prev, hidden: !prev.hidden }))
+                }
+                className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
+                  categoryForm.hidden ? "bg-[#1c1c1c]" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${
+                    categoryForm.hidden
+                      ? "translate-x-5 ml-0.5"
+                      : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+              <span className="text-sm font-medium text-gray-700">
+                Hidden from website
+              </span>
+            </div>
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -843,6 +979,7 @@ export default function AdminMenuPage() {
                       name: "",
                       image: "",
                       type: "food",
+                      hidden: false,
                     });
                     setEditingCategoryId(null);
                   }}
@@ -868,7 +1005,9 @@ export default function AdminMenuPage() {
               categories.map((cat) => (
                 <div
                   key={cat._id?.toString() ?? cat.id}
-                  className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                  className={`flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 ${
+                    cat.hidden ? "opacity-60" : ""
+                  }`}
                 >
                   {cat.image ? (
                     <img
@@ -886,6 +1025,52 @@ export default function AdminMenuPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleCategoryHidden(cat)}
+                      title={cat.hidden ? "Show on website" : "Hide from website"}
+                      className={`p-2 rounded-lg transition-colors ${
+                        cat.hidden
+                          ? "text-gray-500 hover:bg-gray-100"
+                          : "text-green-600 hover:bg-green-50"
+                      }`}
+                    >
+                      {cat.hidden ? (
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                      )}
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleCategoryEdit(cat)}
