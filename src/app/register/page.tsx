@@ -109,7 +109,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-white max-w-[430px] mx-auto flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-[#02583f] mb-2">Register</h1>
+          <h1 className="text-3xl font-bold text-[#1c1c1c] mb-2">Register</h1>
           <p className="text-gray-600">
             {step === "details"
               ? "Create your account to get started"
@@ -129,7 +129,7 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter your name"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -144,7 +144,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email address"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -158,7 +158,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#02583f] text-white py-3 rounded-lg font-semibold hover:bg-[#034030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#1c1c1c] text-white py-3 rounded-lg font-semibold hover:bg-[#034030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Sending OTP..." : "Send OTP"}
             </button>
@@ -176,7 +176,7 @@ export default function RegisterPage() {
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="Enter 6-digit OTP"
                 maxLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:border-transparent text-center text-2xl tracking-widest"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent text-center text-2xl tracking-widest"
                 required
               />
             </div>
@@ -190,7 +190,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#02583f] text-white py-3 rounded-lg font-semibold hover:bg-[#034030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#1c1c1c] text-white py-3 rounded-lg font-semibold hover:bg-[#034030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Verifying..." : "Verify OTP"}
             </button>
@@ -203,7 +203,7 @@ export default function RegisterPage() {
                   setOtp("");
                   setError("");
                 }}
-                className="text-[#02583f] font-semibold hover:underline"
+                className="text-[#1c1c1c] font-semibold hover:underline"
               >
                 Change Details
               </button>
@@ -211,7 +211,7 @@ export default function RegisterPage() {
                 type="button"
                 onClick={handleResendOTP}
                 disabled={resendTimer > 0 || loading}
-                className="text-[#02583f] font-semibold hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                className="text-[#1c1c1c] font-semibold hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {resendTimer > 0 ? `Resend in ${resendTimer}s` : "Resend OTP"}
               </button>
@@ -224,7 +224,7 @@ export default function RegisterPage() {
             Already have an account?{" "}
             <button
               onClick={() => router.push("/login")}
-              className="text-[#02583f] font-semibold hover:underline"
+              className="text-[#1c1c1c] font-semibold hover:underline"
             >
               Login
             </button>

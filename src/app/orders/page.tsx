@@ -11,7 +11,7 @@ import { Order } from "@/lib/types";
 type ProductSummary = { name: string; image?: string };
 
 export default function MyOrdersPage() {
-  const { user, isAuthenticated } = useUser();
+  const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +43,7 @@ export default function MyOrdersPage() {
   }, []);
 
   useEffect(() => {
+    if (userLoading) return;
     if (!isAuthenticated) {
       setLoading(false);
       openLoginPopup();
@@ -66,7 +67,7 @@ export default function MyOrdersPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, user?._id, openLoginPopup]);
+  }, [userLoading, isAuthenticated, user?._id, openLoginPopup]);
 
   const formatDate = (d?: Date | string) => {
     if (!d) return "";

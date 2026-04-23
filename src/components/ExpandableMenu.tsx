@@ -34,7 +34,7 @@ export default function ExpandableMenu() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="bg-[#02583f] rounded-full p-4 cursor-pointer hover:bg-[#024731] transition-colors"
+        className="bg-[#1c1c1c] rounded-full p-4 cursor-pointer hover:bg-[#024731] transition-colors"
         aria-label="Open menu"
       >
         <MenuIcon className="w-6 h-6 text-white" />
@@ -42,7 +42,7 @@ export default function ExpandableMenu() {
 
       {open && (
         <div
-          className="fixed inset-0 z-[100] bg-[#02583f] flex flex-col items-center justify-center gap-6 p-6"
+          className="fixed inset-0 z-[100] bg-[#1c1c1c] flex flex-col items-center justify-center gap-6 p-6"
           role="dialog"
           aria-modal="true"
           aria-label="Menu"
@@ -122,7 +122,7 @@ export default function ExpandableMenu() {
 
           <a
             href="tel:+917042816413"
-            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white text-[#02583f] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors"
+            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white text-[#1c1c1c] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors"
           >
             <Phone className="w-6 h-6 shrink-0" />
             Order Now

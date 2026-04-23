@@ -50,7 +50,7 @@ export default function LocationMap({ center, onPinMove }: LocationMapProps) {
   if (!isLoaded) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-gray-100">
-        <div className="w-6 h-6 border-2 border-[#02583f] border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-[#1c1c1c] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

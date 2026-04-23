@@ -37,14 +37,14 @@ export default function OrderPage() {
     clearCart,
   } = useCart();
   const { distanceFromStoreKm, isServiceable } = useLocation();
-  const { user, isAuthenticated } = useUser();
+  const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!userLoading && !isAuthenticated) {
       openLoginPopup();
     }
-  }, [isAuthenticated, openLoginPopup]);
+  }, [userLoading, isAuthenticated, openLoginPopup]);
   const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(
     null,
   );
@@ -534,7 +534,7 @@ export default function OrderPage() {
 
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex flex-col z-50">
         <div className="bg-[#E1EBE8] rounded-t-2xl pt-2 pb-5 text-center">
-          <span className="text-[#02583f] font-semibold text-sm">
+          <span className="text-[#1c1c1c] font-semibold text-sm">
             {totalKcal} kcal | {totalProtein}g Protein
           </span>
         </div>

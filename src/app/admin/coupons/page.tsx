@@ -112,7 +112,7 @@ export default function AdminCouponsPage() {
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="e.g., GET150"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
               required
             />
           </div>
@@ -126,7 +126,7 @@ export default function AdminCouponsPage() {
                 onClick={() => setDiscountType("flat")}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                   discountType === "flat"
-                    ? "bg-[#02583f] text-white border-[#02583f]"
+                    ? "bg-[#1c1c1c] text-white border-[#1c1c1c]"
                     : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
                 }`}
               >
@@ -137,7 +137,7 @@ export default function AdminCouponsPage() {
                 onClick={() => setDiscountType("percent")}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                   discountType === "percent"
-                    ? "bg-[#02583f] text-white border-[#02583f]"
+                    ? "bg-[#1c1c1c] text-white border-[#1c1c1c]"
                     : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
                 }`}
               >
@@ -156,7 +156,7 @@ export default function AdminCouponsPage() {
                 value={discountAmount}
                 onChange={(e) => setDiscountAmount(e.target.value)}
                 placeholder="e.g., 150"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -173,7 +173,7 @@ export default function AdminCouponsPage() {
                   placeholder="e.g., 20"
                   min={1}
                   max={100}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -186,7 +186,7 @@ export default function AdminCouponsPage() {
                   value={maxDiscount}
                   onChange={(e) => setMaxDiscount(e.target.value)}
                   placeholder="e.g., 100"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -202,13 +202,13 @@ export default function AdminCouponsPage() {
               onChange={(e) => setMinAmount(e.target.value)}
               placeholder="e.g., 500 (0 = no minimum)"
               min={0}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
             />
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+            className="w-full bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
           >
             {loading
               ? (editingId ? "Saving..." : "Adding...")

@@ -148,7 +148,7 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-[#02583f] text-white px-6 py-4 flex items-center justify-between">
+      <header className="bg-[#1c1c1c] text-white px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-bold">Sochmat Admin</h1>
         <nav className="flex items-center gap-4">
           <Link
@@ -217,7 +217,7 @@ export default function AdminLayout({
           </Link>
           <button
             onClick={handleLogout}
-            className="bg-white text-[#02583f] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+            className="bg-white text-[#1c1c1c] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
           >
             Logout
           </button>
@@ -232,7 +232,7 @@ export default function AdminLayout({
           <button
             type="button"
             onClick={enableSound}
-            className="bg-[#02583f] text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-[#024731]"
+            className="bg-[#1c1c1c] text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-[#024731]"
           >
             Enable sound
           </button>

@@ -169,7 +169,7 @@ export default function AdminMealCardsPage() {
         value={String(form[key])}
         onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
         placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
       />
     </div>
   );
@@ -201,7 +201,7 @@ export default function AdminMealCardsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, category: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
               >
                 <option value="">None (use link instead)</option>
                 {categories.map((cat) => (
@@ -225,7 +225,7 @@ export default function AdminMealCardsPage() {
                       value={url}
                       onChange={(e) => updateImage(idx, e.target.value)}
                       placeholder="https://example.com/image.jpg"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                     />
                     <button
                       type="button"
@@ -251,7 +251,7 @@ export default function AdminMealCardsPage() {
                 <button
                   type="button"
                   onClick={addImageField}
-                  className="text-sm text-[#02583f] font-medium hover:underline flex items-center gap-1"
+                  className="text-sm text-[#1c1c1c] font-medium hover:underline flex items-center gap-1"
                 >
                   <svg
                     className="w-4 h-4"
@@ -283,7 +283,7 @@ export default function AdminMealCardsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, active: e.target.checked }))
                 }
-                className="w-4 h-4 accent-[#02583f]"
+                className="w-4 h-4 accent-[#1c1c1c]"
               />
               <label
                 htmlFor="active"
@@ -326,7 +326,7 @@ export default function AdminMealCardsPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
               >
                 {loading
                   ? "Saving..."

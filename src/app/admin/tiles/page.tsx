@@ -146,7 +146,7 @@ export default function AdminTilesPage() {
                   value={form.label}
                   onChange={(e) => set("label", e.target.value)}
                   placeholder="e.g., Protein"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -159,7 +159,7 @@ export default function AdminTilesPage() {
                   value={form.sublabel}
                   onChange={(e) => set("sublabel", e.target.value)}
                   placeholder="e.g., Shakes or @₹99"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -171,7 +171,7 @@ export default function AdminTilesPage() {
                   value={form.href}
                   onChange={(e) => set("href", e.target.value)}
                   placeholder="/menu or /subscribe"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -184,7 +184,7 @@ export default function AdminTilesPage() {
                   value={form.emoji}
                   onChange={(e) => set("emoji", e.target.value)}
                   placeholder="e.g., 🥤"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -196,7 +196,7 @@ export default function AdminTilesPage() {
                   onChange={(e) =>
                     set("bgStyle", e.target.value as "gradient" | "bordered")
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 >
                   <option value="bordered">White bordered</option>
                   <option value="gradient">Orange gradient</option>
@@ -210,7 +210,7 @@ export default function AdminTilesPage() {
                   type="number"
                   value={form.order}
                   onChange={(e) => set("order", Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
             </div>
@@ -237,10 +237,10 @@ export default function AdminTilesPage() {
                   <p
                     className={`text-center uppercase leading-[16.8px] px-1 font-semibold ${
                       form.sublabel.startsWith("@")
-                        ? "text-[24px] text-[#02583f]"
+                        ? "text-[24px] text-[#1c1c1c]"
                         : form.sublabel.length > 8
-                        ? "text-[9.6px] text-[#02583f]"
-                        : "text-[13.2px] text-[#02583f]"
+                        ? "text-[9.6px] text-[#1c1c1c]"
+                        : "text-[13.2px] text-[#1c1c1c]"
                     }`}
                   >
                     {form.sublabel}
@@ -256,7 +256,7 @@ export default function AdminTilesPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
               >
                 {loading ? "Saving..." : editingId ? "Update Tile" : "Add Tile"}
               </button>
@@ -283,7 +283,7 @@ export default function AdminTilesPage() {
               type="button"
               onClick={handleSeedDefaults}
               disabled={seeding}
-              className="text-sm px-3 py-1.5 border border-[#02583f] text-[#02583f] rounded-lg hover:bg-[#02583f] hover:text-white transition-colors disabled:opacity-50"
+              className="text-sm px-3 py-1.5 border border-[#1c1c1c] text-[#1c1c1c] rounded-lg hover:bg-[#1c1c1c] hover:text-white transition-colors disabled:opacity-50"
             >
               {seeding ? "Adding..." : "Load Defaults"}
             </button>
@@ -314,7 +314,7 @@ export default function AdminTilesPage() {
                   >
                     <span className="text-black uppercase leading-tight px-0.5">{tile.label}</span>
                     {tile.sublabel && (
-                      <span className="text-[#02583f] uppercase leading-tight px-0.5">{tile.sublabel}</span>
+                      <span className="text-[#1c1c1c] uppercase leading-tight px-0.5">{tile.sublabel}</span>
                     )}
                     {tile.emoji && <span className="text-sm leading-none mt-0.5">{tile.emoji}</span>}
                   </div>

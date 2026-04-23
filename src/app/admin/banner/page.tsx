@@ -97,7 +97,7 @@ export default function AdminBannerPage() {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://example.com/image.jpg"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -109,7 +109,7 @@ export default function AdminBannerPage() {
                 type="number"
                 value={order}
                 onChange={(e) => setOrder(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
               />
             </div>
             {url && (
@@ -129,7 +129,7 @@ export default function AdminBannerPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
               >
                 {loading ? "Saving..." : editingId ? "Update Slide" : "Add Slide"}
               </button>

@@ -116,10 +116,10 @@ export default function CategoryTiles() {
               <p
                 className={`text-center uppercase leading-[16.8px] px-1 font-semibold ${
                   tile.sublabel.startsWith("@")
-                    ? "text-[24px] text-[#02583f]"
+                    ? "text-[24px] text-[#1c1c1c]"
                     : tile.sublabel.length > 8
-                      ? "text-[9.6px] text-[#02583f]"
-                      : "text-[13.2px] text-[#02583f]"
+                      ? "text-[9.6px] text-[#1c1c1c]"
+                      : "text-[13.2px] text-[#1c1c1c]"
                 }`}
               >
                 {tile.sublabel}

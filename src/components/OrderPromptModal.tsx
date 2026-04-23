@@ -54,7 +54,7 @@ export default function OrderPromptModal() {
           <a
             href="https://wa.me/917042816413"
             onClick={close}
-            className="flex items-center justify-center gap-3 w-full py-4 px-5 bg-white text-[#02583f] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors border border-[#e5e5e5]"
+            className="flex items-center justify-center gap-3 w-full py-4 px-5 bg-white text-[#1c1c1c] hover:bg-white/90 rounded-xl font-medium text-lg transition-colors border border-[#e5e5e5]"
           >
             <Phone className="w-6 h-6 shrink-0" />
             Order Now

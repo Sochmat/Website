@@ -192,7 +192,7 @@ export default function Menu({
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide flex flex-col">
         {!hideHeader && showTitle && (
           <div className="text-center mb-2">
-            <h2 className="font-squada text-[48px] text-[#02583f] uppercase tracking-tight">
+            <h2 className="font-squada text-[48px] text-[#1c1c1c] uppercase tracking-tight">
               Menu
             </h2>
             <p className="font-satisfy text-[#f56215] text-2xl -rotate-2">
@@ -208,7 +208,7 @@ export default function Menu({
                 onClick={() => setActiveTab("food")}
                 className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
                   activeTab === "food"
-                    ? "bg-[#02583f] text-white"
+                    ? "bg-[#1c1c1c] text-white"
                     : "text-[#111]"
                 }`}
               >
@@ -218,7 +218,7 @@ export default function Menu({
                 onClick={() => setActiveTab("beverages")}
                 className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
                   activeTab === "beverages"
-                    ? "bg-[#02583f] text-white"
+                    ? "bg-[#1c1c1c] text-white"
                     : "text-[#111]"
                 }`}
               >

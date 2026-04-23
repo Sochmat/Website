@@ -105,13 +105,13 @@ export default function CategoryFilter({
                 className={cn(
                   "relative w-[80px]",
                   activeCategory === cat.id
-                    ? "border-[#02583f]"
+                    ? "border-[#1c1c1c]"
                     : "border-[#e6e6e6]",
                 )}
               >
                 <div
                   className={`absolute w-[60px] h-[60px] left-1/2 -translate-x-1/2 top-[35px] -translate-y-1/2 rounded-full transition-colors z-1 ${
-                    activeCategory === cat.id ? "bg-[#02583f]" : "bg-[#f0f0f0]"
+                    activeCategory === cat.id ? "bg-[#1c1c1c]" : "bg-[#f0f0f0]"
                   }`}
                 />
                 <Image

@@ -29,10 +29,10 @@ export default function CartItem({ item }: CartItemProps) {
         <div className="flex flex-col gap-0.5">
           <p className="font-medium text-[15px] text-black">{item.name}</p>
           <div className="flex gap-0.5">
-            <span className="bg-[rgba(2,88,63,0.1)] text-[#02583f] text-xs font-medium px-2 py-0.5 rounded-full tracking-tight">
+            <span className="bg-[rgba(2,88,63,0.1)] text-[#1c1c1c] text-xs font-medium px-2 py-0.5 rounded-full tracking-tight">
               {item.kcal} kcal
             </span>
-            <span className="bg-[rgba(2,88,63,0.1)] text-[#02583f] text-xs font-medium px-2 py-0.5 rounded-full tracking-tight">
+            <span className="bg-[rgba(2,88,63,0.1)] text-[#1c1c1c] text-xs font-medium px-2 py-0.5 rounded-full tracking-tight">
               {item.protein}g Protein
             </span>
           </div>

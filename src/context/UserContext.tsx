@@ -8,6 +8,7 @@ interface UserContextType {
   setUser: (user: User | null) => void;
   logout: () => void;
   isAuthenticated: boolean;
+  isLoading: boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -17,14 +18,13 @@ const TOKEN_KEY = "userToken";
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mounted || typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      setIsLoading(false);
+      return;
+    }
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -33,8 +33,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       // ignore
+    } finally {
+      setIsLoading(false);
     }
-  }, [mounted]);
+  }, []);
 
   const setUser = (newUser: User | null) => {
     setUserState(newUser);
@@ -57,8 +59,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setUser,
       logout,
       isAuthenticated: !!user,
+      isLoading,
     }),
-    [user]
+    [user, isLoading]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

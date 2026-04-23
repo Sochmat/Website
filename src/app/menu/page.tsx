@@ -51,9 +51,9 @@ function MealCardHeader({ cardId }: { cardId: string }) {
         <h2 className="text-black text-[22px] font-semibold">{card.title}</h2>
       </div>
       {/* Image carousel */}
-      <div className="w-full h-[220px] overflow-hidden rounded-[12px] relative">
+      {/* <div className="w-full h-[220px] overflow-hidden rounded-[12px] relative">
         <MealCardCarousel images={card.images} alt={card.title} />
-      </div>
+      </div> */}
     </div>
   );
 }

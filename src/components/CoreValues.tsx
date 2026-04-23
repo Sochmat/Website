@@ -37,7 +37,7 @@ const coreValues = [
 
 export default function CoreValues() {
   return (
-    <div className="relative bg-[#02583f] min-h-[700px]">
+    <div className="relative bg-[#1c1c1c] min-h-[700px]">
       <div className="absolute inset-0 mix-blend-multiply opacity-30">
         <Image
           src={imgCoreValuesBg}

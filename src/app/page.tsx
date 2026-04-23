@@ -36,7 +36,7 @@ export default function Home() {
       <button
         type="button"
         onClick={() => setLocationOpen(true)}
-        className="mx-4 mt-4 w-[calc(100%-32px)] flex items-center gap-2 border border-[#595959] rounded-[50px] px-4 py-2.5 text-left cursor-pointer hover:border-[#02583f] transition-colors"
+        className="mx-4 mt-4 w-[calc(100%-32px)] flex items-center gap-2 border border-[#595959] rounded-[50px] px-4 py-2.5 text-left cursor-pointer hover:border-[#1c1c1c] transition-colors"
       >
         <svg
           className="w-4 h-4 text-[#595959] shrink-0"

@@ -351,7 +351,7 @@ function SuccessContent() {
             </Link>
             <Link
               href="/"
-              className="block w-full bg-white border-2 border-[#02583f] text-[#02583f] text-center py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+              className="block w-full bg-white border-2 border-[#1c1c1c] text-[#1c1c1c] text-center py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
             >
               Back to Home
             </Link>
@@ -460,7 +460,7 @@ function SuccessContent() {
         <div className="mt-8 px-4">
           <Link
             href="/"
-            className="block w-full bg-[#02583f] text-white text-center py-3 rounded-lg font-semibold"
+            className="block w-full bg-[#1c1c1c] text-white text-center py-3 rounded-lg font-semibold"
           >
             Back to Home
           </Link>

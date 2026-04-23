@@ -260,7 +260,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -275,7 +275,7 @@ export default function AdminMenuPage() {
                   }
                   placeholder="e.g., Protein-rich soya & potato patty pan toasted in olive oil with fresh veggies..."
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent resize-none"
                 />
               </div>
               <div>
@@ -288,7 +288,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, price: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -302,7 +302,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, originalPrice: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -318,7 +318,7 @@ export default function AdminMenuPage() {
                   }
                   disabled
                   placeholder="e.g., 20"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   required
                 />
               </div>
@@ -332,7 +332,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, kcal: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -345,7 +345,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, protein: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -358,7 +358,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, fiber: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -371,7 +371,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, carbs: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -385,7 +385,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, rating: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -399,7 +399,7 @@ export default function AdminMenuPage() {
                     setFormData({ ...formData, reviews: e.target.value })
                   }
                   placeholder="e.g., 500+"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -413,7 +413,7 @@ export default function AdminMenuPage() {
                     setFormData({ ...formData, badge: e.target.value || null })
                   }
                   placeholder="e.g., Highly Ordered"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 />
               </div>
               <div>
@@ -425,7 +425,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, category: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 >
                   <option value="">Select category</option>
                   {categories
@@ -470,7 +470,7 @@ export default function AdminMenuPage() {
                       type: e.target.value as "food" | "beverages",
                     })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 >
                   <option value="food">Food</option>
                   <option value="beverages">Beverages</option>
@@ -486,7 +486,7 @@ export default function AdminMenuPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, image: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   placeholder="Optional"
                 />
               </div>
@@ -508,7 +508,7 @@ export default function AdminMenuPage() {
                     "Harvest Gold Multigrain buns\nSoya patty\nLettuce"
                   }
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent resize-none"
                 />
               </div>
               <div className="col-span-2">
@@ -519,7 +519,7 @@ export default function AdminMenuPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, isVeg: e.target.checked })
                     }
-                    className="w-4 h-4 text-[#02583f] rounded focus:ring-[#02583f]"
+                    className="w-4 h-4 text-[#1c1c1c] rounded focus:ring-[#1c1c1c]"
                   />
                   <span className="text-sm font-medium text-gray-700">
                     Vegetarian
@@ -536,8 +536,8 @@ export default function AdminMenuPage() {
                         isAddOn: !prev.isAddOn,
                       }))
                     }
-                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
-                      formData.isAddOn ? "bg-[#02583f]" : "bg-gray-300"
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
+                      formData.isAddOn ? "bg-[#1c1c1c]" : "bg-gray-300"
                     }`}
                   >
                     <span
@@ -563,8 +563,8 @@ export default function AdminMenuPage() {
                         isRecommended: !prev.isRecommended,
                       }))
                     }
-                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
-                      formData.isRecommended ? "bg-[#02583f]" : "bg-gray-300"
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
+                      formData.isRecommended ? "bg-[#1c1c1c]" : "bg-gray-300"
                     }`}
                   >
                     <span
@@ -590,8 +590,8 @@ export default function AdminMenuPage() {
                         showOnHomePage: !prev.showOnHomePage,
                       }))
                     }
-                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
-                      formData.showOnHomePage ? "bg-[#02583f]" : "bg-gray-300"
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
+                      formData.showOnHomePage ? "bg-[#1c1c1c]" : "bg-gray-300"
                     }`}
                   >
                     <span
@@ -618,9 +618,9 @@ export default function AdminMenuPage() {
                           !prev.isAvailableForSubscription,
                       }))
                     }
-                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:ring-offset-1 ${
+                    className={`relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:ring-offset-1 ${
                       formData.isAvailableForSubscription
-                        ? "bg-[#02583f]"
+                        ? "bg-[#1c1c1c]"
                         : "bg-gray-300"
                     }`}
                   >
@@ -642,7 +642,7 @@ export default function AdminMenuPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
               >
                 {loading ? "Saving..." : editingId ? "Update Item" : "Add Item"}
               </button>
@@ -769,7 +769,7 @@ export default function AdminMenuPage() {
                   setCategoryForm({ ...categoryForm, id: e.target.value })
                 }
                 placeholder="e.g., burgers"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -784,7 +784,7 @@ export default function AdminMenuPage() {
                   setCategoryForm({ ...categoryForm, name: e.target.value })
                 }
                 placeholder="e.g., Burgers"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -798,7 +798,7 @@ export default function AdminMenuPage() {
                 onChange={(e) =>
                   setCategoryForm({ ...categoryForm, image: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
               />
             </div>
@@ -814,7 +814,7 @@ export default function AdminMenuPage() {
                     type: e.target.value as "food" | "beverages",
                   })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#02583f] focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
               >
                 <option value="food">Food</option>
                 <option value="beverages">Beverages</option>
@@ -824,7 +824,7 @@ export default function AdminMenuPage() {
               <button
                 type="submit"
                 disabled={categoryLoading}
-                className="flex-1 bg-[#02583f] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
+                className="flex-1 bg-[#1c1c1c] text-white py-2 rounded-lg font-medium hover:bg-[#024731] transition-colors disabled:opacity-50"
               >
                 {categoryLoading
                   ? editingCategoryId

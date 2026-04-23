@@ -227,7 +227,7 @@ export default function LocationSelector({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for area, street name..."
-            className="w-full pl-10 pr-4 py-3 border border-[#e5e5e5] rounded-[12px] text-[16px] text-[#111] placeholder:text-[#999] focus:outline-none focus:ring-2 focus:ring-[#02583f] focus:border-transparent bg-white"
+            className="w-full pl-10 pr-4 py-3 border border-[#e5e5e5] rounded-[12px] text-[16px] text-[#111] placeholder:text-[#999] focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent bg-white"
           />
         </div>
 
@@ -290,17 +290,17 @@ export default function LocationSelector({
           className="absolute bottom-6 right-14 z-[10] bg-white rounded-full shadow-lg flex items-center gap-2 px-4 py-2.5 disabled:opacity-60"
         >
           {gpsLoading ? (
-            <div className="w-4 h-4 border-2 border-[#02583f] border-t-transparent rounded-full animate-spin shrink-0" />
+            <div className="w-4 h-4 border-2 border-[#1c1c1c] border-t-transparent rounded-full animate-spin shrink-0" />
           ) : (
             <svg
-              className="w-4 h-4 text-[#02583f] shrink-0"
+              className="w-4 h-4 text-[#1c1c1c] shrink-0"
               viewBox="0 0 24 24"
               fill="currentColor"
             >
               <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
             </svg>
           )}
-          <span className="text-[#02583f] text-[13px] font-medium">
+          <span className="text-[#1c1c1c] text-[13px] font-medium">
             {gpsLoading ? "Locating..." : "Current Location"}
           </span>
         </button>
@@ -347,7 +347,7 @@ export default function LocationSelector({
             type="button"
             onClick={handleConfirm}
             disabled={!pinAddress && !reversing}
-            className="flex-1 py-3 rounded-[12px] bg-[#02583f] text-white font-semibold text-[15px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#024731] transition-colors"
+            className="flex-1 py-3 rounded-[12px] bg-[#1c1c1c] text-white font-semibold text-[15px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#024731] transition-colors"
           >
             Confirm Location
           </button> */}
@@ -355,7 +355,7 @@ export default function LocationSelector({
             type="button"
             onClick={() => setAddressSheetOpen(true)}
             disabled={!pinAddress && !reversing}
-            className="w-full py-3 rounded-[12px] border border-[#02583f] text-[#02583f] font-semibold text-[14px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[rgba(2,88,63,0.06)] transition-colors"
+            className="w-full py-3 rounded-[12px] border border-[#1c1c1c] text-[#1c1c1c] font-semibold text-[14px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[rgba(2,88,63,0.06)] transition-colors"
           >
             Add More Address Details
           </button>
