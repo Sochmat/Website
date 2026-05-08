@@ -6,6 +6,7 @@ import { useCart } from "@/context/CartContext";
 import { useLocation } from "@/context/LocationContext";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
@@ -39,6 +40,15 @@ export default function OrderPage() {
   const { distanceFromStoreKm, isServiceable } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
+  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!storeLoading && !storeOpen) {
+      message.info("Store is currently closed");
+      router.replace("/");
+    }
+  }, [storeLoading, storeOpen, router]);
 
   useEffect(() => {
     if (!userLoading && !isAuthenticated) {
@@ -63,7 +73,6 @@ export default function OrderPage() {
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
   const paymentMethod = "razorpay" as const;
   const selectedUpiApp: UpiApp | null = null;
-  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
