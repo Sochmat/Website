@@ -15,6 +15,7 @@ import {
 import { type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 
 interface SubscribeProduct {
   id: string;
@@ -36,6 +37,15 @@ function SubscribeContent() {
   const { user, isAuthenticated, setUser } = useUser();
   const { distanceFromStoreKm } = useLocation();
   const { openLoginPopup } = useLoginPopup();
+  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
+
+  useEffect(() => {
+    if (!storeLoading && !storeOpen) {
+      message.info("Store is currently closed");
+      router.replace("/");
+    }
+  }, [storeLoading, storeOpen, router]);
+
   const [product, setProduct] = useState<SubscribeProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantityOption, setQuantityOption] = useState<"300ml" | "500ml">(
