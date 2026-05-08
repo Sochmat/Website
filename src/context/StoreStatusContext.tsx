@@ -28,6 +28,11 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(true);
   const [loading, setLoading] = useState(true);
   const cancelledRef = useRef(false);
+  const openRef = useRef(true);
+
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   const refresh = useCallback(async () => {
     try {
@@ -35,6 +40,7 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       if (cancelledRef.current) return;
       if (data?.success && typeof data.open === "boolean") {
+        openRef.current = data.open;
         setOpenState(data.open);
       }
     } catch (error) {
@@ -45,6 +51,8 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setOpen = useCallback(async (value: boolean) => {
+    const previous = openRef.current;
+    openRef.current = value;
     setOpenState(value); // optimistic
     try {
       const res = await fetch("/api/admin/store-status", {
@@ -54,13 +62,15 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (!data?.success) {
-        if (!cancelledRef.current) setOpenState(!value);
+        openRef.current = previous;
+        if (!cancelledRef.current) setOpenState(previous);
         return false;
       }
       return true;
     } catch (error) {
       console.error("Failed to update store status:", error);
-      if (!cancelledRef.current) setOpenState(!value);
+      openRef.current = previous;
+      if (!cancelledRef.current) setOpenState(previous);
       return false;
     }
   }, []);
