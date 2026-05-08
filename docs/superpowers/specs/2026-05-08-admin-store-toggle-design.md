@@ -102,8 +102,8 @@ Mounted in `src/app/layout.tsx`, nested inside `CartProvider`:
 
 | File | Change |
 |---|---|
-| `src/components/MenuItem.tsx` | When `!open`, do not render the ADD button or the quantity stepper. The image area still renders normally; nothing else changes. |
-| `src/components/RecommendedItem.tsx` | Same: hide the add control when `!open`. |
+| `src/components/MenuItem.tsx` | When `!open`, do not render the ADD button container at all — hide the entire `<div className="absolute bottom-0 right-[10px]">` block so the slanted-notch SVG behind the button is also hidden. The image, badges, and content area still render normally. |
+| `src/components/RecommendedItem.tsx` | Same: hide the add control (and any associated background/notch shape) when `!open`. |
 | `src/components/CartBar.tsx` | Hide the floating cart bar when `!open`. Cart items are still in memory. |
 | `src/app/order/page.tsx` | On render: if `!loading && !open`, `router.replace("/")` and show `toast("Store is currently closed")`. |
 | `src/app/success/page.tsx` | Same redirect + toast pattern. |
