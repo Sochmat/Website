@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import IngredientsSheet from "./IngredientsSheet";
 
@@ -13,6 +14,7 @@ interface MenuItemProps {
 export default function MenuItem({ product }: MenuItemProps) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
+  const { open: storeOpen } = useStoreStatus();
   const [subscriptionSheetOpen, setSubscriptionSheetOpen] = useState(false);
   const [ingredientsSheetOpen, setIngredientsSheetOpen] = useState(false);
   const cartItem = items.find((item) => item.id === product.id);
@@ -59,35 +61,37 @@ export default function MenuItem({ product }: MenuItemProps) {
         )}
 
         {/* ADD button with slanted notch */}
-        <div className="absolute bottom-0 right-[10px]">
-          <svg
-            className="absolute bottom-[-10px] right-[-10px]"
-            style={{ width: "150px", height: "60px" }}
-            viewBox="0 0 160 40"
-            preserveAspectRatio="none"
-            fill="white"
-          >
-            <path d="M58,0 L10,34 Q6,38 10,40 L160,40 L160,0 Z" />
-          </svg>
-          {quantity > 0 ? (
-            <div className="relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] flex items-center justify-between w-[84px] px-[12px] py-[6px] mb-[9px] mr-0 ml-auto mt-[11px]">
-              <button onClick={() => updateQuantity(product.id, quantity - 1)}>
-                -
-              </button>
-              <span className="text-[14px]">{quantity}</span>
-              <button onClick={() => updateQuantity(product.id, quantity + 1)}>
-                +
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleAddClick}
-              className="flex items-center justify-center relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] w-[84px] px-[12px] py-[6px] text-center leading-[18px] mb-[9px] mt-[11px] block ml-auto"
+        {storeOpen && (
+          <div className="absolute bottom-0 right-[10px]">
+            <svg
+              className="absolute bottom-[-10px] right-[-10px]"
+              style={{ width: "150px", height: "60px" }}
+              viewBox="0 0 160 40"
+              preserveAspectRatio="none"
+              fill="white"
             >
-              Add<span className="text-[14px] font-medium ml-1">+</span>
-            </button>
-          )}
-        </div>
+              <path d="M58,0 L10,34 Q6,38 10,40 L160,40 L160,0 Z" />
+            </svg>
+            {quantity > 0 ? (
+              <div className="relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] flex items-center justify-between w-[84px] px-[12px] py-[6px] mb-[9px] mr-0 ml-auto mt-[11px]">
+                <button onClick={() => updateQuantity(product.id, quantity - 1)}>
+                  -
+                </button>
+                <span className="text-[14px]">{quantity}</span>
+                <button onClick={() => updateQuantity(product.id, quantity + 1)}>
+                  +
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleAddClick}
+                className="flex items-center justify-center relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] w-[84px] px-[12px] py-[6px] text-center leading-[18px] mb-[9px] mt-[11px] block ml-auto"
+              >
+                Add<span className="text-[14px] font-medium ml-1">+</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Content area */}
