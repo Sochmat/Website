@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useCart } from "@/context/CartContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import { ArrowRight } from "lucide-react";
 
 export default function CartBar() {
   const { totalItems, totalKcal, totalProtein } = useCart();
+  const { open: storeOpen } = useStoreStatus();
 
-  if (totalItems === 0) return null;
+  if (totalItems === 0 || !storeOpen) return null;
 
   return (
     <div className="fixed bottom-9 left-1/2 -translate-x-1/2 bg-[#1c1c1c] flex items-center justify-between p-4 rounded-2xl shadow-[0px_6px_8px_0px_rgba(2,88,63,0.2)] w-[320px] max-w-[90%] z-50">
