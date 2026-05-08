@@ -59,6 +59,15 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const { db: settingsDb } = await connectToDatabase();
+    const storeDoc = await settingsDb.collection("settings").findOne({ key: "store" });
+    if (storeDoc?.open === false) {
+      return NextResponse.json(
+        { success: false, message: "Store is currently closed" },
+        { status: 503 },
+      );
+    }
+
     const body = (await request.json()) as Order;
     const phone = String(body.receiver?.phone ?? "")
       .trim()
