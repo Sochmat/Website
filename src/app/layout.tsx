@@ -5,6 +5,7 @@ import { CartProvider } from "@/context/CartContext";
 import { LocationProvider } from "@/context/LocationContext";
 import { UserProvider } from "@/context/UserContext";
 import { LoginPopupProvider } from "@/context/LoginPopupContext";
+import { StoreStatusProvider } from "@/context/StoreStatusContext";
 import LocationPrompt from "@/components/LocationPrompt";
 import LoginPopup from "@/components/LoginPopup";
 import OrderPromptModal from "@/components/OrderPromptModal";
@@ -31,12 +32,14 @@ export default function RootLayout({
         <UserProvider>
           <LoginPopupProvider>
             <CartProvider>
-              <LocationProvider>
-                <LocationPrompt />
-                {children}
-                <LoginPopup />
-                {/* <OrderPromptModal /> */}
-              </LocationProvider>
+              <StoreStatusProvider>
+                <LocationProvider>
+                  <LocationPrompt />
+                  {children}
+                  <LoginPopup />
+                  {/* <OrderPromptModal /> */}
+                </LocationProvider>
+              </StoreStatusProvider>
             </CartProvider>
           </LoginPopupProvider>
         </UserProvider>
