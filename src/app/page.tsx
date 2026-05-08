@@ -10,6 +10,7 @@ import MealCards from "@/components/MealCards";
 import HomeCategoryScroll from "@/components/HomeCategoryScroll";
 import LocationSelector from "@/components/LocationSelector";
 import { useLocation } from "@/context/LocationContext";
+import StoreClosedBanner from "@/components/StoreClosedBanner";
 
 export default function Home() {
   const { location, isServiceable } = useLocation();
@@ -26,6 +27,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-white max-w-[430px] mx-auto overflow-hidden relative">
+      <StoreClosedBanner />
       {/* Header */}
       <div className="flex justify-between items-center gap-2 mt-[20px] px-4">
         <Image src="/logo.svg" alt="Logo" width={270} height={80} priority />

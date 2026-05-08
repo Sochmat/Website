@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Menu from "@/components/Menu";
 import CartBar from "@/components/CartBar";
+import StoreClosedBanner from "@/components/StoreClosedBanner";
 
 interface MealCardData {
   _id: string;
@@ -121,6 +122,7 @@ function MenuContent() {
 
   return (
     <>
+      <StoreClosedBanner />
       <div className="px-4 pt-8 pb-4 flex flex-col h-screen">
         {mealCardId && <MealCardHeader cardId={mealCardId} />}
         <Menu
