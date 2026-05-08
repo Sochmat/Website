@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useStoreStatus } from "@/context/StoreStatusContext";
+import { message } from "antd";
 
 const LAST_SEEN_KEY = "admin_orders_last_seen";
 const SOUND_ENABLED_KEY = "admin_sound_enabled";
@@ -21,6 +23,22 @@ export default function AdminLayout({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<number | null>(null);
+
+  const {
+    open: storeOpen,
+    loading: storeLoading,
+    setOpen: setStoreOpen,
+  } = useStoreStatus();
+  const [storeToggleBusy, setStoreToggleBusy] = useState(false);
+
+  const handleStoreToggle = async () => {
+    if (storeToggleBusy || storeLoading) return;
+    setStoreToggleBusy(true);
+    const ok = await setStoreOpen(!storeOpen);
+    setStoreToggleBusy(false);
+    if (!ok) message.error("Failed to update store status");
+    else message.success(`Store ${!storeOpen ? "opened" : "closed"}`);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -215,6 +233,18 @@ export default function AdminLayout({
           >
             Users
           </Link>
+          <button
+            type="button"
+            onClick={handleStoreToggle}
+            disabled={storeToggleBusy || storeLoading}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
+              storeOpen
+                ? "bg-[#024731] hover:bg-[#013a28]"
+                : "bg-red-600 hover:bg-red-700"
+            } ${storeToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            Store: {storeOpen ? "ON" : "OFF"}
+          </button>
           <button
             onClick={handleLogout}
             className="bg-white text-[#1c1c1c] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
