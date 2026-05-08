@@ -1,11 +1,13 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { CheckCircleIcon } from "lucide-react";
+import { message } from "antd";
 import { Order } from "@/lib/types";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 
 const imgDelivery =
   "https://www.figma.com/api/mcp/asset/a5506fec-aaf3-4884-9aa6-625d4f483d7c";
@@ -32,6 +34,16 @@ function SuccessContent() {
   const orderId = searchParams.get("orderId");
   const isSubscription = !!subscriptionId;
   const [order, setOrder] = useState<Order | null>(null);
+
+  const router = useRouter();
+  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
+
+  useEffect(() => {
+    if (!storeLoading && !storeOpen) {
+      message.info("Store is currently closed");
+      router.replace("/");
+    }
+  }, [storeLoading, storeOpen, router]);
 
   useEffect(() => {
     if (!orderId) return;
@@ -239,7 +251,7 @@ function SuccessContent() {
                   Your subscription is active!
                 </h2>
                 <p className="text-sm text-[#666]">
-                  We'll deliver fresh meals to your doorstep according to your
+                  We&apos;ll deliver fresh meals to your doorstep according to your
                   schedule.
                 </p>
               </div>
