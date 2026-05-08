@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
+import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import { PlusIcon } from "lucide-react";
 
@@ -14,6 +15,7 @@ interface RecommendedItemProps {
 export default function RecommendedItem({ product }: RecommendedItemProps) {
   const router = useRouter();
   const { addToCart } = useCart();
+  const { open: storeOpen } = useStoreStatus();
   const [subscriptionSheetOpen, setSubscriptionSheetOpen] = useState(false);
 
   const handleAddClick = () => {
@@ -34,12 +36,14 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
           className="object-cover"
           unoptimized
         />
-        <button
-          onClick={handleAddClick}
-          className="absolute right-2 bottom-2 bg-white p-1.5 rounded-lg shadow-md border border-[#f56215]"
-        >
-          <PlusIcon className="w-5 h-5 text-[#f56215]" />
-        </button>
+        {storeOpen && (
+          <button
+            onClick={handleAddClick}
+            className="absolute right-2 bottom-2 bg-white p-1.5 rounded-lg shadow-md border border-[#f56215]"
+          >
+            <PlusIcon className="w-5 h-5 text-[#f56215]" />
+          </button>
+        )}
         <div className="absolute left-2 bottom-2">
           <div
             className={`w-4 h-4 bg-white border-2 ${
