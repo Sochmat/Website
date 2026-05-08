@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   ReactNode,
@@ -43,30 +44,26 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const setOpen = useCallback(
-    async (value: boolean) => {
-      const previous = open;
-      setOpenState(value); // optimistic
-      try {
-        const res = await fetch("/api/admin/store-status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ open: value }),
-        });
-        const data = await res.json();
-        if (!data?.success) {
-          setOpenState(previous);
-          return false;
-        }
-        return true;
-      } catch (error) {
-        console.error("Failed to update store status:", error);
-        setOpenState(previous);
+  const setOpen = useCallback(async (value: boolean) => {
+    setOpenState(value); // optimistic
+    try {
+      const res = await fetch("/api/admin/store-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ open: value }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        if (!cancelledRef.current) setOpenState(!value);
         return false;
       }
-    },
-    [open],
-  );
+      return true;
+    } catch (error) {
+      console.error("Failed to update store status:", error);
+      if (!cancelledRef.current) setOpenState(!value);
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -78,8 +75,13 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh]);
 
+  const value = useMemo(
+    () => ({ open, loading, refresh, setOpen }),
+    [open, loading, refresh, setOpen],
+  );
+
   return (
-    <StoreStatusContext.Provider value={{ open, loading, refresh, setOpen }}>
+    <StoreStatusContext.Provider value={value}>
       {children}
     </StoreStatusContext.Provider>
   );
