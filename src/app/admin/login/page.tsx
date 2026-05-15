@@ -21,7 +21,8 @@ export default function AdminLoginPage() {
       const data = await res.json();
       if (data.success) {
         localStorage.setItem("adminToken", data.token);
-        router.replace("/admin/menu");
+        localStorage.setItem("adminRole", data.role);
+        router.replace(data.role === "shop" ? "/admin/orders" : "/admin/menu");
       } else {
         setError(data.message);
       }

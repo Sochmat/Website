@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { MenuItem, Category } from "@/lib/types";
 import { Select } from "antd";
+import { useAdminRole } from "@/lib/useAdminRole";
 
 type FormState = Omit<
   MenuItem,
@@ -51,6 +52,8 @@ function parseDiscountPercent(discount: string): number | null {
 }
 
 export default function AdminMenuPage() {
+  const role = useAdminRole();
+  const isShop = role === "shop";
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [formData, setFormData] = useState<FormState>(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -280,7 +283,10 @@ export default function AdminMenuPage() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div
+        className={`grid grid-cols-1 ${isShop ? "" : "lg:grid-cols-2"} gap-6`}
+      >
+        {!isShop && (
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">
             {editingId ? "Edit Menu Item" : "Add New Menu Item"}
@@ -722,6 +728,7 @@ export default function AdminMenuPage() {
             </div>
           </form>
         </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">
@@ -816,6 +823,8 @@ export default function AdminMenuPage() {
                         </svg>
                       )}
                     </button>
+                    {!isShop && (
+                    <>
                     <button
                       onClick={() => handleEdit(item)}
                       className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -852,6 +861,8 @@ export default function AdminMenuPage() {
                         />
                       </svg>
                     </button>
+                    </>
+                    )}
                   </div>
                 </div>
               ))
@@ -860,6 +871,7 @@ export default function AdminMenuPage() {
         </div>
       </div>
 
+      {!isShop && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">
@@ -1120,6 +1132,7 @@ export default function AdminMenuPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

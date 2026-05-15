@@ -5,6 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import { message } from "antd";
+import type { AdminRole } from "@/lib/useAdminRole";
+
+const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
 
 const LAST_SEEN_KEY = "admin_orders_last_seen";
 const SOUND_ENABLED_KEY = "admin_sound_enabled";
@@ -20,6 +23,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [role, setRole] = useState<AdminRole | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<number | null>(null);
@@ -47,9 +51,23 @@ export default function AdminLayout({
   useEffect(() => {
     if (!mounted || typeof window === "undefined") return;
     const token = localStorage.getItem("adminToken");
+    const storedRole = localStorage.getItem("adminRole");
+    const nextRole: AdminRole | null =
+      storedRole === "admin" || storedRole === "shop" ? storedRole : null;
+    setRole(nextRole);
+
     const isLoginPage = pathname === "/admin/login";
     if (!isLoginPage && !token) {
       router.replace("/admin/login");
+      return;
+    }
+    if (
+      nextRole === "shop" &&
+      !isLoginPage &&
+      pathname !== "/admin" &&
+      !SHOP_ALLOWED_PATHS.includes(pathname)
+    ) {
+      router.replace("/admin/orders");
     }
   }, [mounted, pathname, router]);
 
@@ -150,8 +168,11 @@ export default function AdminLayout({
 
   const handleLogout = () => {
     localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminRole");
     router.replace("/admin/login");
   };
+
+  const isShop = role === "shop";
 
   const token =
     mounted && typeof window !== "undefined"
@@ -177,38 +198,44 @@ export default function AdminLayout({
           >
             Menu
           </Link>
-          <Link
-            href="/admin/banner"
-            className={`font-medium ${
-              pathname === "/admin/banner" ? "underline" : "hover:underline"
-            }`}
-          >
-            Banner
-          </Link>
-          <Link
-            href="/admin/tiles"
-            className={`font-medium ${
-              pathname === "/admin/tiles" ? "underline" : "hover:underline"
-            }`}
-          >
-            Tiles
-          </Link>
-          <Link
-            href="/admin/meal-cards"
-            className={`font-medium ${
-              pathname === "/admin/meal-cards" ? "underline" : "hover:underline"
-            }`}
-          >
-            Meals
-          </Link>
-          <Link
-            href="/admin/coupons"
-            className={`font-medium ${
-              pathname === "/admin/coupons" ? "underline" : "hover:underline"
-            }`}
-          >
-            Coupons
-          </Link>
+          {!isShop && (
+            <>
+              <Link
+                href="/admin/banner"
+                className={`font-medium ${
+                  pathname === "/admin/banner" ? "underline" : "hover:underline"
+                }`}
+              >
+                Banner
+              </Link>
+              <Link
+                href="/admin/tiles"
+                className={`font-medium ${
+                  pathname === "/admin/tiles" ? "underline" : "hover:underline"
+                }`}
+              >
+                Tiles
+              </Link>
+              <Link
+                href="/admin/meal-cards"
+                className={`font-medium ${
+                  pathname === "/admin/meal-cards"
+                    ? "underline"
+                    : "hover:underline"
+                }`}
+              >
+                Meals
+              </Link>
+              <Link
+                href="/admin/coupons"
+                className={`font-medium ${
+                  pathname === "/admin/coupons" ? "underline" : "hover:underline"
+                }`}
+              >
+                Coupons
+              </Link>
+            </>
+          )}
           <Link
             href="/admin/orders"
             className={`font-medium ${
@@ -217,34 +244,40 @@ export default function AdminLayout({
           >
             Orders
           </Link>
-          <Link
-            href="/admin/subscriptions"
-            className={`font-medium ${
-              pathname === "/admin/subscriptions" ? "underline" : "hover:underline"
-            }`}
-          >
-            Subscriptions
-          </Link>
-          <Link
-            href="/admin/users"
-            className={`font-medium ${
-              pathname === "/admin/users" ? "underline" : "hover:underline"
-            }`}
-          >
-            Users
-          </Link>
-          <button
-            type="button"
-            onClick={handleStoreToggle}
-            disabled={storeToggleBusy || storeLoading}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
-              storeOpen
-                ? "bg-[#024731] hover:bg-[#013a28]"
-                : "bg-red-600 hover:bg-red-700"
-            } ${storeToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
-          >
-            Store: {storeOpen ? "ON" : "OFF"}
-          </button>
+          {!isShop && (
+            <>
+              <Link
+                href="/admin/subscriptions"
+                className={`font-medium ${
+                  pathname === "/admin/subscriptions"
+                    ? "underline"
+                    : "hover:underline"
+                }`}
+              >
+                Subscriptions
+              </Link>
+              <Link
+                href="/admin/users"
+                className={`font-medium ${
+                  pathname === "/admin/users" ? "underline" : "hover:underline"
+                }`}
+              >
+                Users
+              </Link>
+              <button
+                type="button"
+                onClick={handleStoreToggle}
+                disabled={storeToggleBusy || storeLoading}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
+                  storeOpen
+                    ? "bg-[#024731] hover:bg-[#013a28]"
+                    : "bg-red-600 hover:bg-red-700"
+                } ${storeToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                Store: {storeOpen ? "ON" : "OFF"}
+              </button>
+            </>
+          )}
           <button
             onClick={handleLogout}
             className="bg-white text-[#1c1c1c] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
