@@ -18,6 +18,14 @@ const statusColors: Record<string, string> = {
   refunded: "#faad14",
 };
 
+interface OrderItemRow {
+  productId: string;
+  name: string;
+  image?: string;
+  quantity: number;
+  price: number;
+}
+
 interface OrderRow {
   key: string;
   orderNumber: string;
@@ -32,6 +40,7 @@ interface OrderRow {
   status: string;
   paymentStatus: string;
   createdAt: string;
+  items: OrderItemRow[];
 }
 
 export default function AdminOrdersPage() {
@@ -66,6 +75,15 @@ export default function AdminOrdersPage() {
               createdAt: o.createdAt
                 ? new Date(o.createdAt as string).toLocaleString()
                 : "-",
+              items: Array.isArray(o.orderItems)
+                ? (o.orderItems as Array<Record<string, unknown>>).map((it) => ({
+                    productId: String(it.productId ?? ""),
+                    name: String(it.name ?? "Unknown product"),
+                    image: it.image ? String(it.image) : undefined,
+                    quantity: Number(it.quantity ?? 0),
+                    price: Number(it.price ?? 0),
+                  }))
+                : [],
             }))
           );
         }
@@ -204,6 +222,93 @@ export default function AdminOrdersPage() {
     { title: "Created", dataIndex: "createdAt", key: "createdAt", width: 160 },
   ];
 
+  const itemColumns: ColumnsType<OrderItemRow> = [
+    {
+      title: "",
+      dataIndex: "image",
+      key: "image",
+      width: 56,
+      render: (image?: string) =>
+        image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={image}
+            alt=""
+            style={{
+              width: 40,
+              height: 40,
+              objectFit: "cover",
+              borderRadius: 6,
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 6,
+              background: "#f0f0f0",
+            }}
+          />
+        ),
+    },
+    { title: "Product", dataIndex: "name", key: "name" },
+    {
+      title: "Qty",
+      dataIndex: "quantity",
+      key: "quantity",
+      width: 80,
+    },
+    {
+      title: "Price (₹)",
+      dataIndex: "price",
+      key: "price",
+      width: 110,
+      render: (v: number) => v.toFixed(2),
+    },
+    {
+      title: "Line total (₹)",
+      key: "lineTotal",
+      width: 130,
+      render: (_: unknown, item: OrderItemRow) =>
+        (item.price * item.quantity).toFixed(2),
+    },
+  ];
+
+  function expandedRowRender(record: OrderRow) {
+    if (!record.items.length) {
+      return (
+        <div style={{ padding: 12, color: "#888" }}>No items on this order.</div>
+      );
+    }
+    const itemsTotal = record.items.reduce(
+      (sum, it) => sum + it.price * it.quantity,
+      0
+    );
+    return (
+      <Table<OrderItemRow>
+        columns={itemColumns}
+        dataSource={record.items.map((it, idx) => ({
+          ...it,
+          key: `${record.key}-${idx}`,
+        })) as (OrderItemRow & { key: string })[]}
+        pagination={false}
+        size="small"
+        rowKey="key"
+        summary={() => (
+          <Table.Summary.Row>
+            <Table.Summary.Cell index={0} colSpan={4}>
+              <span style={{ fontWeight: 600 }}>Items total</span>
+            </Table.Summary.Cell>
+            <Table.Summary.Cell index={1}>
+              <span style={{ fontWeight: 600 }}>₹{itemsTotal.toFixed(2)}</span>
+            </Table.Summary.Cell>
+          </Table.Summary.Row>
+        )}
+      />
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
       <h2 className="text-lg font-bold text-gray-800 mb-4">
@@ -213,6 +318,10 @@ export default function AdminOrdersPage() {
         columns={columns}
         dataSource={orders}
         loading={loading}
+        expandable={{
+          expandedRowRender,
+          rowExpandable: (record) => record.items.length > 0,
+        }}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,
