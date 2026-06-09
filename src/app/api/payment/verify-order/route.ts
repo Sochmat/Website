@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { Order } from "@/lib/types";
+import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +51,19 @@ export async function POST(request: NextRequest) {
               },
             }
           );
+        } else {
+          // Order is now paid — push it to Petpooja. The push never blocks
+          // verification; its outcome is recorded on the order for admin.
+          const order = await db
+            .collection("orders")
+            .findOne({ _id: new ObjectId(orderId) });
+          if (order) {
+            const pushResult = await pushOrderToPetpooja(
+              order as unknown as Order,
+              db
+            );
+            await recordPushResult(db, new ObjectId(orderId), pushResult);
+          }
         }
       }
       return NextResponse.json({

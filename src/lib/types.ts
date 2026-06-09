@@ -25,6 +25,7 @@ export interface MenuItem {
   addOns?: string[];
   category: string;
   type: "food" | "beverages";
+  petpoojaItemId?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -82,6 +83,12 @@ export interface Order {
   country?: string;
   pincode?: string;
   status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+
+  petpoojaStatus?: "success" | "failed" | "skipped";
+  petpoojaOrderId?: string;
+  petpoojaError?: string;
+  petpoojaPushedAt?: Date;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
