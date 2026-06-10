@@ -3,6 +3,27 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+// Must match the keys/path used by the admin layout's notification audio.
+const SOUND_ENABLED_KEY = "admin_sound_enabled";
+const SOUND_PATH = "/sounds/new-order.mp3";
+
+// Unlock browser autoplay using the login click (a genuine user gesture) so the
+// order-notification sound works as soon as the admin lands on the dashboard.
+// Plays the clip muted, then marks sound enabled. Best-effort: if the browser
+// still blocks it, the layout's "Enable sound" banner remains as a fallback.
+async function unlockNotificationSound() {
+  try {
+    const audio = new Audio(SOUND_PATH);
+    audio.muted = true;
+    await audio.play();
+    audio.pause();
+    audio.currentTime = 0;
+    localStorage.setItem(SOUND_ENABLED_KEY, "1");
+  } catch {
+    // Autoplay still blocked — fall back to the banner prompt in the layout.
+  }
+}
+
 export default function AdminLoginPage() {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +43,7 @@ export default function AdminLoginPage() {
       if (data.success) {
         localStorage.setItem("adminToken", data.token);
         localStorage.setItem("adminRole", data.role);
+        await unlockNotificationSound();
         router.replace(data.role === "shop" ? "/admin/orders" : "/admin/menu");
       } else {
         setError(data.message);
