@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { kotDayKey, nextKotNumber } from "@/lib/kotCounter";
 
 export async function GET() {
   try {
@@ -82,7 +83,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const update: Record<string, string> = {};
+    const update: Record<string, unknown> = {};
     if (status) update.status = status;
     if (paymentStatus) update.paymentStatus = paymentStatus;
 
@@ -94,9 +95,29 @@ export async function PATCH(req: NextRequest) {
     }
 
     const { db } = await connectToDatabase();
+    const _id = new ObjectId(id);
+
+    // On the first transition to "confirmed", allocate a daily KOT number and
+    // queue the order for printing. Idempotent: re-confirming won't renumber.
+    let kotNumber: number | undefined;
+    if (update.status === "confirmed") {
+      const existing = await db
+        .collection("orders")
+        .findOne({ _id }, { projection: { kotNumber: 1 } });
+      if (existing && existing.kotNumber == null) {
+        const day = kotDayKey();
+        kotNumber = await nextKotNumber(db, day);
+        update.kotNumber = kotNumber;
+        update.kotDate = day;
+        update.kotPrinted = false;
+      } else if (existing) {
+        kotNumber = existing.kotNumber as number;
+      }
+    }
+
     const result = await db
       .collection("orders")
-      .updateOne({ _id: new ObjectId(id) }, { $set: { ...update, updatedAt: new Date() } });
+      .updateOne({ _id }, { $set: { ...update, updatedAt: new Date() } });
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
@@ -105,7 +126,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, kotNumber });
   } catch (error) {
     console.error("Error updating order:", error);
     return NextResponse.json(
