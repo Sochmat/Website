@@ -196,11 +196,46 @@ def process_once(dry_run):
     return printed
 
 
+SAMPLE_TICKET = {
+    "id": "sample",
+    "orderNumber": "SO-TEST-0001",
+    "kotNumber": 1,
+    "createdAt": None,
+    "paymentMethod": "upi",
+    "paymentStatus": "paid",
+    "totalAmount": 449,
+    "receiver": {
+        "name": "Test Customer",
+        "phone": "9876543210",
+        "address": "12 MG Road, Indiranagar, Bengaluru 560038",
+    },
+    "items": [
+        {"name": "Veg Beetroot Burger", "quantity": 1, "price": 199},
+        {"name": "Diet Coke (300ml)", "quantity": 1, "price": 50},
+        {"name": "Chole Masala Rice Bowl (large)", "quantity": 1, "price": 200},
+    ],
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Sochmat KOT print agent")
     parser.add_argument("--dry-run", action="store_true", help="render to console, no printer")
     parser.add_argument("--once", action="store_true", help="process queue once and exit")
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="print one sample KOT (to the printer, or console with --dry-run) and exit; no server/token needed",
+    )
     args = parser.parse_args()
+
+    # --test verifies the printer/render only; it does not touch the server.
+    if args.test:
+        if args.dry_run:
+            print_to_console(SAMPLE_TICKET)
+        else:
+            print_to_printer(SAMPLE_TICKET)
+            print(f"[ok] sample KOT sent to printer '{PRINTER_NAME}'")
+        return
 
     if not TOKEN:
         print("[fatal] PRINT_AGENT_TOKEN is not set (see .env.example)")

@@ -42,10 +42,20 @@ PRINT_AGENT_TOKEN=<a long random string>
 python print_agent.py            # poll forever and print
 python print_agent.py --dry-run  # render tickets to the console (no printer)
 python print_agent.py --once     # process the current queue once, then exit
+python print_agent.py --test     # print one sample KOT on the printer, then exit
 ```
 
-Test without a printer first using `--dry-run`: accept an order in the admin
-panel and confirm the ticket shows up in the console.
+`--test` prints a built-in sample ticket — use it to confirm the printer and
+paper work without needing a real order or the server (no token required). Add
+`--dry-run` to send the sample to the console instead:
+
+```
+python print_agent.py --test            # sample -> printer
+python print_agent.py --test --dry-run  # sample -> console
+```
+
+Then test the full flow with `--dry-run`: accept an order in the admin panel
+and confirm the ticket shows up in the console.
 
 ## Run on boot (optional)
 
