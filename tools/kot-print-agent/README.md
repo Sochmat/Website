@@ -1,16 +1,18 @@
-# KOT Print Agent
+# KOT / Bill Print Agent
 
 Runs on the shop's **Windows PC** next to the thermal printer. It polls the
-Sochmat server for **confirmed** orders that haven't been printed yet, prints a
-KOT for each via ESC/POS, then tells the server it's done so the order isn't
-printed twice.
+Sochmat server for work and prints via ESC/POS, then tells the server it's done:
+
+- **KOT** — printed automatically when an order is accepted.
+- **Bill** — printed on demand when an admin clicks "Print Bill".
 
 ```
 Admin clicks "Accept"  ->  order.status = confirmed + KOT number assigned
+Admin clicks "Print Bill"  ->  bill number assigned + order flagged for bill
                            |
-   this agent polls  GET  /api/print/kot   (every POLL_INTERVAL seconds)
+   this agent polls  GET /api/print/kot  and  GET /api/print/bill
                            |
-   prints ticket  ->  POST /api/print/kot { id }  (marks kotPrinted)
+   prints  ->  POST /api/print/<kot|bill> { id }  (marks it printed)
 ```
 
 ## Server setup (once)
@@ -34,7 +36,8 @@ PRINT_AGENT_TOKEN=<a long random string>
    ```
 
    Edit `.env` — set `SERVER_URL`, `PRINT_AGENT_TOKEN` (must match the server),
-   and `PRINTER_NAME`.
+   and `PRINTER_NAME`. For bills, also set `FSSAI_NO`, `GST_NO`,
+   `SHOP_LEGAL_NAME`, `SHOP_CONTACT`, and `SHOP_ADDRESS` (printed on the bill).
 
 ## Run
 
@@ -42,16 +45,18 @@ PRINT_AGENT_TOKEN=<a long random string>
 python print_agent.py            # poll forever and print
 python print_agent.py --dry-run  # render tickets to the console (no printer)
 python print_agent.py --once     # process the current queue once, then exit
-python print_agent.py --test     # print one sample KOT on the printer, then exit
+python print_agent.py --test      # print one sample KOT on the printer, then exit
+python print_agent.py --test-bill # print one sample bill on the printer, then exit
 ```
 
-`--test` prints a built-in sample ticket — use it to confirm the printer and
-paper work without needing a real order or the server (no token required). Add
-`--dry-run` to send the sample to the console instead:
+`--test` / `--test-bill` print a built-in sample — use them to confirm the
+printer and paper work without needing a real order or the server (no token
+required). Add `--dry-run` to send the sample to the console instead:
 
 ```
-python print_agent.py --test            # sample -> printer
-python print_agent.py --test --dry-run  # sample -> console
+python print_agent.py --test            # sample KOT  -> printer
+python print_agent.py --test --dry-run  # sample KOT  -> console
+python print_agent.py --test-bill --dry-run  # sample bill -> console
 ```
 
 Then test the full flow with `--dry-run`: accept an order in the admin panel

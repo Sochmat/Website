@@ -25,3 +25,17 @@ export async function nextKotNumber(
   const seq = (result as { seq?: number } | null)?.seq;
   return typeof seq === "number" ? seq : 1;
 }
+
+/**
+ * Atomically allocates the next global bill number. Unlike the KOT sequence
+ * this never resets — it is an ever-increasing running counter across all days.
+ */
+export async function nextBillNumber(db: Db): Promise<number> {
+  const result = await db.collection("counters").findOneAndUpdate(
+    { _id: "bill:global" as unknown as object },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" }
+  );
+  const seq = (result as { seq?: number } | null)?.seq;
+  return typeof seq === "number" ? seq : 1;
+}

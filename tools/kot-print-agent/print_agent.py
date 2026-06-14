@@ -18,6 +18,7 @@ Run:
 import argparse
 import os
 import sys
+import textwrap
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -39,6 +40,12 @@ SHOP_NAME = os.environ.get("SHOP_NAME", "SOCHMAT")
 ORDER_SOURCE = os.environ.get("ORDER_SOURCE", "Website")
 FSSAI_NO = os.environ.get("FSSAI_NO", "")
 GST_NO = os.environ.get("GST_NO", "")
+
+# Used on the customer bill only.
+SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "Sochmat - by fitfuel")
+SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "")
+SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "")
+CASHIER = os.environ.get("CASHIER", "biller")
 
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -127,9 +134,99 @@ def render_lines(ticket):
     return lines
 
 
-def print_to_console(ticket):
+def render_bill_lines(bill):
+    """Return the customer bill as a list of (text, attrs) tuples."""
+    lines = []
+
+    def center(text, **attrs):
+        lines.append((text, {"align": "center", **attrs}))
+
+    def left(text, **attrs):
+        lines.append((text, {"align": "left", **attrs}))
+
+    def row(label, value, **attrs):
+        # label on the left, value right-aligned within LINE_WIDTH
+        space = max(1, LINE_WIDTH - len(label) - len(value))
+        left(label + " " * space + value, **attrs)
+
+    paid = str(bill.get("paymentStatus", "")).lower() == "paid"
+
+    center("PAID" if paid else "UNPAID", bold=True)
+    center("Duplicate")
+    center(SHOP_LEGAL_NAME, bold=True)
+    if GST_NO:
+        center(f"GST No:-{GST_NO}")
+    if FSSAI_NO:
+        center(f"FSSAI:-{FSSAI_NO}")
+
+    left("-" * LINE_WIDTH)
+    left(f"From {ORDER_SOURCE}[{bill.get('orderNumber', '')}]")
+    left(f"Name: {(bill.get('receiver') or {}).get('name', '')}")
+
+    left("-" * LINE_WIDTH)
+    date_part, _, time_part = fmt_local(bill.get("createdAt")).partition(" ")
+    row(f"Date: {date_part}", str(bill.get("method", "Delivery")))
+    left(time_part)
+    bill_no = bill.get("billNumber")
+    row(f"Cashier: {CASHIER}", f"Bill No.: {bill_no if bill_no is not None else '-'}")
+
+    left("-" * LINE_WIDTH)
+    row("Item", "Qty x Price   Amount")
+    left("-" * LINE_WIDTH)
+
+    total_qty = 0
+    for item in bill.get("items", []):
+        qty = int(item.get("quantity", 0))
+        price = float(item.get("price", 0))
+        amount = price * qty
+        total_qty += qty
+        name = str(item.get("name", ""))
+        for i in range(0, len(name), LINE_WIDTH):
+            left(name[i : i + LINE_WIDTH], bold=True)
+        row(f"  {qty} x {price:.2f}", f"{amount:.2f}")
+
+    left("-" * LINE_WIDTH)
+    sub = float(bill.get("subTotal", 0))
+    discount = float(bill.get("discountAmount", 0))
+    delivery_fee = float(bill.get("deliveryFee", 0))
+    tax = float(bill.get("tax", 0))
+    cgst = round(tax / 2, 2)
+    sgst = round(tax - cgst, 2)
+    grand = float(bill.get("totalAmount", 0))
+
+    row("Sub Total", f"{sub:.2f}")
+    if discount:
+        row("Discount", f"({discount:.2f})")
+    if delivery_fee:
+        row("Delivery Charge", f"{delivery_fee:.2f}")
+    if cgst:
+        row("CGST @2.5%", f"{cgst:.2f}")
+    if sgst:
+        row("SGST @2.5%", f"{sgst:.2f}")
+
+    round_off = grand - (sub - discount + delivery_fee + cgst + sgst)
+    if abs(round_off) >= 0.01:
+        row("Round off", f"{round_off:+.2f}")
+
+    left("-" * LINE_WIDTH)
+    row("Grand Total", f"Rs. {grand:.2f}", bold=True)
+    left(f"Total Qty: {total_qty}")
+    method = str(bill.get("paymentMethod", "")).title()
+    left(f"Paid via {method}" if paid else f"Payment: {bill.get('paymentStatus', '')}")
+
+    if SHOP_CONTACT or SHOP_ADDRESS:
+        left("-" * LINE_WIDTH)
+        if SHOP_CONTACT:
+            center(f"Contact:- {SHOP_CONTACT}")
+        for chunk in textwrap.wrap(SHOP_ADDRESS, LINE_WIDTH):
+            center(chunk)
+    center("Thanks for Ordering....!!")
+    return lines
+
+
+def print_to_console(lines):
     print("=" * LINE_WIDTH)
-    for text, attrs in render_lines(ticket):
+    for text, attrs in lines:
         prefix = ""
         if attrs.get("align") == "center":
             text = text.center(LINE_WIDTH)
@@ -140,11 +237,11 @@ def print_to_console(ticket):
     print()
 
 
-def print_to_printer(ticket):
+def print_to_printer(lines):
     from escpos.printer import Win32Raw
 
     p = Win32Raw(PRINTER_NAME)
-    for text, attrs in render_lines(ticket):
+    for text, attrs in lines:
         p.set(
             align=attrs.get("align", "left"),
             bold=bool(attrs.get("bold")),
@@ -157,20 +254,27 @@ def print_to_printer(ticket):
     p.cut()
 
 
-def fetch_queue():
+def emit(lines, dry_run):
+    if dry_run:
+        print_to_console(lines)
+    else:
+        print_to_printer(lines)
+
+
+def fetch_json(path, key):
     resp = requests.get(
-        f"{SERVER_URL}/api/print/kot",
+        f"{SERVER_URL}{path}",
         headers={"Authorization": f"Bearer {TOKEN}"},
         timeout=15,
     )
     resp.raise_for_status()
     data = resp.json()
-    return data.get("tickets", []) if data.get("success") else []
+    return data.get(key, []) if data.get("success") else []
 
 
-def ack(order_id):
+def ack(path, order_id):
     resp = requests.post(
-        f"{SERVER_URL}/api/print/kot",
+        f"{SERVER_URL}{path}",
         headers={
             "Authorization": f"Bearer {TOKEN}",
             "Content-Type": "application/json",
@@ -182,28 +286,44 @@ def ack(order_id):
     return resp.json().get("success", False)
 
 
-def process_once(dry_run):
-    tickets = fetch_queue()
-    if not tickets:
+def process_queue(path, key, render_fn, label_fn, dry_run):
+    """Fetch one queue, print each item, then ack. Returns count printed."""
+    items = fetch_json(path, key)
+    if not items:
         return 0
     printed = 0
-    for ticket in tickets:
+    for item in items:
         try:
-            if dry_run:
-                print_to_console(ticket)
-            else:
-                print_to_printer(ticket)
+            emit(render_fn(item), dry_run)
         except Exception as exc:
             # Printing failed -> do NOT ack, so it is retried next poll.
-            print(f"[error] print failed for {ticket.get('orderNumber')}: {exc}")
+            print(f"[error] print failed for {item.get('orderNumber')}: {exc}")
             continue
         try:
-            ack(ticket["id"])
+            ack(path, item["id"])
             printed += 1
-            print(f"[ok] printed KOT {ticket.get('kotNumber')} ({ticket.get('orderNumber')})")
+            print(f"[ok] {label_fn(item)}")
         except Exception as exc:
             # Printed but ack failed -> may reprint once next poll. Acceptable.
-            print(f"[warn] printed but ack failed for {ticket.get('orderNumber')}: {exc}")
+            print(f"[warn] printed but ack failed for {item.get('orderNumber')}: {exc}")
+    return printed
+
+
+def process_once(dry_run):
+    printed = process_queue(
+        "/api/print/kot",
+        "tickets",
+        render_lines,
+        lambda t: f"printed KOT {t.get('kotNumber')} ({t.get('orderNumber')})",
+        dry_run,
+    )
+    printed += process_queue(
+        "/api/print/bill",
+        "bills",
+        render_bill_lines,
+        lambda b: f"printed Bill {b.get('billNumber')} ({b.get('orderNumber')})",
+        dry_run,
+    )
     return printed
 
 
@@ -228,25 +348,54 @@ SAMPLE_TICKET = {
     ],
 }
 
+SAMPLE_BILL = {
+    "id": "sample",
+    "orderNumber": "SO-TEST-0001",
+    "billNumber": 2770,
+    "createdAt": None,
+    "method": "Delivery",
+    "paymentMethod": "upi",
+    "paymentStatus": "paid",
+    "receiver": {
+        "name": "Test Customer",
+        "phone": "9876543210",
+        "address": "12 MG Road, Indiranagar, Bengaluru 560038",
+    },
+    "items": [
+        {"name": "Veg Beetroot Burger", "quantity": 1, "price": 180},
+        {"name": "Chole Masala Rice Bowl (large)", "quantity": 1, "price": 150},
+    ],
+    "subTotal": 330,
+    "discountAmount": 31,
+    "deliveryFee": 0,
+    "tax": 16,
+    "totalAmount": 315,
+}
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Sochmat KOT print agent")
+    parser = argparse.ArgumentParser(description="Sochmat KOT / bill print agent")
     parser.add_argument("--dry-run", action="store_true", help="render to console, no printer")
-    parser.add_argument("--once", action="store_true", help="process queue once and exit")
+    parser.add_argument("--once", action="store_true", help="process queues once and exit")
     parser.add_argument(
         "--test",
         action="store_true",
         help="print one sample KOT (to the printer, or console with --dry-run) and exit; no server/token needed",
     )
+    parser.add_argument(
+        "--test-bill",
+        action="store_true",
+        help="print one sample bill (to the printer, or console with --dry-run) and exit; no server/token needed",
+    )
     args = parser.parse_args()
 
-    # --test verifies the printer/render only; it does not touch the server.
-    if args.test:
-        if args.dry_run:
-            print_to_console(SAMPLE_TICKET)
-        else:
-            print_to_printer(SAMPLE_TICKET)
-            print(f"[ok] sample KOT sent to printer '{PRINTER_NAME}'")
+    # --test / --test-bill verify the printer/render only; no server access.
+    if args.test or args.test_bill:
+        lines = render_bill_lines(SAMPLE_BILL) if args.test_bill else render_lines(SAMPLE_TICKET)
+        what = "bill" if args.test_bill else "KOT"
+        emit(lines, args.dry_run)
+        if not args.dry_run:
+            print(f"[ok] sample {what} sent to printer '{PRINTER_NAME}'")
         return
 
     if not TOKEN:
@@ -254,7 +403,7 @@ def main():
         sys.exit(1)
 
     mode = "dry-run" if args.dry_run else f"printer '{PRINTER_NAME}'"
-    print(f"KOT agent -> {SERVER_URL} | {mode} | poll {POLL_INTERVAL}s")
+    print(f"Print agent -> {SERVER_URL} | {mode} | poll {POLL_INTERVAL}s")
 
     if args.once:
         process_once(args.dry_run)

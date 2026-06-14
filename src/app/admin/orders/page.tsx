@@ -36,6 +36,7 @@ interface OrderRow {
   key: string;
   orderNumber: string;
   kotNumber: number | null;
+  billNumber: number | null;
   userPhone: string;
   userName: string;
   receiverName: string;
@@ -71,6 +72,8 @@ export default function AdminOrdersPage() {
               orderNumber: String(o.orderNumber ?? "-"),
               kotNumber:
                 o.kotNumber == null ? null : Number(o.kotNumber),
+              billNumber:
+                o.billNumber == null ? null : Number(o.billNumber),
               userPhone: (o.user as { phone?: string })?.phone ?? "-",
               userName: (o.user as { name?: string })?.name ?? "-",
               receiverName: (o.receiver as { name?: string })?.name ?? "-",
@@ -136,6 +139,44 @@ export default function AdminOrdersPage() {
       }
     } catch {
       message.error("Update failed");
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function handlePrintBill(id: string) {
+    setUpdatingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, printBill: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.key === id
+              ? {
+                  ...o,
+                  billNumber:
+                    data.billNumber != null
+                      ? Number(data.billNumber)
+                      : o.billNumber,
+                }
+              : o,
+          ),
+        );
+        message.success("Bill sent to printer");
+      } else {
+        message.error(data.message || "Failed to queue bill");
+      }
+    } catch {
+      message.error("Failed to queue bill");
     } finally {
       setUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -267,19 +308,29 @@ export default function AdminOrdersPage() {
     {
       title: "Action",
       key: "action",
-      width: 120,
+      width: 200,
       fixed: "right",
-      render: (_: unknown, record: OrderRow) =>
-        record.status === "pending" ? (
+      render: (_: unknown, record: OrderRow) => (
+        <div style={{ display: "flex", gap: 8 }}>
+          {record.status === "pending" && (
+            <Button
+              type="primary"
+              size="small"
+              loading={updatingIds.has(record.key)}
+              onClick={() => handleUpdate(record.key, "status", "confirmed")}
+            >
+              Accept
+            </Button>
+          )}
           <Button
-            type="primary"
             size="small"
             loading={updatingIds.has(record.key)}
-            onClick={() => handleUpdate(record.key, "status", "confirmed")}
+            onClick={() => handlePrintBill(record.key)}
           >
-            Accept
+            {record.billNumber == null ? "Print Bill" : "Reprint Bill"}
           </Button>
-        ) : null,
+        </div>
+      ),
     },
   ];
 
@@ -393,7 +444,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: 1610 }}
+        scroll={{ x: 1690 }}
       />
     </div>
   );

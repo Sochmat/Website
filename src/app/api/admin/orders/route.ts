@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
-import { kotDayKey, nextKotNumber } from "@/lib/kotCounter";
+import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
 
 export async function GET() {
   try {
@@ -75,7 +75,7 @@ export async function GET() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, status, paymentStatus } = await req.json();
+    const { id, status, paymentStatus, printBill } = await req.json();
     if (!id) {
       return NextResponse.json(
         { success: false, message: "Order id is required" },
@@ -87,7 +87,7 @@ export async function PATCH(req: NextRequest) {
     if (status) update.status = status;
     if (paymentStatus) update.paymentStatus = paymentStatus;
 
-    if (Object.keys(update).length === 0) {
+    if (Object.keys(update).length === 0 && !printBill) {
       return NextResponse.json(
         { success: false, message: "Nothing to update" },
         { status: 400 }
@@ -115,6 +115,23 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // "Print Bill": assign a global bill number once, then (re)queue the bill
+    // for the print agent. Clicking again reprints with the same bill number.
+    let billNumber: number | undefined;
+    if (printBill) {
+      const existing = await db
+        .collection("orders")
+        .findOne({ _id }, { projection: { billNumber: 1 } });
+      if (existing && existing.billNumber == null) {
+        billNumber = await nextBillNumber(db);
+        update.billNumber = billNumber;
+      } else if (existing) {
+        billNumber = existing.billNumber as number;
+      }
+      update.billRequested = true;
+      update.billPrinted = false;
+    }
+
     const result = await db
       .collection("orders")
       .updateOne({ _id }, { $set: { ...update, updatedAt: new Date() } });
@@ -126,7 +143,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, kotNumber });
+    return NextResponse.json({ success: true, kotNumber, billNumber });
   } catch (error) {
     console.error("Error updating order:", error);
     return NextResponse.json(
