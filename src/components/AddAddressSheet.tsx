@@ -96,6 +96,18 @@ export default function AddAddressSheet({
     setPickupAtStore(true);
   };
 
+  const handleTogglePickup = () => {
+    if (pickupAtStore) {
+      // Switch back to delivery: clear the store location so the user re-enters.
+      setPickupAtStore(false);
+      setLocationData(null);
+      setFlat("");
+      setLocality("");
+    } else {
+      handleUseStoreLocation();
+    }
+  };
+
   const handleSave = async () => {
     const addressStr = [flat, locality].filter(Boolean).join(", ");
     if (!addressStr.trim()) return;
@@ -253,22 +265,53 @@ export default function AddAddressSheet({
             </h2>
           </div>
 
-          {!pickupAtStore && (
-            <input
-              type="text"
-              placeholder="E.g. Floor, Flat no., Tower"
-              value={flat}
-              onChange={(e) => setFlat(e.target.value)}
-              className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
-            />
+          <div className="flex items-center justify-between border border-[#e5e5e5] rounded-xl px-4 py-3 mb-3">
+            <div>
+              <p className="text-[#111] font-medium text-sm">Pickup at store</p>
+              <p className="text-[#a3a3a3] text-xs">
+                Collect your order from the store (Dine-in)
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={pickupAtStore}
+              aria-label="Pickup at store"
+              onClick={handleTogglePickup}
+              className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${
+                pickupAtStore ? "bg-[#f56215]" : "bg-[#e5e5e5]"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  pickupAtStore ? "translate-x-5" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
+          {pickupAtStore ? (
+            <p className="text-[#111] text-sm bg-[#fff4ee] border border-[#f56215]/30 rounded-xl px-4 py-3 mb-2">
+              Pickup at store — Store Location, Gurgaon
+            </p>
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder="E.g. Floor, Flat no., Tower"
+                value={flat}
+                onChange={(e) => setFlat(e.target.value)}
+                className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
+              />
+              <input
+                type="text"
+                placeholder="E.g. Office Building, Locality Name"
+                value={locality}
+                onChange={(e) => setLocality(e.target.value)}
+                className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-2"
+              />
+            </>
           )}
-          <input
-            type="text"
-            placeholder="E.g. Office Building, Locality Name"
-            value={locality}
-            onChange={(e) => setLocality(e.target.value)}
-            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-2"
-          />
 
           <Divider style={{ margin: "8px 0px" }} />
 
