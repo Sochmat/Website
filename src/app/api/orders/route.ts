@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
         quantity: Number(item.quantity) || 0,
         price: Number(item.price) || 0,
       })),
+      method: body.method === "Dine-in" ? "Dine-in" : "Delivery",
       totalAmount,
       discountAmount,
       tax,

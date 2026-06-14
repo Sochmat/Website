@@ -210,6 +210,7 @@ export default function OrderPage() {
           quantity: item.quantity,
           price: item.price,
         })),
+        method: selectedAddress.pickupAtStore ? "Dine-in" : "Delivery",
         totalAmount: finalAmount,
         discountAmount: couponDiscountAmount,
         tax: gstAmount,

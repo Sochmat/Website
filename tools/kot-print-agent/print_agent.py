@@ -36,6 +36,9 @@ TOKEN = os.environ.get("PRINT_AGENT_TOKEN", "")
 PRINTER_NAME = os.environ.get("PRINTER_NAME", "POS-80")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "5"))
 SHOP_NAME = os.environ.get("SHOP_NAME", "SOCHMAT")
+ORDER_SOURCE = os.environ.get("ORDER_SOURCE", "Website")
+FSSAI_NO = os.environ.get("FSSAI_NO", "")
+GST_NO = os.environ.get("GST_NO", "")
 
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -75,11 +78,12 @@ def render_lines(ticket):
     kot_no = ticket.get("kotNumber")
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
 
+    center(f"From: {ORDER_SOURCE}", bold=True)
     center(SHOP_NAME, bold=True, double=True)
     center(fmt_local(ticket.get("createdAt")))
     center(kot_label, bold=True, double=True)
-    center(ticket.get("orderNumber", ""))
-    center("Delivery")
+    center(f"Order ID: {ticket.get('orderNumber', '')}")
+    center(f"Method: {ticket.get('method', 'Delivery')}", bold=True)
     left("-" * LINE_WIDTH)
     left(f"{'Item':<{LINE_WIDTH - 4}}{'Qty':>4}")
     left("-" * LINE_WIDTH)
@@ -113,6 +117,13 @@ def render_lines(ticket):
     left("-" * LINE_WIDTH)
     total = ticket.get("totalAmount", 0)
     left(f"Total   : Rs. {total}", bold=True)
+
+    if FSSAI_NO or GST_NO:
+        left("-" * LINE_WIDTH)
+        if FSSAI_NO:
+            center(f"FSSAI No: {FSSAI_NO}")
+        if GST_NO:
+            center(f"GST No: {GST_NO}")
     return lines
 
 
@@ -201,6 +212,7 @@ SAMPLE_TICKET = {
     "orderNumber": "SO-TEST-0001",
     "kotNumber": 1,
     "createdAt": None,
+    "method": "Delivery",
     "paymentMethod": "upi",
     "paymentStatus": "paid",
     "totalAmount": 449,

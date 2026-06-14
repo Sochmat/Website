@@ -83,6 +83,7 @@ export async function GET(req: NextRequest) {
       orderNumber: String(order.orderNumber ?? ""),
       kotNumber: (order.kotNumber as number | undefined) ?? null,
       createdAt: order.createdAt ?? null,
+      method: String(order.method ?? "Delivery"),
       paymentMethod: String(order.paymentMethod ?? ""),
       paymentStatus: String(order.paymentStatus ?? ""),
       totalAmount: Number(order.totalAmount ?? 0),

@@ -74,12 +74,14 @@ export default function AddAddressSheet({
         lng: editAddress.long,
         pincode: editAddress.pincode,
       });
+      setPickupAtStore(editAddress.pickupAtStore ?? false);
     } else if (open && !editAddress) {
       setFlat("");
       setLocality("");
       setReceiverName("");
       setReceiverPhone("");
       setLocationData(null);
+      setPickupAtStore(false);
     }
   }, [open, editAddress]);
 
@@ -116,6 +118,7 @@ export default function AddAddressSheet({
       pincode: pincode.trim() || "—",
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
+      pickupAtStore,
     };
 
     try {
