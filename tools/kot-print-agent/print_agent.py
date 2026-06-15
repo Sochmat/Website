@@ -60,6 +60,13 @@ BILL_AS_IMAGE = os.environ.get("BILL_AS_IMAGE", "1") not in ("0", "false", "Fals
 BILL_FONT_PX = int(os.environ.get("BILL_FONT_PX", "24"))
 BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "600"))
 
+# The KOT is likewise rendered as an image so its font size is adjustable.
+# Lower KOT_FONT_PX = smaller text. Emphasised lines (shop name, KOT number)
+# are scaled up automatically. Set KOT_AS_IMAGE=0 for plain text (font A).
+KOT_AS_IMAGE = os.environ.get("KOT_AS_IMAGE", "1") not in ("0", "false", "False")
+KOT_FONT_PX = int(os.environ.get("KOT_FONT_PX", "22"))
+KOT_IMG_WIDTH = int(os.environ.get("KOT_IMG_WIDTH", "600"))
+
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -301,20 +308,30 @@ def _load_mono_font(px):
 
 
 def render_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
-    """Render text lines to a 1-bit-ish bitmap so the font can be any size."""
+    """Render text lines to a 1-bit-ish bitmap so the font can be any size.
+
+    Lines flagged double=True are drawn with a larger font for emphasis.
+    """
     from PIL import Image, ImageDraw
 
     pad = 6
-    font = _load_mono_font(font_px)
-    ascent, descent = font.getmetrics()
-    line_h = ascent + descent + 2
+    base = _load_mono_font(font_px)
+    big = _load_mono_font(max(font_px + 1, int(round(font_px * 1.8))))
 
-    height = pad * 2 + line_h * len(lines)
+    def font_for(attrs):
+        return big if attrs.get("double") else base
+
+    def line_h(font):
+        ascent, descent = font.getmetrics()
+        return ascent + descent + 2
+
+    height = pad * 2 + sum(line_h(font_for(a)) for _, a in lines)
     img = Image.new("L", (width, height), 255)
     draw = ImageDraw.Draw(img)
 
     y = pad
     for text, attrs in lines:
+        font = font_for(attrs)
         stroke = 1 if attrs.get("bold") else 0
         try:
             bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
@@ -326,11 +343,11 @@ def render_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
         else:
             x = pad
         draw.text((x, y), text, font=font, fill=0, stroke_width=stroke, stroke_fill=0)
-        y += line_h
+        y += line_h(font)
     return img
 
 
-def _ensure_media_width(p):
+def _ensure_media_width(p, px_width=BILL_IMG_WIDTH):
     """python-escpos needs the profile's media pixel width to print images.
 
     The generic profile leaves it unset, which raises
@@ -342,34 +359,41 @@ def _ensure_media_width(p):
         width = media.setdefault("width", {})
         cur = width.get("pixel")
         if not isinstance(cur, int) or cur <= 0:
-            width["pixel"] = BILL_IMG_WIDTH
+            width["pixel"] = px_width
         if not isinstance(width.get("mm"), (int, float)):
             width["mm"] = 80
     except Exception:
         pass
 
 
-def print_image(lines):
+def print_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
     from escpos.printer import Win32Raw
 
-    img = render_image(lines)
+    img = render_image(lines, font_px=font_px, width=width)
     p = Win32Raw(PRINTER_NAME)
-    _ensure_media_width(p)
+    _ensure_media_width(p, width)
     p.image(img, center=False)
     p.text("\n")
     p.cut()
 
 
-def emit(lines, dry_run, line_spacing=None, as_image=False):
+def emit(
+    lines,
+    dry_run,
+    line_spacing=None,
+    as_image=False,
+    font_px=BILL_FONT_PX,
+    width=BILL_IMG_WIDTH,
+):
     if dry_run:
         print_to_console(lines)
         return
     if as_image:
         try:
-            print_image(lines)
+            print_image(lines, font_px=font_px, width=width)
             return
         except Exception as exc:
-            # Pillow missing or render error -> degrade to text-mode font B.
+            # Pillow missing or render error -> degrade to text mode.
             print(f"[warn] image print failed ({exc}); using text mode")
     print_to_printer(lines, line_spacing=line_spacing)
 
@@ -400,7 +424,15 @@ def ack(path, order_id):
 
 
 def process_queue(
-    path, key, render_fn, label_fn, dry_run, line_spacing=None, as_image=False
+    path,
+    key,
+    render_fn,
+    label_fn,
+    dry_run,
+    line_spacing=None,
+    as_image=False,
+    font_px=BILL_FONT_PX,
+    width=BILL_IMG_WIDTH,
 ):
     """Fetch one queue, print each item, then ack. Returns count printed."""
     items = fetch_json(path, key)
@@ -414,6 +446,8 @@ def process_queue(
                 dry_run,
                 line_spacing=line_spacing,
                 as_image=as_image,
+                font_px=font_px,
+                width=width,
             )
         except Exception as exc:
             # Printing failed -> do NOT ack, so it is retried next poll.
@@ -436,6 +470,9 @@ def process_once(dry_run):
         render_lines,
         lambda t: f"printed KOT {t.get('kotNumber')} ({t.get('orderNumber')})",
         dry_run,
+        as_image=KOT_AS_IMAGE,
+        font_px=KOT_FONT_PX,
+        width=KOT_IMG_WIDTH,
     )
     printed += process_queue(
         "/api/print/bill",
@@ -445,6 +482,8 @@ def process_once(dry_run):
         dry_run,
         line_spacing=BILL_LINE_SPACING,
         as_image=BILL_AS_IMAGE,
+        font_px=BILL_FONT_PX,
+        width=BILL_IMG_WIDTH,
     )
     return printed
 
@@ -514,24 +553,44 @@ def main():
         metavar="PATH",
         help="render the sample bill image to PATH (e.g. sample.png) to preview the font size, then exit",
     )
+    parser.add_argument(
+        "--save-kot-image",
+        metavar="PATH",
+        help="render the sample KOT image to PATH (e.g. sample.png) to preview the font size, then exit",
+    )
     args = parser.parse_args()
 
-    # Preview the actual bill bitmap (what the printer receives) to a file.
+    # Preview the actual bitmap (what the printer receives) to a file.
     if args.save_bill_image:
-        render_image(render_bill_lines(SAMPLE_BILL)).save(args.save_bill_image)
+        render_image(
+            render_bill_lines(SAMPLE_BILL), font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH
+        ).save(args.save_bill_image)
         print(f"[ok] sample bill image saved to {args.save_bill_image} (font px {BILL_FONT_PX})")
+        return
+    if args.save_kot_image:
+        render_image(
+            render_lines(SAMPLE_TICKET), font_px=KOT_FONT_PX, width=KOT_IMG_WIDTH
+        ).save(args.save_kot_image)
+        print(f"[ok] sample KOT image saved to {args.save_kot_image} (font px {KOT_FONT_PX})")
         return
 
     # --test / --test-bill verify the printer/render only; no server access.
     if args.test or args.test_bill:
-        lines = render_bill_lines(SAMPLE_BILL) if args.test_bill else render_lines(SAMPLE_TICKET)
-        what = "bill" if args.test_bill else "KOT"
-        spacing = BILL_LINE_SPACING if args.test_bill else None
+        if args.test_bill:
+            lines = render_bill_lines(SAMPLE_BILL)
+            what, spacing = "bill", BILL_LINE_SPACING
+            as_image, font_px, width = BILL_AS_IMAGE, BILL_FONT_PX, BILL_IMG_WIDTH
+        else:
+            lines = render_lines(SAMPLE_TICKET)
+            what, spacing = "KOT", None
+            as_image, font_px, width = KOT_AS_IMAGE, KOT_FONT_PX, KOT_IMG_WIDTH
         emit(
             lines,
             args.dry_run,
             line_spacing=spacing,
-            as_image=BILL_AS_IMAGE if args.test_bill else False,
+            as_image=as_image,
+            font_px=font_px,
+            width=width,
         )
         if not args.dry_run:
             print(f"[ok] sample {what} sent to printer '{PRINTER_NAME}'")

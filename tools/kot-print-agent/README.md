@@ -76,10 +76,11 @@ folder. Set it to restart on failure.
   once more on the next poll. This is intentionally kept simple.
 - KOT numbers are a per-day sequence assigned by the server when the order is
   accepted, and reset each day (Asia/Kolkata).
-- Layout targets an **80mm** printer. The KOT prints in **font A** at
-  `LINE_WIDTH` (32) columns. The bill is printed as an **image** so its font can
-  be smaller than the printer's built-in fonts — tune `BILL_FONT_PX` (lower =
-  smaller). Preview a size without a printer:
-  `python print_agent.py --save-bill-image sample.png`. Set `BILL_AS_IMAGE=0` to
-  fall back to plain text (font B); if the image is cut off, try
-  `BILL_IMG_WIDTH=512`.
+- Layout targets an **80mm** printer. Both the KOT and the bill are printed as
+  **images** so their font sizes are adjustable beyond the printer's built-in
+  fonts — tune `KOT_FONT_PX` / `BILL_FONT_PX` (lower = smaller). On the KOT the
+  shop name and KOT number scale up automatically. Preview a size without a
+  printer:
+  `python print_agent.py --save-kot-image sample.png` (or `--save-bill-image`).
+  Set `KOT_AS_IMAGE=0` / `BILL_AS_IMAGE=0` for plain text; if an image is cut
+  off, try `KOT_IMG_WIDTH=512` / `BILL_IMG_WIDTH=512`.
