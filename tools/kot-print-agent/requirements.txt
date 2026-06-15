@@ -2,3 +2,4 @@ requests
 python-dotenv
 python-escpos
 pywin32
+Pillow

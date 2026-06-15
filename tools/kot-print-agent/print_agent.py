@@ -52,6 +52,14 @@ CASHIER = os.environ.get("CASHIER", "biller")
 # 17 dots tall, so keep this above ~18 to avoid overlapping text.
 BILL_LINE_SPACING = int(os.environ.get("BILL_LINE_SPACING", "22"))
 
+# The bill is rendered as an image so its font can be smaller than the printer's
+# built-in font B. Lower BILL_FONT_PX = smaller text. BILL_IMG_WIDTH is the
+# printer's printable width in dots (576 for most 80mm heads). Set
+# BILL_AS_IMAGE=0 to fall back to plain text (font B) printing.
+BILL_AS_IMAGE = os.environ.get("BILL_AS_IMAGE", "1") not in ("0", "false", "False")
+BILL_FONT_PX = int(os.environ.get("BILL_FONT_PX", "17"))
+BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "576"))
+
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -275,11 +283,75 @@ def print_to_printer(lines, line_spacing=None):
     p.cut()
 
 
-def emit(lines, dry_run, line_spacing=None):
+def _load_mono_font(px):
+    from PIL import ImageFont
+
+    # Prefer a real monospace TTF; fall back to Pillow's scalable default.
+    for path in (
+        "consola.ttf",
+        "cour.ttf",
+        r"C:\Windows\Fonts\consola.ttf",
+        r"C:\Windows\Fonts\cour.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, px)
+        except Exception:
+            continue
+    return ImageFont.load_default(size=px)
+
+
+def render_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
+    """Render text lines to a 1-bit-ish bitmap so the font can be any size."""
+    from PIL import Image, ImageDraw
+
+    pad = 6
+    font = _load_mono_font(font_px)
+    ascent, descent = font.getmetrics()
+    line_h = ascent + descent + 2
+
+    height = pad * 2 + line_h * len(lines)
+    img = Image.new("L", (width, height), 255)
+    draw = ImageDraw.Draw(img)
+
+    y = pad
+    for text, attrs in lines:
+        stroke = 1 if attrs.get("bold") else 0
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke)
+            tw = bbox[2] - bbox[0]
+        except Exception:
+            tw = int(len(text) * font_px * 0.6)
+        if attrs.get("align") == "center":
+            x = max(0, (width - tw) // 2)
+        else:
+            x = pad
+        draw.text((x, y), text, font=font, fill=0, stroke_width=stroke, stroke_fill=0)
+        y += line_h
+    return img
+
+
+def print_image(lines):
+    from escpos.printer import Win32Raw
+
+    img = render_image(lines)
+    p = Win32Raw(PRINTER_NAME)
+    p.image(img)
+    p.text("\n")
+    p.cut()
+
+
+def emit(lines, dry_run, line_spacing=None, as_image=False):
     if dry_run:
         print_to_console(lines)
-    else:
-        print_to_printer(lines, line_spacing=line_spacing)
+        return
+    if as_image:
+        try:
+            print_image(lines)
+            return
+        except Exception as exc:
+            # Pillow missing or render error -> degrade to text-mode font B.
+            print(f"[warn] image print failed ({exc}); using text mode")
+    print_to_printer(lines, line_spacing=line_spacing)
 
 
 def fetch_json(path, key):
@@ -307,7 +379,9 @@ def ack(path, order_id):
     return resp.json().get("success", False)
 
 
-def process_queue(path, key, render_fn, label_fn, dry_run, line_spacing=None):
+def process_queue(
+    path, key, render_fn, label_fn, dry_run, line_spacing=None, as_image=False
+):
     """Fetch one queue, print each item, then ack. Returns count printed."""
     items = fetch_json(path, key)
     if not items:
@@ -315,7 +389,12 @@ def process_queue(path, key, render_fn, label_fn, dry_run, line_spacing=None):
     printed = 0
     for item in items:
         try:
-            emit(render_fn(item), dry_run, line_spacing=line_spacing)
+            emit(
+                render_fn(item),
+                dry_run,
+                line_spacing=line_spacing,
+                as_image=as_image,
+            )
         except Exception as exc:
             # Printing failed -> do NOT ack, so it is retried next poll.
             print(f"[error] print failed for {item.get('orderNumber')}: {exc}")
@@ -345,6 +424,7 @@ def process_once(dry_run):
         lambda b: f"printed Bill {b.get('billNumber')} ({b.get('orderNumber')})",
         dry_run,
         line_spacing=BILL_LINE_SPACING,
+        as_image=BILL_AS_IMAGE,
     )
     return printed
 
@@ -409,14 +489,30 @@ def main():
         action="store_true",
         help="print one sample bill (to the printer, or console with --dry-run) and exit; no server/token needed",
     )
+    parser.add_argument(
+        "--save-bill-image",
+        metavar="PATH",
+        help="render the sample bill image to PATH (e.g. sample.png) to preview the font size, then exit",
+    )
     args = parser.parse_args()
+
+    # Preview the actual bill bitmap (what the printer receives) to a file.
+    if args.save_bill_image:
+        render_image(render_bill_lines(SAMPLE_BILL)).save(args.save_bill_image)
+        print(f"[ok] sample bill image saved to {args.save_bill_image} (font px {BILL_FONT_PX})")
+        return
 
     # --test / --test-bill verify the printer/render only; no server access.
     if args.test or args.test_bill:
         lines = render_bill_lines(SAMPLE_BILL) if args.test_bill else render_lines(SAMPLE_TICKET)
         what = "bill" if args.test_bill else "KOT"
         spacing = BILL_LINE_SPACING if args.test_bill else None
-        emit(lines, args.dry_run, line_spacing=spacing)
+        emit(
+            lines,
+            args.dry_run,
+            line_spacing=spacing,
+            as_image=BILL_AS_IMAGE if args.test_bill else False,
+        )
         if not args.dry_run:
             print(f"[ok] sample {what} sent to printer '{PRINTER_NAME}'")
         return
