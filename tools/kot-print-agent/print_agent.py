@@ -58,8 +58,8 @@ _DOTS_PER_MM = 8  # 203 dpi thermal head
 # Columns that fill PRINT_WIDTH_MM depend on the chosen font.
 #   KOT  -> font B (smaller text)
 #   Bill -> font A (larger text)
-COLS_FONT_A = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 12)
-COLS_FONT_B = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 9)
+COLS_FONT_A = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 14)
+COLS_FONT_B = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 8)
 
 
 def line_width(attrs):
@@ -89,7 +89,7 @@ def render_lines(ticket):
     attrs is a dict the backend understands: {align, font, bold, double}.
     The same structure is reused by --dry-run to print to the console.
     """
-    w = COLS_FONT_B
+    w = COLS_FONT_A
     lines = []
 
     def center(text, **attrs):
@@ -131,11 +131,6 @@ def render_lines(ticket):
     cust = receiver.get("name", "")
     phone = receiver.get("phone", "")
     left(f"Customer: {cust} {phone}".rstrip())
-    addr = receiver.get("address", "")
-    if addr:
-        left("Address :")
-        for chunk in textwrap.wrap(addr, w - 2):
-            left("  " + chunk)
 
     left("-" * w)
     total = ticket.get("totalAmount", 0)
@@ -153,16 +148,16 @@ def render_lines(ticket):
 def render_bill_lines(bill):
     """Return the customer bill as a list of (text, attrs) tuples.
 
-    Rendered in the printer's larger font A, sized to fill the 6 cm width.
+    Rendered in the printer's smaller font B, sized to fill the 6 cm width.
     """
-    w = COLS_FONT_A
+    w = COLS_FONT_B
     lines = []
 
     def center(text, **attrs):
-        lines.append((text, {"align": "center", "font": "a", **attrs}))
+        lines.append((text, {"align": "center", "font": "b", **attrs}))
 
     def left(text, **attrs):
-        lines.append((text, {"align": "left", "font": "a", **attrs}))
+        lines.append((text, {"align": "left", "font": "b", **attrs}))
 
     def row(label, value, **attrs):
         # label on the left, value right-aligned within the line width
