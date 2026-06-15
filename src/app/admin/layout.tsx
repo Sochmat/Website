@@ -9,9 +9,11 @@ import type { AdminRole } from "@/lib/useAdminRole";
 
 const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
 
-const LAST_SEEN_KEY = "admin_orders_last_seen";
+const PAID_NOTIFIED_KEY = "admin_orders_paid_notified";
 const SOUND_ENABLED_KEY = "admin_sound_enabled";
 const POLL_INTERVAL_MS = 10_000;
+// How far back (by createdAt) to scan for orders that may have just been paid.
+const PAID_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const SOUND_PATH = "/sounds/new-order.mp3";
 const SOUND_MAX_MS = 5_000;
 
@@ -126,40 +128,53 @@ export default function AdminLayout({
     const token = localStorage.getItem("adminToken");
     if (!token) return;
 
-    if (!localStorage.getItem(LAST_SEEN_KEY)) {
-      localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
-    }
-
     let cancelled = false;
 
-    const checkForNewOrders = async () => {
+    // Ring only when an order's payment is registered as "paid". We remember
+    // the set of paid order ids already notified (persisted, so a reload does
+    // not re-ring). On the very first run we seed the set silently so orders
+    // that were already paid before the page opened don't trigger the sound.
+    const checkForPaidOrders = async () => {
       try {
-        const lastSeen =
-          localStorage.getItem(LAST_SEEN_KEY) ?? new Date().toISOString();
+        const since = new Date(Date.now() - PAID_LOOKBACK_MS).toISOString();
         const res = await fetch(
-          `/api/orders?gte=${encodeURIComponent(lastSeen)}`,
+          `/api/orders?gte=${encodeURIComponent(since)}`,
           { cache: "no-store" },
         );
         const data = await res.json();
         if (cancelled || !data?.success || !Array.isArray(data.orders)) return;
-        const fresh = data.orders.filter((o: { createdAt?: string }) => {
-          if (!o.createdAt) return false;
-          return new Date(o.createdAt).getTime() > new Date(lastSeen).getTime();
-        });
-        if (fresh.length === 0) return;
-        const newest = fresh.reduce((max: string, o: { createdAt?: string }) => {
-          const t = o.createdAt ?? "";
-          return new Date(t).getTime() > new Date(max).getTime() ? t : max;
-        }, lastSeen);
-        localStorage.setItem(LAST_SEEN_KEY, newest);
-        playSuccessTone();
+
+        const paidIds: string[] = data.orders
+          .filter(
+            (o: { _id?: string; paymentStatus?: string }) =>
+              String(o.paymentStatus ?? "") === "paid" && o._id,
+          )
+          .map((o: { _id?: string }) => String(o._id));
+
+        const raw = localStorage.getItem(PAID_NOTIFIED_KEY);
+        // Persist the current paid ids for the next poll. This also prunes ids
+        // that have aged out of the look-back window, keeping the set bounded.
+        localStorage.setItem(PAID_NOTIFIED_KEY, JSON.stringify(paidIds));
+
+        // First run — seeded silently above, so don't ring.
+        if (raw === null) return;
+
+        let prev: string[] = [];
+        try {
+          prev = JSON.parse(raw) as string[];
+        } catch {
+          prev = [];
+        }
+        const prevSet = new Set(prev);
+        const newlyPaid = paidIds.filter((id) => !prevSet.has(id));
+        if (newlyPaid.length > 0) playSuccessTone();
       } catch {
         // ignore
       }
     };
 
-    checkForNewOrders();
-    const interval = window.setInterval(checkForNewOrders, POLL_INTERVAL_MS);
+    checkForPaidOrders();
+    const interval = window.setInterval(checkForPaidOrders, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(interval);

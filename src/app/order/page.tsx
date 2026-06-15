@@ -28,6 +28,16 @@ import DeliveryDetailsSheet, {
   type DeliveryDetails,
 } from "@/components/DeliveryDetailsSheet";
 
+const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
+
+type SavedDeliveryDetails = {
+  name?: string;
+  phone?: string;
+  tower?: string;
+  floor?: string;
+  room?: string;
+};
+
 export default function OrderPage() {
   const {
     items,
@@ -75,6 +85,8 @@ export default function OrderPage() {
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
   // const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
+  const [savedDeliveryDetails, setSavedDeliveryDetails] =
+    useState<SavedDeliveryDetails | null>(null);
   const paymentMethod = "razorpay" as const;
   const selectedUpiApp: UpiApp | null = null;
 
@@ -109,6 +121,18 @@ export default function OrderPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Restore the last delivery details so the sheet pre-fills next time.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem(SAVED_DELIVERY_DETAILS_KEY);
+    if (!stored) return;
+    try {
+      setSavedDeliveryDetails(JSON.parse(stored) as SavedDeliveryDetails);
+    } catch {
+      // ignore malformed data
+    }
   }, []);
 
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -186,8 +210,8 @@ export default function OrderPage() {
         deliveryRoom: details.room,
       };
     } else {
-      receiverName = user?.name ?? "";
-      receiverPhone = user?.phone ?? "";
+      receiverName = details.name;
+      receiverPhone = details.phone;
       addressStr = `Dine-in — pickup at ${society.label}`;
       orderTypeFields = { orderType: "dine-in" };
     }
@@ -195,6 +219,31 @@ export default function OrderPage() {
     if (!receiverPhone) {
       message.error("A phone number is required to place the order");
       return;
+    }
+
+    // Persist the entered details so the sheet pre-fills on the next order.
+    if (typeof window !== "undefined") {
+      try {
+        const toSave: SavedDeliveryDetails = {
+          ...savedDeliveryDetails,
+          name: receiverName,
+          phone: receiverPhone,
+          ...(details.orderType === "delivery"
+            ? {
+                tower: details.tower,
+                floor: details.floor,
+                room: details.room,
+              }
+            : {}),
+        };
+        localStorage.setItem(
+          SAVED_DELIVERY_DETAILS_KEY,
+          JSON.stringify(toSave),
+        );
+        setSavedDeliveryDetails(toSave);
+      } catch {
+        // ignore storage errors (e.g. private mode)
+      }
     }
 
     setPlacingOrder(true);
@@ -589,8 +638,21 @@ export default function OrderPage() {
           open
           society={society}
           onClose={() => setShowDeliveryDetails(false)}
-          defaultName={user?.name ?? selectedAddress?.receiverName ?? ""}
-          defaultPhone={user?.phone ?? selectedAddress?.receiverPhone ?? ""}
+          defaultName={
+            savedDeliveryDetails?.name ??
+            user?.name ??
+            selectedAddress?.receiverName ??
+            ""
+          }
+          defaultPhone={
+            savedDeliveryDetails?.phone ??
+            user?.phone ??
+            selectedAddress?.receiverPhone ??
+            ""
+          }
+          defaultTower={savedDeliveryDetails?.tower ?? ""}
+          defaultFloor={savedDeliveryDetails?.floor ?? ""}
+          defaultRoom={savedDeliveryDetails?.room ?? ""}
           submitting={placingOrder}
           onConfirm={placeOrder}
         />

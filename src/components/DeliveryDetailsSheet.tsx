@@ -6,7 +6,7 @@ import type { Society } from "@/lib/societies";
 export const SUPPORT_PHONE = "+91-7042816413";
 
 export type DeliveryDetails =
-  | { orderType: "dine-in" }
+  | { orderType: "dine-in"; name: string; phone: string }
   | {
       orderType: "delivery";
       name: string;
@@ -24,6 +24,10 @@ interface DeliveryDetailsSheetProps {
   /** Pre-fill the delivery name/phone (e.g. from the logged-in user). */
   defaultName?: string;
   defaultPhone?: string;
+  /** Pre-fill the delivery location (e.g. from the last saved order). */
+  defaultTower?: string;
+  defaultFloor?: string;
+  defaultRoom?: string;
   /** Shows a busy state on the CTA while the order is being placed. */
   submitting?: boolean;
   onConfirm: (details: DeliveryDetails) => void;
@@ -45,6 +49,9 @@ export default function DeliveryDetailsSheet({
   society,
   defaultName = "",
   defaultPhone = "",
+  defaultTower = "",
+  defaultFloor = "",
+  defaultRoom = "",
   submitting = false,
   onConfirm,
 }: DeliveryDetailsSheetProps) {
@@ -53,9 +60,11 @@ export default function DeliveryDetailsSheet({
   const [orderType, setOrderType] = useState<OrderType>("delivery");
   const [name, setName] = useState(defaultName);
   const [phone, setPhone] = useState(defaultPhone);
-  const [tower, setTower] = useState<string | null>(null);
-  const [floor, setFloor] = useState("");
-  const [room, setRoom] = useState("");
+  const [tower, setTower] = useState<string | null>(
+    defaultTower && society.towers.includes(defaultTower) ? defaultTower : null,
+  );
+  const [floor, setFloor] = useState(defaultFloor);
+  const [room, setRoom] = useState(defaultRoom);
 
   // Lock background scroll while the sheet is open.
   useEffect(() => {
@@ -72,7 +81,7 @@ export default function DeliveryDetailsSheet({
   const validPhone = phoneDigits.length === 10;
   const canSubmit =
     orderType === "dine-in"
-      ? true
+      ? name.trim().length > 0 && validPhone
       : name.trim().length > 0 &&
         validPhone &&
         !!tower &&
@@ -82,7 +91,11 @@ export default function DeliveryDetailsSheet({
   const handleConfirm = () => {
     if (submitting || !canSubmit) return;
     if (orderType === "dine-in") {
-      onConfirm({ orderType: "dine-in" });
+      onConfirm({
+        orderType: "dine-in",
+        name: name.trim(),
+        phone: phoneDigits,
+      });
     } else {
       onConfirm({
         orderType: "delivery",
@@ -233,44 +246,45 @@ export default function DeliveryDetailsSheet({
             )}
           </div>
 
+          {/* Name + phone — required for both dine-in and delivery */}
+          <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-[#8a8378]">
+            Your Details
+          </p>
+          <input
+            type="text"
+            placeholder="Full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mb-3 w-full rounded-2xl border border-[#e7e0d6] bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215]"
+          />
+          <input
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="Phone number"
+            value={phone}
+            onChange={(e) =>
+              setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+            }
+            className={`w-full rounded-2xl border bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215] ${
+              phone.length > 0 && !validPhone
+                ? "border-red-400"
+                : "border-[#e7e0d6]"
+            }`}
+          />
+          {phone.length > 0 && !validPhone && (
+            <p className="mt-1 text-[12px] text-red-500">
+              Phone number must be exactly 10 digits
+            </p>
+          )}
+          <p className="mb-5 mt-1.5 text-[12px] text-[#a39c90]">
+            We&apos;ll save your details so you don&apos;t have to enter them
+            next time.
+          </p>
+
           {/* Delivery-only fields */}
           {orderType === "delivery" && (
             <>
-              <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-[#8a8378]">
-                Your Details
-              </p>
-              <input
-                type="text"
-                placeholder="Full name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mb-3 w-full rounded-2xl border border-[#e7e0d6] bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215]"
-              />
-              <input
-                type="tel"
-                inputMode="numeric"
-                maxLength={10}
-                placeholder="Phone number"
-                value={phone}
-                onChange={(e) =>
-                  setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
-                }
-                className={`w-full rounded-2xl border bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215] ${
-                  phone.length > 0 && !validPhone
-                    ? "border-red-400"
-                    : "border-[#e7e0d6]"
-                }`}
-              />
-              {phone.length > 0 && !validPhone && (
-                <p className="mt-1 text-[12px] text-red-500">
-                  Phone number must be exactly 10 digits
-                </p>
-              )}
-              <p className="mb-5 mt-1.5 text-[12px] text-[#a39c90]">
-                We&apos;ll save your details so you don&apos;t have to enter them
-                next time.
-              </p>
-
               <p className="mb-2.5 text-[12px] font-semibold uppercase tracking-wide text-[#8a8378]">
                 Select Your Tower
               </p>

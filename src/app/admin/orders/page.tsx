@@ -12,6 +12,7 @@ const ORDER_STATUSES = [
   "cancelled",
 ] as const;
 const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"] as const;
+const POLL_INTERVAL_MS = 10_000;
 
 const statusColors: Record<string, string> = {
   pending: "#faad14",
@@ -58,16 +59,22 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
+    // Refresh in the background so new/updated orders appear without a reload.
+    const interval = setInterval(
+      () => fetchOrders({ silent: true }),
+      POLL_INTERVAL_MS,
+    );
+    return () => clearInterval(interval);
   }, []);
 
-  function fetchOrders() {
-    setLoading(true);
+  function fetchOrders({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) setLoading(true);
     fetch("/api/admin/orders")
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.orders)) {
-          setOrders(
-            data.orders.map((o: Record<string, unknown>) => ({
+          const mapped: OrderRow[] = data.orders.map(
+            (o: Record<string, unknown>) => ({
               key: String(o._id),
               orderNumber: String(o.orderNumber ?? "-"),
               kotNumber:
@@ -99,12 +106,24 @@ export default function AdminOrdersPage() {
                     }),
                   )
                 : [],
-            })),
+            }),
+          );
+          // Shop users don't see failed-payment orders.
+          const role =
+            typeof window !== "undefined"
+              ? localStorage.getItem("adminRole")
+              : null;
+          setOrders(
+            role === "shop"
+              ? mapped.filter((o) => o.paymentStatus !== "failed")
+              : mapped,
           );
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }
 
   async function handleUpdate(
