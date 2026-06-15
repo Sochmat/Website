@@ -55,21 +55,13 @@ BILL_LINE_SPACING = int(os.environ.get("BILL_LINE_SPACING", "22"))
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# Target printable width. Everything is laid out to fill this width.
-PRINT_WIDTH_MM = float(os.environ.get("PRINT_WIDTH_MM", "60"))  # 6 cm
-_DOTS_PER_MM = 8  # 203 dpi thermal head
-
-# ESC/POS offers only two built-in fonts: A (12 dots wide) and B (9 dots wide).
-# Columns that fill PRINT_WIDTH_MM depend on the chosen font.
-#   KOT  -> font B (smaller text)
-#   Bill -> font A (larger text)
-COLS_FONT_A = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 14)
-COLS_FONT_B = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 8)
+LINE_WIDTH = 32  # characters for an 80mm printer at font A
+BILL_WIDTH = 42  # characters at the smaller font B (used for the bill)
 
 
 def line_width(attrs):
     """Columns available for a line given its font."""
-    return COLS_FONT_B if attrs.get("font") == "b" else COLS_FONT_A
+    return BILL_WIDTH if attrs.get("font") == "b" else LINE_WIDTH
 
 
 def fmt_local(iso_value):
@@ -90,18 +82,18 @@ def fmt_local(iso_value):
 def render_lines(ticket):
     """Return the KOT as a list of (text, attrs) tuples for ESC/POS rendering.
 
-    Rendered in the printer's smaller font B, sized to fill the 6 cm width.
+    Rendered in font A on an 80mm printer (LINE_WIDTH columns).
     attrs is a dict the backend understands: {align, font, bold, double}.
     The same structure is reused by --dry-run to print to the console.
     """
-    w = COLS_FONT_A
+    w = LINE_WIDTH
     lines = []
 
     def center(text, **attrs):
-        lines.append((text, {"align": "center", "font": "b", **attrs}))
+        lines.append((text, {"align": "center", **attrs}))
 
     def left(text, **attrs):
-        lines.append((text, {"align": "left", "font": "b", **attrs}))
+        lines.append((text, {"align": "left", **attrs}))
 
     kot_no = ticket.get("kotNumber")
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
@@ -153,9 +145,9 @@ def render_lines(ticket):
 def render_bill_lines(bill):
     """Return the customer bill as a list of (text, attrs) tuples.
 
-    Rendered in the printer's smaller font B, sized to fill the 6 cm width.
+    Rendered in the printer's smaller font B (BILL_WIDTH columns).
     """
-    w = COLS_FONT_B
+    w = BILL_WIDTH
     lines = []
 
     def center(text, **attrs):
@@ -245,7 +237,7 @@ def render_bill_lines(bill):
 
 
 def print_to_console(lines):
-    border = max((line_width(a) for _, a in lines), default=COLS_FONT_A)
+    border = max((line_width(a) for _, a in lines), default=LINE_WIDTH)
     print("=" * border)
     for text, attrs in lines:
         prefix = ""

@@ -76,8 +76,7 @@ folder. Set it to restart on failure.
   once more on the next poll. This is intentionally kept simple.
 - KOT numbers are a per-day sequence assigned by the server when the order is
   accepted, and reset each day (Asia/Kolkata).
-- Layout fills `PRINT_WIDTH_MM` (default 60 mm / 6 cm). Thermal printers only
-  have two built-in fonts, so font size isn't continuously adjustable: the KOT
-  uses the smaller **font B** and the bill uses the larger **font A**. If your
-  paper is a different width, change `PRINT_WIDTH_MM` and the column counts
-  recompute automatically.
+- Layout targets an **80mm** printer: the KOT prints in **font A** at
+  `LINE_WIDTH` (32) columns, and the bill in the smaller **font B** at
+  `BILL_WIDTH` (42) columns. Thermal printers only have these two built-in
+  fonts, so font size isn't continuously adjustable.
