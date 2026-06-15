@@ -47,6 +47,11 @@ SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "")
 SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "")
 CASHIER = os.environ.get("CASHIER", "biller")
 
+# Vertical line spacing (in dots) used for the bill only, to make it more
+# compact. The printer default is ~30; lower = tighter lines. Font B glyphs are
+# 17 dots tall, so keep this above ~18 to avoid overlapping text.
+BILL_LINE_SPACING = int(os.environ.get("BILL_LINE_SPACING", "22"))
+
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -253,10 +258,13 @@ def print_to_console(lines):
     print()
 
 
-def print_to_printer(lines):
+def print_to_printer(lines, line_spacing=None):
     from escpos.printer import Win32Raw
 
     p = Win32Raw(PRINTER_NAME)
+    if line_spacing is not None:
+        # ESC 3 n -> set line spacing to n dots (tighter than default).
+        p._raw(b"\x1b\x33" + bytes([max(0, min(255, int(line_spacing)))]))
     for text, attrs in lines:
         p.set(
             align=attrs.get("align", "left"),
@@ -269,15 +277,17 @@ def print_to_printer(lines):
     p.set(
         align="left", font="a", bold=False, double_height=False, double_width=False
     )
+    if line_spacing is not None:
+        p._raw(b"\x1b\x32")  # ESC 2 -> restore default line spacing
     p.text("\n")
     p.cut()
 
 
-def emit(lines, dry_run):
+def emit(lines, dry_run, line_spacing=None):
     if dry_run:
         print_to_console(lines)
     else:
-        print_to_printer(lines)
+        print_to_printer(lines, line_spacing=line_spacing)
 
 
 def fetch_json(path, key):
@@ -305,7 +315,7 @@ def ack(path, order_id):
     return resp.json().get("success", False)
 
 
-def process_queue(path, key, render_fn, label_fn, dry_run):
+def process_queue(path, key, render_fn, label_fn, dry_run, line_spacing=None):
     """Fetch one queue, print each item, then ack. Returns count printed."""
     items = fetch_json(path, key)
     if not items:
@@ -313,7 +323,7 @@ def process_queue(path, key, render_fn, label_fn, dry_run):
     printed = 0
     for item in items:
         try:
-            emit(render_fn(item), dry_run)
+            emit(render_fn(item), dry_run, line_spacing=line_spacing)
         except Exception as exc:
             # Printing failed -> do NOT ack, so it is retried next poll.
             print(f"[error] print failed for {item.get('orderNumber')}: {exc}")
@@ -342,6 +352,7 @@ def process_once(dry_run):
         render_bill_lines,
         lambda b: f"printed Bill {b.get('billNumber')} ({b.get('orderNumber')})",
         dry_run,
+        line_spacing=BILL_LINE_SPACING,
     )
     return printed
 
@@ -412,7 +423,8 @@ def main():
     if args.test or args.test_bill:
         lines = render_bill_lines(SAMPLE_BILL) if args.test_bill else render_lines(SAMPLE_TICKET)
         what = "bill" if args.test_bill else "KOT"
-        emit(lines, args.dry_run)
+        spacing = BILL_LINE_SPACING if args.test_bill else None
+        emit(lines, args.dry_run, line_spacing=spacing)
         if not args.dry_run:
             print(f"[ok] sample {what} sent to printer '{PRINTER_NAME}'")
         return
