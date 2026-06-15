@@ -11,7 +11,7 @@ const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
 
 const LAST_SEEN_KEY = "admin_orders_last_seen";
 const SOUND_ENABLED_KEY = "admin_sound_enabled";
-const POLL_INTERVAL_MS = 20_000;
+const POLL_INTERVAL_MS = 10_000;
 const SOUND_PATH = "/sounds/new-order.mp3";
 const SOUND_MAX_MS = 5_000;
 
@@ -158,6 +158,7 @@ export default function AdminLayout({
       }
     };
 
+    checkForNewOrders();
     const interval = window.setInterval(checkForNewOrders, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;

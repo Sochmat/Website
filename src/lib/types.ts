@@ -76,6 +76,7 @@ export interface Order {
   paymentSignature?: string;
 
   orderItems: OrderItem[];
+  method?: "Dine-in" | "Delivery";
   receiver?: User & { lat?: number; lng?: number };
   address?: string;
   city?: string;
@@ -109,6 +110,7 @@ export interface UserAddress {
   pincode: string;
   receiverName?: string;
   receiverPhone?: string;
+  pickupAtStore?: boolean;
 }
 
 export interface MealCard {

@@ -1,10 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Table, Select, message } from "antd";
+import { Table, Select, Button, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 
-const ORDER_STATUSES = ["pending", "confirmed", "shipped", "delivered", "cancelled"] as const;
+const ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "shipped",
+  "delivered",
+  "cancelled",
+] as const;
 const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"] as const;
 
 const statusColors: Record<string, string> = {
@@ -29,6 +35,8 @@ interface OrderItemRow {
 interface OrderRow {
   key: string;
   orderNumber: string;
+  kotNumber: number | null;
+  billNumber: number | null;
   userPhone: string;
   userName: string;
   receiverName: string;
@@ -62,11 +70,16 @@ export default function AdminOrdersPage() {
             data.orders.map((o: Record<string, unknown>) => ({
               key: String(o._id),
               orderNumber: String(o.orderNumber ?? "-"),
+              kotNumber:
+                o.kotNumber == null ? null : Number(o.kotNumber),
+              billNumber:
+                o.billNumber == null ? null : Number(o.billNumber),
               userPhone: (o.user as { phone?: string })?.phone ?? "-",
               userName: (o.user as { name?: string })?.name ?? "-",
               receiverName: (o.receiver as { name?: string })?.name ?? "-",
               receiverPhone: (o.receiver as { phone?: string })?.phone ?? "-",
-              receiverAddress: (o.receiver as { address?: string })?.address ?? "-",
+              receiverAddress:
+                (o.receiver as { address?: string })?.address ?? "-",
               receiverLat: (o.receiver as { lat?: number })?.lat ?? 0,
               receiverLng: (o.receiver as { lng?: number })?.lng ?? 0,
               totalAmount: Number(o.totalAmount ?? 0),
@@ -76,15 +89,17 @@ export default function AdminOrdersPage() {
                 ? new Date(o.createdAt as string).toLocaleString()
                 : "-",
               items: Array.isArray(o.orderItems)
-                ? (o.orderItems as Array<Record<string, unknown>>).map((it) => ({
-                    productId: String(it.productId ?? ""),
-                    name: String(it.name ?? "Unknown product"),
-                    image: it.image ? String(it.image) : undefined,
-                    quantity: Number(it.quantity ?? 0),
-                    price: Number(it.price ?? 0),
-                  }))
+                ? (o.orderItems as Array<Record<string, unknown>>).map(
+                    (it) => ({
+                      productId: String(it.productId ?? ""),
+                      name: String(it.name ?? "Unknown product"),
+                      image: it.image ? String(it.image) : undefined,
+                      quantity: Number(it.quantity ?? 0),
+                      price: Number(it.price ?? 0),
+                    }),
+                  )
                 : [],
-            }))
+            })),
           );
         }
       })
@@ -95,7 +110,7 @@ export default function AdminOrdersPage() {
   async function handleUpdate(
     id: string,
     field: "status" | "paymentStatus",
-    value: string
+    value: string,
   ) {
     setUpdatingIds((prev) => new Set(prev).add(id));
     try {
@@ -107,7 +122,16 @@ export default function AdminOrdersPage() {
       const data = await res.json();
       if (data.success) {
         setOrders((prev) =>
-          prev.map((o) => (o.key === id ? { ...o, [field]: value } : o))
+          prev.map((o) =>
+            o.key === id
+              ? {
+                  ...o,
+                  [field]: value,
+                  kotNumber:
+                    data.kotNumber != null ? Number(data.kotNumber) : o.kotNumber,
+                }
+              : o,
+          ),
         );
         message.success("Updated successfully");
       } else {
@@ -124,12 +148,63 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handlePrintBill(id: string) {
+    setUpdatingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, printBill: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.key === id
+              ? {
+                  ...o,
+                  billNumber:
+                    data.billNumber != null
+                      ? Number(data.billNumber)
+                      : o.billNumber,
+                }
+              : o,
+          ),
+        );
+        message.success("Bill sent to printer");
+      } else {
+        message.error(data.message || "Failed to queue bill");
+      }
+    } catch {
+      message.error("Failed to queue bill");
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
   const columns: ColumnsType<OrderRow> = [
     {
       title: "Order #",
       dataIndex: "orderNumber",
       key: "orderNumber",
       width: 140,
+    },
+    {
+      title: "KOT",
+      dataIndex: "kotNumber",
+      key: "kotNumber",
+      width: 70,
+      align: "center",
+      render: (value: number | null) =>
+        value == null ? (
+          <span style={{ color: "#bbb" }}>-</span>
+        ) : (
+          <span style={{ fontWeight: 600 }}>{value}</span>
+        ),
     },
     { title: "User", dataIndex: "userName", key: "userName", ellipsis: true },
     { title: "Phone", dataIndex: "userPhone", key: "userPhone", width: 120 },
@@ -159,7 +234,12 @@ export default function AdminOrdersPage() {
               href={`https://www.google.com/maps?q=${record.receiverLat},${record.receiverLng}`}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ display: "block", fontSize: 11, color: "#1890ff", marginTop: 2 }}
+              style={{
+                display: "block",
+                fontSize: 11,
+                color: "#1890ff",
+                marginTop: 2,
+              }}
             >
               View on Maps ↗
             </a>
@@ -169,6 +249,7 @@ export default function AdminOrdersPage() {
     },
     {
       title: "Amount (₹)",
+      align: "center",
       dataIndex: "totalAmount",
       key: "totalAmount",
       width: 100,
@@ -188,7 +269,9 @@ export default function AdminOrdersPage() {
         >
           {ORDER_STATUSES.map((s) => (
             <Select.Option key={s} value={s}>
-              <span style={{ color: statusColors[s] ?? "#000", fontWeight: 500 }}>
+              <span
+                style={{ color: statusColors[s] ?? "#000", fontWeight: 500 }}
+              >
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </span>
             </Select.Option>
@@ -211,7 +294,9 @@ export default function AdminOrdersPage() {
         >
           {PAYMENT_STATUSES.map((s) => (
             <Select.Option key={s} value={s}>
-              <span style={{ color: statusColors[s] ?? "#000", fontWeight: 500 }}>
+              <span
+                style={{ color: statusColors[s] ?? "#000", fontWeight: 500 }}
+              >
                 {s.charAt(0).toUpperCase() + s.slice(1)}
               </span>
             </Select.Option>
@@ -220,6 +305,33 @@ export default function AdminOrdersPage() {
       ),
     },
     { title: "Created", dataIndex: "createdAt", key: "createdAt", width: 160 },
+    {
+      title: "Action",
+      key: "action",
+      width: 200,
+      fixed: "right",
+      render: (_: unknown, record: OrderRow) => (
+        <div style={{ display: "flex", gap: 8 }}>
+          {record.status === "pending" && (
+            <Button
+              type="primary"
+              size="small"
+              loading={updatingIds.has(record.key)}
+              onClick={() => handleUpdate(record.key, "status", "confirmed")}
+            >
+              Accept
+            </Button>
+          )}
+          <Button
+            size="small"
+            loading={updatingIds.has(record.key)}
+            onClick={() => handlePrintBill(record.key)}
+          >
+            {record.billNumber == null ? "Print Bill" : "Reprint Bill"}
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   const itemColumns: ColumnsType<OrderItemRow> = [
@@ -278,20 +390,24 @@ export default function AdminOrdersPage() {
   function expandedRowRender(record: OrderRow) {
     if (!record.items.length) {
       return (
-        <div style={{ padding: 12, color: "#888" }}>No items on this order.</div>
+        <div style={{ padding: 12, color: "#888" }}>
+          No items on this order.
+        </div>
       );
     }
     const itemsTotal = record.items.reduce(
       (sum, it) => sum + it.price * it.quantity,
-      0
+      0,
     );
     return (
       <Table<OrderItemRow>
         columns={itemColumns}
-        dataSource={record.items.map((it, idx) => ({
-          ...it,
-          key: `${record.key}-${idx}`,
-        })) as (OrderItemRow & { key: string })[]}
+        dataSource={
+          record.items.map((it, idx) => ({
+            ...it,
+            key: `${record.key}-${idx}`,
+          })) as (OrderItemRow & { key: string })[]
+        }
         pagination={false}
         size="small"
         rowKey="key"
@@ -318,6 +434,7 @@ export default function AdminOrdersPage() {
         columns={columns}
         dataSource={orders}
         loading={loading}
+        size="small"
         expandable={{
           expandedRowRender,
           rowExpandable: (record) => record.items.length > 0,
@@ -327,7 +444,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: 1420 }}
+        scroll={{ x: 1690 }}
       />
     </div>
   );

@@ -61,7 +61,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const storeDoc = await settingsDb.collection("settings").findOne({ key: "store" });
+    const storeDoc = await settingsDb
+      .collection("settings")
+      .findOne({ key: "store" });
     if (storeDoc?.open === false) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -165,9 +167,14 @@ export async function POST(request: NextRequest) {
         price: Number(item.price) || 0,
       })),
       orderType: body.orderType,
-      deliveryTower: body.orderType === "delivery" ? body.deliveryTower : undefined,
-      deliveryFloor: body.orderType === "delivery" ? body.deliveryFloor : undefined,
-      deliveryRoom: body.orderType === "delivery" ? body.deliveryRoom : undefined,
+      // Print agent (KOT/bill) reads order.method; derive it from orderType.
+      method: body.orderType === "dine-in" ? "Dine-in" : "Delivery",
+      deliveryTower:
+        body.orderType === "delivery" ? body.deliveryTower : undefined,
+      deliveryFloor:
+        body.orderType === "delivery" ? body.deliveryFloor : undefined,
+      deliveryRoom:
+        body.orderType === "delivery" ? body.deliveryRoom : undefined,
       totalAmount,
       discountAmount,
       tax,
@@ -189,7 +196,10 @@ export async function POST(request: NextRequest) {
     // verify-order once payment is confirmed). The push never blocks the
     // response: its outcome is recorded on the order for admin to handle.
     if (order && orderDoc.paymentMethod === "cash") {
-      const pushResult = await pushOrderToPetpooja(order as unknown as Order, db);
+      const pushResult = await pushOrderToPetpooja(
+        order as unknown as Order,
+        db,
+      );
       await recordPushResult(db, result.insertedId, pushResult);
       order = await db.collection("orders").findOne({ _id: result.insertedId });
     }
