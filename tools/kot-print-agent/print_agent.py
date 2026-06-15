@@ -57,8 +57,8 @@ BILL_LINE_SPACING = int(os.environ.get("BILL_LINE_SPACING", "22"))
 # printer's printable width in dots (576 for most 80mm heads). Set
 # BILL_AS_IMAGE=0 to fall back to plain text (font B) printing.
 BILL_AS_IMAGE = os.environ.get("BILL_AS_IMAGE", "1") not in ("0", "false", "False")
-BILL_FONT_PX = int(os.environ.get("BILL_FONT_PX", "17"))
-BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "576"))
+BILL_FONT_PX = int(os.environ.get("BILL_FONT_PX", "24"))
+BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "600"))
 
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
