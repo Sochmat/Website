@@ -43,8 +43,8 @@ GST_NO = os.environ.get("GST_NO", "")
 
 # Used on the customer bill only.
 SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "Sochmat - by fitfuel")
-SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "")
-SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "")
+SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "+91 7042816413")
+SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "Shop-18, Pivotal Paradise,Sector-62,12202, Gurgaon")
 CASHIER = os.environ.get("CASHIER", "biller")
 
 # Vertical line spacing (in dots) used for the bill only, to make it more
