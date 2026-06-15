@@ -82,6 +82,14 @@ export interface Order {
   state?: string;
   country?: string;
   pincode?: string;
+
+  /** How the customer receives the order. */
+  orderType?: "dine-in" | "delivery";
+  /** Structured delivery location (only set when orderType === "delivery"). */
+  deliveryTower?: string;
+  deliveryFloor?: string;
+  deliveryRoom?: string;
+
   status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
 
   petpoojaStatus?: "success" | "failed" | "skipped";

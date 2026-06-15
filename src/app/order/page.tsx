@@ -9,22 +9,24 @@ import { useLoginPopup } from "@/context/LoginPopupContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import CartItem from "@/components/CartItem";
 import RecommendedItem from "@/components/RecommendedItem";
-import SelectAddressSheet from "@/components/SelectAddressSheet";
+// OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+// import SelectAddressSheet from "@/components/SelectAddressSheet";
 // AddAddressSheet is now used internally by LocationSelector
 import CouponSelector, {
   type AppliedCoupon,
 } from "@/components/CouponSelector";
 import { useRouter } from "next/navigation";
-import {
-  distanceFromBusinessKm,
-  isWithinServiceArea,
-} from "@/helpers/distance";
+import { BUSINESS_LAT, BUSINESS_LNG } from "@/helpers/distance";
 import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment, type UpiApp } from "@/helpers/razorpay";
 import { ArrowRightIcon } from "lucide-react";
-import LocationSelector from "@/components/LocationSelector";
+// OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+// import LocationSelector from "@/components/LocationSelector";
+import DeliveryDetailsSheet, {
+  type DeliveryDetails,
+} from "@/components/DeliveryDetailsSheet";
 
 export default function OrderPage() {
   const {
@@ -37,7 +39,7 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { distanceFromStoreKm, isServiceable } = useLocation();
+  const { distanceFromStoreKm, isServiceable, society } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const { open: storeOpen, loading: storeLoading } = useStoreStatus();
@@ -59,17 +61,19 @@ export default function OrderPage() {
     null,
   );
   const [localAddresses, setLocalAddresses] = useState<UserAddress[]>([]);
-  const [showSelectAddress, setShowSelectAddress] = useState(false);
-  const [showAddAddress, setShowAddAddress] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
-    null,
-  );
+  // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+  // const [showSelectAddress, setShowSelectAddress] = useState(false);
+  // const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
+  //   null,
+  // );
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(
     null,
   );
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
-  const [showLocationSelector, setShowLocationSelector] = useState(false);
+  const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
+  // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+  // const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [recommendedProducts, setRecommendedProducts] = useState<Product[]>([]);
   const paymentMethod = "razorpay" as const;
   const selectedUpiApp: UpiApp | null = null;
@@ -107,7 +111,8 @@ export default function OrderPage() {
     };
   }, []);
 
-  const addresses = isAuthenticated ? (user?.addresses ?? []) : localAddresses;
+  // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+  // const addresses = isAuthenticated ? (user?.addresses ?? []) : localAddresses;
 
   useEffect(() => {
     if (!isAuthenticated && typeof window !== "undefined") {
@@ -143,13 +148,6 @@ export default function OrderPage() {
     }
   }, [isAuthenticated, user?.addresses, localAddresses, selectedAddress]);
 
-  const selectedAddressServiceable = selectedAddress
-    ? isWithinServiceArea(selectedAddress.lat, selectedAddress.long)
-    : null;
-  const selectedAddressDistance = selectedAddress
-    ? distanceFromBusinessKm(selectedAddress.lat, selectedAddress.long)
-    : null;
-
   const requireLogin = () => {
     if (!isAuthenticated) {
       openLoginPopup();
@@ -158,53 +156,66 @@ export default function OrderPage() {
     return true;
   };
 
-  const handleEditAddress = (addr: UserAddress) => {
-    setEditingAddress(addr);
-    setShowSelectAddress(false);
-    setShowLocationSelector(true);
-  };
+  // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
+  // const handleEditAddress = (addr: UserAddress) => {
+  //   setEditingAddress(addr);
+  //   setShowSelectAddress(false);
+  //   setShowLocationSelector(true);
+  // };
 
-  const handlePlaceOrder = async () => {
+  const placeOrder = async (details: DeliveryDetails) => {
     if (!isAuthenticated) {
       openLoginPopup();
       return;
     }
-    if (!selectedAddress) {
-      message.error("Please select a delivery address");
-      setShowSelectAddress(true);
+
+    // Resolve receiver + address from the order type chosen in the sheet.
+    let receiverName: string;
+    let receiverPhone: string;
+    let addressStr: string;
+    let orderTypeFields: Partial<Order>;
+
+    if (details.orderType === "delivery") {
+      receiverName = details.name;
+      receiverPhone = details.phone;
+      addressStr = `${details.tower}, Floor ${details.floor}, Room ${details.room}, ${society.label}`;
+      orderTypeFields = {
+        orderType: "delivery",
+        deliveryTower: details.tower,
+        deliveryFloor: details.floor,
+        deliveryRoom: details.room,
+      };
+    } else {
+      receiverName = user?.name ?? "";
+      receiverPhone = user?.phone ?? "";
+      addressStr = `Dine-in — pickup at ${society.label}`;
+      orderTypeFields = { orderType: "dine-in" };
+    }
+
+    if (!receiverPhone) {
+      message.error("A phone number is required to place the order");
       return;
     }
-    if (!selectedAddress.receiverName || !selectedAddress.receiverPhone) {
-      message.error("Please enter receiver name and phone number");
-      setShowAddAddress(true);
-      return;
-    }
-    if (selectedAddressServiceable === false) {
-      message.error(
-        `Delivery not available at this address. You're ${selectedAddressDistance?.toFixed(1)} km away; we deliver within 10 km only.`,
-      );
-      return;
-    }
+
     setPlacingOrder(true);
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       const gstAmount = Math.round(totalPrice * 0.05);
       const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
 
-      const receiverName = selectedAddress.receiverName ?? "";
-      const receiverPhone = selectedAddress.receiverPhone ?? "";
-
       const orderPayload: Order = {
-        paymentStatus: paymentMethod === "razorpay" ? "pending" : "pending",
+        paymentStatus: "pending",
         status: "pending",
         userId: isAuthenticated && user?._id ? String(user._id) : undefined,
+        ...orderTypeFields,
         receiver: {
-          name: isAuthenticated && user?.name ? user.name : receiverName,
-          phone: isAuthenticated && user?.phone ? user.phone : receiverPhone,
-          address: selectedAddress.address,
-          lat: selectedAddress.lat,
-          lng: selectedAddress.long,
+          name: receiverName,
+          phone: receiverPhone,
+          address: addressStr,
+          lat: BUSINESS_LAT,
+          lng: BUSINESS_LNG,
         },
+        address: addressStr,
         orderItems: items.map((item) => ({
           productId: item.id,
           quantity: item.quantity,
@@ -225,8 +236,11 @@ export default function OrderPage() {
       const data = await res.json();
       if (!data.success) {
         message.error(data.message ?? "Failed to place order");
+        setPlacingOrder(false);
         return;
       }
+
+      setShowDeliveryDetails(false);
 
       if (paymentMethod === "razorpay") {
         await handleRazorpayPayment({
@@ -235,15 +249,10 @@ export default function OrderPage() {
           name: "Sochmat",
           description: `Order #${data.order?.orderNumber || ""}`,
           prefill: {
-            name:
-              (isAuthenticated ? user?.name : null) ??
-              selectedAddress.receiverName ??
-              "",
+            name: (isAuthenticated ? user?.name : null) ?? receiverName ?? "",
             email: user?.email ?? "vectorharsh@gmail.com",
             contact:
-              (isAuthenticated ? user?.phone : null) ??
-              selectedAddress.receiverPhone ??
-              "",
+              (isAuthenticated ? user?.phone : null) ?? receiverPhone ?? "",
           },
           orderId: data.order?._id,
           upiApp: selectedUpiApp ?? undefined,
@@ -265,8 +274,10 @@ export default function OrderPage() {
           `/success${data.order?._id ? `?orderId=${data.order._id}` : ""}`,
         );
       }
-    } catch (error: any) {
-      message.error(error.message || "Failed to place order");
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Failed to place order";
+      message.error(msg);
       console.error(error);
     } finally {
       if (paymentMethod !== "razorpay") {
@@ -354,7 +365,8 @@ export default function OrderPage() {
       </div>
 
       <div className="px-4 pt-4 space-y-3">
-        <div className="bg-white rounded-xl border border-[#e5e5e5] p-4">
+        {/* OLD "Delivery at" address card — disabled; replaced by DeliveryDetailsSheet */}
+        {/* <div className="bg-white rounded-xl border border-[#e5e5e5] p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2 min-w-0">
               <svg
@@ -412,7 +424,7 @@ export default function OrderPage() {
               {selectedAddress ? "Change" : "Add"}
             </button>
           </div>
-        </div>
+        </div> */}
 
         <div className="bg-white rounded-xl p-3 space-y-3">
           {items.map((item, index) => (
@@ -557,12 +569,7 @@ export default function OrderPage() {
             className="bg-[#f56215] flex items-center gap-3 px-5 py-2.5 rounded-xl cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={() => {
               if (!requireLogin()) return;
-              if (!selectedAddress) {
-                message.error("Please select a delivery address first");
-                setShowSelectAddress(true);
-                return;
-              }
-              handlePlaceOrder();
+              setShowDeliveryDetails(true);
             }}
             disabled={placingOrder}
           >
@@ -577,8 +584,21 @@ export default function OrderPage() {
         </div>
       </div>
 
+      {showDeliveryDetails && (
+        <DeliveryDetailsSheet
+          open
+          society={society}
+          onClose={() => setShowDeliveryDetails(false)}
+          defaultName={user?.name ?? selectedAddress?.receiverName ?? ""}
+          defaultPhone={user?.phone ?? selectedAddress?.receiverPhone ?? ""}
+          submitting={placingOrder}
+          onConfirm={placeOrder}
+        />
+      )}
+
+      {/* OLD address sheets — disabled; replaced by DeliveryDetailsSheet
       <SelectAddressSheet
-        open={showSelectAddress && !showAddAddress}
+        open={showSelectAddress}
         onClose={() => {
           setShowSelectAddress(false);
           setEditingAddress(null);
@@ -624,11 +644,12 @@ export default function OrderPage() {
               const stored = localStorage.getItem("order_addresses");
               if (stored) setLocalAddresses(JSON.parse(stored));
             } catch {
-              /* ignore */
+              // ignore
             }
           }
         }}
       />
+      */}
     </main>
   );
 }
