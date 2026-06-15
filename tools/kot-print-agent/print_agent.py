@@ -330,12 +330,32 @@ def render_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
     return img
 
 
+def _ensure_media_width(p):
+    """python-escpos needs the profile's media pixel width to print images.
+
+    The generic profile leaves it unset, which raises
+    "the media.width.pixel field of the printer profile is not set".
+    """
+    try:
+        data = p.profile.profile_data
+        media = data.setdefault("media", {})
+        width = media.setdefault("width", {})
+        cur = width.get("pixel")
+        if not isinstance(cur, int) or cur <= 0:
+            width["pixel"] = BILL_IMG_WIDTH
+        if not isinstance(width.get("mm"), (int, float)):
+            width["mm"] = 80
+    except Exception:
+        pass
+
+
 def print_image(lines):
     from escpos.printer import Win32Raw
 
     img = render_image(lines)
     p = Win32Raw(PRINTER_NAME)
-    p.image(img)
+    _ensure_media_width(p)
+    p.image(img, center=False)
     p.text("\n")
     p.cut()
 
