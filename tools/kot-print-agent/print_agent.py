@@ -51,6 +51,12 @@ CASHIER = os.environ.get("CASHIER", "biller")
 IST = timezone(timedelta(hours=5, minutes=30))
 
 LINE_WIDTH = 32  # characters for an 80mm printer at font A
+BILL_WIDTH = 42  # characters at the smaller font B (used for the bill)
+
+
+def line_width(attrs):
+    """Columns available for a line given its font."""
+    return BILL_WIDTH if attrs.get("font") == "b" else LINE_WIDTH
 
 
 def fmt_local(iso_value):
@@ -135,18 +141,22 @@ def render_lines(ticket):
 
 
 def render_bill_lines(bill):
-    """Return the customer bill as a list of (text, attrs) tuples."""
+    """Return the customer bill as a list of (text, attrs) tuples.
+
+    Rendered in the printer's smaller font B, so it uses the wider BILL_WIDTH.
+    """
+    w = BILL_WIDTH
     lines = []
 
     def center(text, **attrs):
-        lines.append((text, {"align": "center", **attrs}))
+        lines.append((text, {"align": "center", "font": "b", **attrs}))
 
     def left(text, **attrs):
-        lines.append((text, {"align": "left", **attrs}))
+        lines.append((text, {"align": "left", "font": "b", **attrs}))
 
     def row(label, value, **attrs):
-        # label on the left, value right-aligned within LINE_WIDTH
-        space = max(1, LINE_WIDTH - len(label) - len(value))
+        # label on the left, value right-aligned within the line width
+        space = max(1, w - len(label) - len(value))
         left(label + " " * space + value, **attrs)
 
     paid = str(bill.get("paymentStatus", "")).lower() == "paid"
@@ -159,20 +169,20 @@ def render_bill_lines(bill):
     if FSSAI_NO:
         center(f"FSSAI:-{FSSAI_NO}")
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     left(f"From {ORDER_SOURCE}[{bill.get('orderNumber', '')}]")
     left(f"Name: {(bill.get('receiver') or {}).get('name', '')}")
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     date_part, _, time_part = fmt_local(bill.get("createdAt")).partition(" ")
     row(f"Date: {date_part}", str(bill.get("method", "Delivery")))
     left(time_part)
     bill_no = bill.get("billNumber")
     row(f"Cashier: {CASHIER}", f"Bill No.: {bill_no if bill_no is not None else '-'}")
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     row("Item", "Qty x Price   Amount")
-    left("-" * LINE_WIDTH)
+    left("-" * w)
 
     total_qty = 0
     for item in bill.get("items", []):
@@ -181,11 +191,11 @@ def render_bill_lines(bill):
         amount = price * qty
         total_qty += qty
         name = str(item.get("name", ""))
-        for i in range(0, len(name), LINE_WIDTH):
-            left(name[i : i + LINE_WIDTH], bold=True)
+        for i in range(0, len(name), w):
+            left(name[i : i + w], bold=True)
         row(f"  {qty} x {price:.2f}", f"{amount:.2f}")
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     sub = float(bill.get("subTotal", 0))
     discount = float(bill.get("discountAmount", 0))
     delivery_fee = float(bill.get("deliveryFee", 0))
@@ -208,32 +218,33 @@ def render_bill_lines(bill):
     if abs(round_off) >= 0.01:
         row("Round off", f"{round_off:+.2f}")
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     row("Grand Total", f"Rs. {grand:.2f}", bold=True)
     left(f"Total Qty: {total_qty}")
     method = str(bill.get("paymentMethod", "")).title()
     left(f"Paid via {method}" if paid else f"Payment: {bill.get('paymentStatus', '')}")
 
     if SHOP_CONTACT or SHOP_ADDRESS:
-        left("-" * LINE_WIDTH)
+        left("-" * w)
         if SHOP_CONTACT:
             center(f"Contact:- {SHOP_CONTACT}")
-        for chunk in textwrap.wrap(SHOP_ADDRESS, LINE_WIDTH):
+        for chunk in textwrap.wrap(SHOP_ADDRESS, w):
             center(chunk)
     center("Thanks for Ordering....!!")
     return lines
 
 
 def print_to_console(lines):
-    print("=" * LINE_WIDTH)
+    border = max((line_width(a) for _, a in lines), default=LINE_WIDTH)
+    print("=" * border)
     for text, attrs in lines:
         prefix = ""
         if attrs.get("align") == "center":
-            text = text.center(LINE_WIDTH)
+            text = text.center(line_width(attrs))
         if attrs.get("bold"):
             prefix = "*"
         print(prefix + text)
-    print("=" * LINE_WIDTH)
+    print("=" * border)
     print()
 
 
@@ -244,12 +255,15 @@ def print_to_printer(lines):
     for text, attrs in lines:
         p.set(
             align=attrs.get("align", "left"),
+            font=attrs.get("font", "a"),
             bold=bool(attrs.get("bold")),
             double_height=bool(attrs.get("double")),
             double_width=bool(attrs.get("double")),
         )
         p.text(text + "\n")
-    p.set(align="left", bold=False, double_height=False, double_width=False)
+    p.set(
+        align="left", font="a", bold=False, double_height=False, double_width=False
+    )
     p.text("\n")
     p.cut()
 
