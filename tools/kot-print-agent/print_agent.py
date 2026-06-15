@@ -50,13 +50,21 @@ CASHIER = os.environ.get("CASHIER", "biller")
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
 IST = timezone(timedelta(hours=5, minutes=30))
 
-LINE_WIDTH = 32  # characters for an 80mm printer at font A
-BILL_WIDTH = 42  # characters at the smaller font B (used for the bill)
+# Target printable width. Everything is laid out to fill this width.
+PRINT_WIDTH_MM = float(os.environ.get("PRINT_WIDTH_MM", "60"))  # 6 cm
+_DOTS_PER_MM = 8  # 203 dpi thermal head
+
+# ESC/POS offers only two built-in fonts: A (12 dots wide) and B (9 dots wide).
+# Columns that fill PRINT_WIDTH_MM depend on the chosen font.
+#   KOT  -> font B (smaller text)
+#   Bill -> font A (larger text)
+COLS_FONT_A = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 12)
+COLS_FONT_B = int(PRINT_WIDTH_MM * _DOTS_PER_MM // 9)
 
 
 def line_width(attrs):
     """Columns available for a line given its font."""
-    return BILL_WIDTH if attrs.get("font") == "b" else LINE_WIDTH
+    return COLS_FONT_B if attrs.get("font") == "b" else COLS_FONT_A
 
 
 def fmt_local(iso_value):
@@ -77,16 +85,18 @@ def fmt_local(iso_value):
 def render_lines(ticket):
     """Return the KOT as a list of (text, attrs) tuples for ESC/POS rendering.
 
-    attrs is a dict the printer backend understands: {align, bold, double}.
+    Rendered in the printer's smaller font B, sized to fill the 6 cm width.
+    attrs is a dict the backend understands: {align, font, bold, double}.
     The same structure is reused by --dry-run to print to the console.
     """
+    w = COLS_FONT_B
     lines = []
 
     def center(text, **attrs):
-        lines.append((text, {"align": "center", **attrs}))
+        lines.append((text, {"align": "center", "font": "b", **attrs}))
 
     def left(text, **attrs):
-        lines.append((text, {"align": "left", **attrs}))
+        lines.append((text, {"align": "left", "font": "b", **attrs}))
 
     kot_no = ticket.get("kotNumber")
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
@@ -97,21 +107,21 @@ def render_lines(ticket):
     center(kot_label, bold=True, double=True)
     center(f"Order ID: {ticket.get('orderNumber', '')}")
     center(f"Method: {ticket.get('method', 'Delivery')}", bold=True)
-    left("-" * LINE_WIDTH)
-    left(f"{'Item':<{LINE_WIDTH - 4}}{'Qty':>4}")
-    left("-" * LINE_WIDTH)
+    left("-" * w)
+    left(f"{'Item':<{w - 4}}{'Qty':>4}")
+    left("-" * w)
 
     for item in ticket.get("items", []):
         qty = str(item.get("quantity", 0))
         name = str(item.get("name", ""))
         # Wrap long item names across lines; qty sits on the first line.
-        name_width = LINE_WIDTH - 4
+        name_width = w - 4
         chunks = [name[i : i + name_width] for i in range(0, len(name), name_width)] or [""]
         left(f"{chunks[0]:<{name_width}}{qty:>4}", bold=True)
         for extra in chunks[1:]:
             left(extra, bold=True)
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     payment = ticket.get("paymentStatus", "")
     method = ticket.get("paymentMethod", "")
     pay_line = f"Payment : {method} ({payment})" if method else f"Payment : {payment}"
@@ -124,15 +134,15 @@ def render_lines(ticket):
     addr = receiver.get("address", "")
     if addr:
         left("Address :")
-        for i in range(0, len(addr), LINE_WIDTH - 2):
-            left("  " + addr[i : i + LINE_WIDTH - 2])
+        for chunk in textwrap.wrap(addr, w - 2):
+            left("  " + chunk)
 
-    left("-" * LINE_WIDTH)
+    left("-" * w)
     total = ticket.get("totalAmount", 0)
     left(f"Total   : Rs. {total}", bold=True)
 
     if FSSAI_NO or GST_NO:
-        left("-" * LINE_WIDTH)
+        left("-" * w)
         if FSSAI_NO:
             center(f"FSSAI No: {FSSAI_NO}")
         if GST_NO:
@@ -143,16 +153,16 @@ def render_lines(ticket):
 def render_bill_lines(bill):
     """Return the customer bill as a list of (text, attrs) tuples.
 
-    Rendered in the printer's smaller font B, so it uses the wider BILL_WIDTH.
+    Rendered in the printer's larger font A, sized to fill the 6 cm width.
     """
-    w = BILL_WIDTH
+    w = COLS_FONT_A
     lines = []
 
     def center(text, **attrs):
-        lines.append((text, {"align": "center", "font": "b", **attrs}))
+        lines.append((text, {"align": "center", "font": "a", **attrs}))
 
     def left(text, **attrs):
-        lines.append((text, {"align": "left", "font": "b", **attrs}))
+        lines.append((text, {"align": "left", "font": "a", **attrs}))
 
     def row(label, value, **attrs):
         # label on the left, value right-aligned within the line width
@@ -235,7 +245,7 @@ def render_bill_lines(bill):
 
 
 def print_to_console(lines):
-    border = max((line_width(a) for _, a in lines), default=LINE_WIDTH)
+    border = max((line_width(a) for _, a in lines), default=COLS_FONT_A)
     print("=" * border)
     for text, attrs in lines:
         prefix = ""
