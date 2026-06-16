@@ -249,8 +249,9 @@ export default function OrderPage() {
     setPlacingOrder(true);
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
-      const gstAmount = Math.round(totalPrice * 0.05);
-      const finalAmount = totalPrice - couponDiscountAmount + gstAmount;
+      const discountedAmount = Math.max(0, totalPrice - couponDiscountAmount);
+      const gstAmount = Math.round(discountedAmount * 0.05);
+      const finalAmount = discountedAmount + gstAmount;
 
       const orderPayload: Order = {
         paymentStatus: "pending",
@@ -336,8 +337,9 @@ export default function OrderPage() {
   };
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
-  const gst = Math.round(totalPrice * 0.05);
-  const finalPrice = totalPrice - couponDiscount + gst;
+  const discountedSubtotal = Math.max(0, totalPrice - couponDiscount);
+  const gst = Math.round(discountedSubtotal * 0.05);
+  const finalPrice = discountedSubtotal + gst;
 
   if (totalItems === 0) {
     return (
