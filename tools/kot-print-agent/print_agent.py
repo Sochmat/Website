@@ -42,9 +42,9 @@ FSSAI_NO = os.environ.get("FSSAI_NO", "")
 GST_NO = os.environ.get("GST_NO", "")
 
 # Used on the customer bill only.
-SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "Sochmat - by fitfuel")
-SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "+91 7042816413")
-SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "Shop-18, Pivotal Paradise,Sector-62,12202, Gurgaon")
+SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "")
+SHOP_CONTACT = os.environ.get("SHOP_CONTACT","")
+SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS","")
 CASHIER = os.environ.get("CASHIER", "biller")
 
 # Vertical line spacing (in dots) used for the bill only, to make it more
@@ -179,7 +179,6 @@ def render_bill_lines(bill):
     paid = str(bill.get("paymentStatus", "")).lower() == "paid"
 
     center("PAID" if paid else "UNPAID", bold=True)
-    center("Duplicate")
     center(SHOP_LEGAL_NAME, bold=True)
     if GST_NO:
         center(f"GST No:-{GST_NO}")
@@ -187,12 +186,22 @@ def render_bill_lines(bill):
         center(f"FSSAI:-{FSSAI_NO}")
 
     left("-" * w)
+    receiver = bill.get("receiver") or {}
     left(f"From {ORDER_SOURCE}[{bill.get('orderNumber', '')}]")
-    left(f"Name: {(bill.get('receiver') or {}).get('name', '')}")
+    left(f"Name: {receiver.get('name', '')}")
+    phone = receiver.get("phone", "")
+    if phone:
+        left(f"Phone: {phone}")
+    address = receiver.get("address", "")
+    if address:
+        wrapped = textwrap.wrap(address, w - len("Address: ")) or [""]
+        left(f"Address: {wrapped[0]}")
+        for chunk in wrapped[1:]:
+            left(" " * len("Address: ") + chunk)
 
     left("-" * w)
     date_part, _, time_part = fmt_local(bill.get("createdAt")).partition(" ")
-    row(f"Date: {date_part}", str(bill.get("method", "Delivery")))
+    row(f"Date: {date_part}", str(bill.get("method", "Delivery")), bold=True)
     left(time_part)
     bill_no = bill.get("billNumber")
     row(f"Cashier: {CASHIER}", f"Bill No.: {bill_no if bill_no is not None else '-'}")

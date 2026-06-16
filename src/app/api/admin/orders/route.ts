@@ -115,21 +115,27 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // "Print Bill": assign a global bill number once, then (re)queue the bill
-    // for the print agent. Clicking again reprints with the same bill number.
+    // Queue the bill when explicitly requested ("Print Bill") or automatically
+    // on the first transition to "confirmed" (Accept). Assigns a global bill
+    // number once. Manual "Print Bill" always re-queues (reprint with the same
+    // number); the auto path only queues on the first bill so re-confirming an
+    // already-billed order won't reprint it.
     let billNumber: number | undefined;
-    if (printBill) {
+    if (printBill || update.status === "confirmed") {
       const existing = await db
         .collection("orders")
         .findOne({ _id }, { projection: { billNumber: 1 } });
-      if (existing && existing.billNumber == null) {
+      const firstBill = !existing?.billNumber;
+      if (firstBill) {
         billNumber = await nextBillNumber(db);
         update.billNumber = billNumber;
-      } else if (existing) {
-        billNumber = existing.billNumber as number;
+      } else {
+        billNumber = existing!.billNumber as number;
       }
-      update.billRequested = true;
-      update.billPrinted = false;
+      if (printBill || firstBill) {
+        update.billRequested = true;
+        update.billPrinted = false;
+      }
     }
 
     const result = await db
