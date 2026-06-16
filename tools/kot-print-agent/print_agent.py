@@ -278,25 +278,30 @@ def print_to_printer(lines, line_spacing=None):
     from escpos.printer import Win32Raw
 
     p = Win32Raw(PRINTER_NAME)
-    if line_spacing is not None:
-        # ESC 3 n -> set line spacing to n dots (tighter than default).
-        p._raw(b"\x1b\x33" + bytes([max(0, min(255, int(line_spacing)))]))
-    for text, attrs in lines:
+    try:
+        if line_spacing is not None:
+            # ESC 3 n -> set line spacing to n dots (tighter than default).
+            p._raw(b"\x1b\x33" + bytes([max(0, min(255, int(line_spacing)))]))
+        for text, attrs in lines:
+            p.set(
+                align=attrs.get("align", "left"),
+                font=attrs.get("font", "a"),
+                bold=bool(attrs.get("bold")),
+                double_height=bool(attrs.get("double")),
+                double_width=bool(attrs.get("double")),
+            )
+            p.text(text + "\n")
         p.set(
-            align=attrs.get("align", "left"),
-            font=attrs.get("font", "a"),
-            bold=bool(attrs.get("bold")),
-            double_height=bool(attrs.get("double")),
-            double_width=bool(attrs.get("double")),
+            align="left", font="a", bold=False, double_height=False, double_width=False
         )
-        p.text(text + "\n")
-    p.set(
-        align="left", font="a", bold=False, double_height=False, double_width=False
-    )
-    if line_spacing is not None:
-        p._raw(b"\x1b\x32")  # ESC 2 -> restore default line spacing
-    p.text("\n")
-    p.cut()
+        if line_spacing is not None:
+            p._raw(b"\x1b\x32")  # ESC 2 -> restore default line spacing
+        p.text("\n")
+        p.cut()
+    finally:
+        # Finalize the spooler job (EndDoc + ClosePrinter). Without this the job
+        # stays open and only prints when the process exits.
+        p.close()
 
 
 def _load_mono_font(px):
@@ -380,10 +385,15 @@ def print_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
 
     img = render_image(lines, font_px=font_px, width=width)
     p = Win32Raw(PRINTER_NAME)
-    _ensure_media_width(p, width)
-    p.image(img, center=False)
-    p.text("\n")
-    p.cut()
+    try:
+        _ensure_media_width(p, width)
+        p.image(img, center=False)
+        p.text("\n")
+        p.cut()
+    finally:
+        # Finalize the spooler job (EndDoc + ClosePrinter). Without this the job
+        # stays open and only prints when the process exits.
+        p.close()
 
 
 def emit(
