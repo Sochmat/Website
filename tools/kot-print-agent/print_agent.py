@@ -64,7 +64,7 @@ BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "600"))
 # Lower KOT_FONT_PX = smaller text. Emphasised lines (shop name, KOT number)
 # are scaled up automatically. Set KOT_AS_IMAGE=0 for plain text (font A).
 KOT_AS_IMAGE = os.environ.get("KOT_AS_IMAGE", "1") not in ("0", "false", "False")
-KOT_FONT_PX = int(os.environ.get("KOT_FONT_PX", "22"))
+KOT_FONT_PX = int(os.environ.get("KOT_FONT_PX", "30"))
 KOT_IMG_WIDTH = int(os.environ.get("KOT_IMG_WIDTH", "600"))
 
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
