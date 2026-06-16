@@ -114,7 +114,7 @@ def render_lines(ticket):
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
 
     center(f"From: {ORDER_SOURCE}", bold=True)
-    center(SHOP_NAME, bold=True, double=True)
+    center(SHOP_NAME, bold=True)
     center(fmt_local(ticket.get("createdAt")))
     center(kot_label, bold=True, double=True)
     center(f"Order ID: {ticket.get('orderNumber', '')}")
@@ -126,12 +126,13 @@ def render_lines(ticket):
     for item in ticket.get("items", []):
         qty = str(item.get("quantity", 0))
         name = str(item.get("name", ""))
-        # Wrap long item names across lines; qty sits on the first line.
-        name_width = w - 4
+        # Items print double-size, so each glyph is twice as wide; halve the
+        # usable columns. Wrap long names across lines; qty sits on the first.
+        name_width = (w // 2) - 4
         chunks = [name[i : i + name_width] for i in range(0, len(name), name_width)] or [""]
-        left(f"{chunks[0]:<{name_width}}{qty:>4}", bold=True)
+        left(f"{chunks[0]:<{name_width}}{qty:>4}", bold=True, double=True)
         for extra in chunks[1:]:
-            left(extra, bold=True)
+            left(extra, bold=True, double=True)
 
     left("-" * w)
     payment = ticket.get("paymentStatus", "")
