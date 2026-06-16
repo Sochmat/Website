@@ -114,7 +114,7 @@ def render_lines(ticket):
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
 
     center(f"From: {ORDER_SOURCE}", bold=True)
-    center(SHOP_NAME, bold=True, double=True)
+    center(SHOP_NAME, bold=True)
     center(fmt_local(ticket.get("createdAt")))
     center(kot_label, bold=True, double=True)
     center(f"Order ID: {ticket.get('orderNumber', '')}")
