@@ -13,6 +13,11 @@ import {
   isWithinServiceArea,
   SERVICE_RADIUS_KM,
 } from "@/helpers/distance";
+import {
+  DEFAULT_SOCIETY,
+  getSocietyById,
+  type Society,
+} from "@/lib/societies";
 
 export interface UserLocation {
   lat: number;
@@ -23,6 +28,7 @@ export interface UserLocation {
 }
 
 const STORAGE_KEY = "sochmat_user_location";
+const SOCIETY_KEY = "sochmat_society_id";
 
 interface LocationContextType {
   location: UserLocation | null;
@@ -30,6 +36,9 @@ interface LocationContextType {
   distanceFromStoreKm: number | null;
   isServiceable: boolean;
   serviceRadiusKm: number;
+  /** Currently selected delivery society. */
+  society: Society;
+  setSocietyId: (id: string) => void;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -38,6 +47,7 @@ const LocationContext = createContext<LocationContextType | undefined>(
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [location, setLocationState] = useState<UserLocation | null>(null);
+  const [societyId, setSocietyIdState] = useState<string>(DEFAULT_SOCIETY.id);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -57,6 +67,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    try {
+      const savedSociety = localStorage.getItem(SOCIETY_KEY);
+      if (savedSociety) setSocietyIdState(getSocietyById(savedSociety).id);
+    } catch {
+      // ignore
+    }
   }, [mounted]);
 
   const setLocation = (loc: UserLocation | null) => {
@@ -68,6 +84,16 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(STORAGE_KEY);
     }
   };
+
+  const setSocietyId = (id: string) => {
+    const next = getSocietyById(id);
+    setSocietyIdState(next.id);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(SOCIETY_KEY, next.id);
+    }
+  };
+
+  const society = getSocietyById(societyId);
 
   const distanceFromStoreKm = location
     ? distanceFromBusinessKm(location.lat, location.lng)
@@ -83,8 +109,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       distanceFromStoreKm,
       isServiceable,
       serviceRadiusKm: SERVICE_RADIUS_KM,
+      society,
+      setSocietyId,
     }),
-    [location, distanceFromStoreKm, isServiceable]
+    [location, distanceFromStoreKm, isServiceable, society]
   );
 
   return (

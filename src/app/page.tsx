@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Image from "next/image";
 import CartBar from "@/components/CartBar";
 import ExpandableMenu from "@/components/ExpandableMenu";
@@ -8,13 +7,16 @@ import HeroCarousel from "@/components/HeroCarousel";
 import CategoryTiles from "@/components/CategoryTiles";
 import MealCards from "@/components/MealCards";
 import HomeCategoryScroll from "@/components/HomeCategoryScroll";
-import LocationSelector from "@/components/LocationSelector";
-import { useLocation } from "@/context/LocationContext";
+// OLD map-based location selector — disabled (replaced by SocietySelector)
+// import LocationSelector from "@/components/LocationSelector";
+// import { useLocation } from "@/context/LocationContext";
+import SocietySelector from "@/components/SocietySelector";
 import StoreClosedBanner from "@/components/StoreClosedBanner";
 
 export default function Home() {
-  const { location, isServiceable } = useLocation();
-  const [locationOpen, setLocationOpen] = useState(false);
+  // OLD map-based location selector — disabled (replaced by SocietySelector)
+  // const { location, isServiceable } = useLocation();
+  // const [locationOpen, setLocationOpen] = useState(false);
 
   const marqueeItems = [
     "High Protein",
@@ -34,7 +36,10 @@ export default function Home() {
         <ExpandableMenu />
       </div>
 
-      {/* Location Trigger */}
+      {/* Society Selector (current delivery societies) */}
+      <SocietySelector />
+
+      {/* OLD map-based Location Trigger + Selector — disabled, replaced by SocietySelector
       <button
         type="button"
         onClick={() => setLocationOpen(true)}
@@ -84,11 +89,11 @@ export default function Home() {
         </svg>
       </button>
 
-      {/* Location Selector */}
       <LocationSelector
         open={locationOpen}
         onClose={() => setLocationOpen(false)}
       />
+      */}
 
       {/* Hero Banner Carousel */}
       <HeroCarousel />

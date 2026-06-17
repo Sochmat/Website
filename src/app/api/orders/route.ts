@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order, User } from "@/lib/types";
+import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -60,7 +61,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const storeDoc = await settingsDb.collection("settings").findOne({ key: "store" });
+    const storeDoc = await settingsDb
+      .collection("settings")
+      .findOne({ key: "store" });
     if (storeDoc?.open === false) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -163,7 +166,15 @@ export async function POST(request: NextRequest) {
         quantity: Number(item.quantity) || 0,
         price: Number(item.price) || 0,
       })),
-      method: body.method === "Dine-in" ? "Dine-in" : "Delivery",
+      orderType: body.orderType,
+      // Print agent (KOT/bill) reads order.method; derive it from orderType.
+      method: body.orderType === "dine-in" ? "Dine-in" : "Delivery",
+      deliveryTower:
+        body.orderType === "delivery" ? body.deliveryTower : undefined,
+      deliveryFloor:
+        body.orderType === "delivery" ? body.deliveryFloor : undefined,
+      deliveryRoom:
+        body.orderType === "delivery" ? body.deliveryRoom : undefined,
       totalAmount,
       discountAmount,
       tax,
@@ -177,9 +188,21 @@ export async function POST(request: NextRequest) {
     };
 
     const result = await db.collection("orders").insertOne(orderDoc as any);
-    const order = await db
+    let order = await db
       .collection("orders")
       .findOne({ _id: result.insertedId });
+
+    // COD orders are pushed to Petpooja at creation (online orders push from
+    // verify-order once payment is confirmed). The push never blocks the
+    // response: its outcome is recorded on the order for admin to handle.
+    if (order && orderDoc.paymentMethod === "cash") {
+      const pushResult = await pushOrderToPetpooja(
+        order as unknown as Order,
+        db,
+      );
+      await recordPushResult(db, result.insertedId, pushResult);
+      order = await db.collection("orders").findOne({ _id: result.insertedId });
+    }
 
     return NextResponse.json({ success: true, order });
   } catch (error) {

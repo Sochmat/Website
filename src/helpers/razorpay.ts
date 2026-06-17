@@ -52,6 +52,20 @@ async function createRazorpayOrder(amount: number, currency: string) {
   return res.json();
 }
 
+/** Best-effort: mark a still-pending order as payment-failed. */
+async function markOrderFailed(orderId?: string) {
+  if (!orderId) return;
+  try {
+    await fetch("/api/payment/fail-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId }),
+    });
+  } catch {
+    // ignore — failing to record the failure must not break the UX
+  }
+}
+
 async function verifyPayment(
   response: {
     razorpay_order_id: string;
@@ -102,11 +116,13 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
     if (verifyData.success) {
       options.onSuccess?.(r);
     } else {
+      await markOrderFailed(options.orderId);
       options.onError?.(new Error("Payment verification failed"));
     }
   });
 
-  rzp.on("payment.error", (resp: any) => {
+  rzp.on("payment.error", async (resp: any) => {
+    await markOrderFailed(options.orderId);
     const desc =
       resp?.error?.description ??
       resp?.detail?.error?.description ??
@@ -152,6 +168,7 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
       if (verifyData.success) {
         options.onSuccess?.(response);
       } else {
+        await markOrderFailed(options.orderId);
         options.onError?.(new Error("Payment verification failed"));
       }
     },
@@ -161,6 +178,16 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
       },
     },
   });
+
+  // Razorpay fires this when a payment attempt fails (declined, timeout, etc.).
+  rzp.on(
+    "payment.failed",
+    async (resp: { error?: { description?: string } }) => {
+      await markOrderFailed(options.orderId);
+      const desc = resp?.error?.description ?? "Payment failed";
+      options.onError?.(new Error(desc));
+    },
+  );
 
   rzp.open();
 }

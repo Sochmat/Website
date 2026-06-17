@@ -62,11 +62,44 @@ python print_agent.py --test-bill --dry-run  # sample bill -> console
 Then test the full flow with `--dry-run`: accept an order in the admin panel
 and confirm the ticket shows up in the console.
 
-## Run on boot (optional)
+## Keep it running on the shop PC
 
-Use **Task Scheduler** → Create Task → Trigger: *At log on* → Action:
-`python` with argument `C:\path\to\print_agent.py`, "Start in" set to this
-folder. Set it to restart on failure.
+For unattended use you want it to **start on boot** and **restart if it
+crashes**. `run.bat` (in this folder) handles the restart part: it runs the
+agent in a loop, logs to `print_agent.log`, and relaunches 5s after any exit.
+It auto-detects a `.venv` here, otherwise uses the system `python`.
+
+### Recommended: Task Scheduler at logon
+
+A printer installed for the shop user is reliably reachable when the agent runs
+in that user's session, so a logon task is better than a SYSTEM service.
+
+1. Set the PC to **auto-login** to the shop user (so it reaches the desktop
+   after a reboot) and set power options to **never sleep**.
+2. **Task Scheduler → Create Task** (not "Basic"):
+   - **General:** "Run only when user is logged on", "Run with highest privileges".
+   - **Triggers:** New → *At log on* → the shop user.
+   - **Actions:** New → Program = full path to `run.bat`
+     (e.g. `C:\sochmat\tools\kot-print-agent\run.bat`).
+   - **Settings:** "If the task fails, restart every 1 minute"; uncheck "Stop the
+     task if it runs longer than…".
+3. Reboot to confirm it comes up by itself.
+
+Simpler alternative: drop a shortcut to `run.bat` in the Startup folder
+(`Win+R` → `shell:startup`). `run.bat` still restarts the agent on crash.
+
+### Alternative: Windows service (NSSM)
+
+Runs even with no one logged in, but a SYSTEM service often can't see a
+per-user-installed printer — install the printer "for all users", or set the
+service to log on as the shop user.
+
+```
+nssm install SochmatPrintAgent "C:\path\to\.venv\Scripts\python.exe" "C:\path\to\print_agent.py"
+nssm set SochmatPrintAgent AppDirectory "C:\path\to\tools\kot-print-agent"
+nssm set SochmatPrintAgent AppExit Default Restart
+nssm start SochmatPrintAgent
+```
 
 ## Behaviour notes
 
