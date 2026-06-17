@@ -28,6 +28,9 @@ export default function CartItem({ item }: CartItemProps) {
       <div className="flex-1 flex flex-col gap-1.5">
         <div className="flex flex-col gap-0.5">
           <p className="font-medium text-[15px] text-black">{item.name}</p>
+          {item.variantName && (
+            <p className="text-xs text-[#666]">{item.variantName}</p>
+          )}
           <div className="flex gap-0.5">
             <span className="bg-[rgba(2,88,63,0.1)] text-[#1c1c1c] text-xs font-medium px-2 py-0.5 rounded-full tracking-tight">
               {item.kcal} kcal
@@ -37,18 +40,30 @@ export default function CartItem({ item }: CartItemProps) {
             </span>
           </div>
         </div>
-        {/* <button className="flex items-center gap-0.5 text-[#111] text-xs">
-          Edit
-        </button> */}
+        {item.selectedAddOns && item.selectedAddOns.length > 0 && (
+          <div className="flex flex-col gap-0.5 mt-0.5">
+            {item.selectedAddOns.map((addOn) => (
+              <p key={addOn.id} className="text-xs text-[#888]">
+                + {addOn.name}
+                {addOn.quantity > 1 ? ` × ${addOn.quantity}` : ""} · ₹
+                {addOn.price * addOn.quantity}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-2 items-end">
         <div className="bg-[rgba(245,98,21,0.1)] border border-[#f56215] flex items-center justify-between px-3 py-1.5 rounded-md text-[#f56215] text-sm w-[84px]">
-          <button onClick={() => updateQuantity(item.id, item.quantity - 1)}>
+          <button
+            onClick={() => updateQuantity(item.cartItemId, item.quantity - 1)}
+          >
             -
           </button>
           <span>{item.quantity}</span>
-          <button onClick={() => updateQuantity(item.id, item.quantity + 1)}>
+          <button
+            onClick={() => updateQuantity(item.cartItemId, item.quantity + 1)}
+          >
             +
           </button>
         </div>

@@ -33,6 +33,9 @@ export async function GET() {
       isRecommended: item.isRecommended ?? false,
       showOnHomePage: item.showOnHomePage ?? false,
       isAvailableForSubscription: item.isAvailableForSubscription ?? false,
+      addOns: item.addOns ?? [],
+      variants: item.variants ?? [],
+      isAddOn: item.isAddOn ?? false,
       category: item.category,
       type: item.type,
     }));

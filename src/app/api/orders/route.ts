@@ -165,6 +165,17 @@ export async function POST(request: NextRequest) {
         productId: item.productId,
         quantity: Number(item.quantity) || 0,
         price: Number(item.price) || 0,
+        ...(item.variantName ? { variantName: item.variantName } : {}),
+        ...(item.addOns?.length
+          ? {
+              addOns: item.addOns.map((a) => ({
+                id: a.id,
+                name: a.name,
+                price: Number(a.price) || 0,
+                quantity: Number(a.quantity) || 0,
+              })),
+            }
+          : {}),
       })),
       orderType: body.orderType,
       // Print agent (KOT/bill) reads order.method; derive it from orderType.

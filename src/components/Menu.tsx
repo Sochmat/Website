@@ -6,7 +6,7 @@ import Link from "next/link";
 import MenuItem from "./MenuItem";
 import CategoryFilter from "./CategoryFilter";
 import { Product } from "@/context/CartContext";
-import { Category } from "@/lib/types";
+import { Category, MenuVariant } from "@/lib/types";
 
 const defaultCategories = [
   {
@@ -39,6 +39,7 @@ type MenuProduct = Product & {
   category?: string;
   type?: string;
   showOnHomePage?: boolean;
+  isAddOn?: boolean;
 };
 
 function mapApiItemToProduct(item: {
@@ -63,6 +64,8 @@ function mapApiItemToProduct(item: {
   showOnHomePage?: boolean;
   isAvailableForSubscription?: boolean;
   addOns?: string[];
+  variants?: MenuVariant[];
+  isAddOn?: boolean;
 }): MenuProduct {
   return {
     id: item.id,
@@ -86,6 +89,8 @@ function mapApiItemToProduct(item: {
     type: item.type,
     isAvailableForSubscription: item.isAvailableForSubscription ?? false,
     addOns: item.addOns ?? [],
+    variants: item.variants ?? [],
+    isAddOn: item.isAddOn ?? false,
   };
 }
 
@@ -177,6 +182,14 @@ export default function Menu({
     };
   }, []);
 
+  // Add-ons are stored as ID references to other menu items; resolve them so
+  // each card can offer its add-ons in the add-to-cart sheet.
+  const addOnsById = new Map(products.map((p) => [p.id, p]));
+  const resolveAddOns = (product: MenuProduct): Product[] =>
+    (product.addOns ?? [])
+      .map((id) => addOnsById.get(id))
+      .filter((p): p is MenuProduct => Boolean(p));
+
   const listProducts = products.filter(
     (p) =>
       (p.type ?? "food") === activeTab &&
@@ -247,7 +260,10 @@ export default function Menu({
               )
               .map((product) => (
                 <div key={product.id} className="shrink-0">
-                  <MenuItem product={product} />
+                  <MenuItem
+                    product={product}
+                    addOnProducts={resolveAddOns(product)}
+                  />
                 </div>
               ))
           )}

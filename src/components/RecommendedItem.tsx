@@ -77,9 +77,11 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
               ₹{product.originalPrice}/-
             </span>
           </div>
-          <span className="border border-[#8bc11a] text-[#8bc11a] text-[11px] font-semibold px-2 py-0.5 rounded-full">
-            {product.discount} %
-          </span>
+          {Number(product.discount) ? (
+            <span className="border border-[#8bc11a] text-[#8bc11a] text-[11px] font-semibold px-2 py-0.5 rounded-full">
+              {product.discount} %
+            </span>
+          ) : null}
         </div>
       </div>
 

@@ -1,5 +1,20 @@
 import { ObjectId } from "mongodb";
 
+/** A selectable size/option for a menu item. The price REPLACES the item's
+ * base price when chosen (e.g. Small/Medium/Large). `name` is free-text. */
+export interface MenuVariant {
+  name: string;
+  price: number;
+}
+
+/** A concrete add-on choice captured at add-to-cart time. */
+export interface SelectedAddOn {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
 export interface MenuItem {
   _id?: ObjectId | string;
   name: string;
@@ -23,6 +38,7 @@ export interface MenuItem {
   isAvailableForSubscription?: boolean;
   hidden?: boolean;
   addOns?: string[];
+  variants?: MenuVariant[];
   category: string;
   type: "food" | "beverages";
   petpoojaItemId?: string;
@@ -55,6 +71,10 @@ export interface OrderItem {
   productId: string;
   quantity: number;
   price: number;
+  /** Chosen variant label, if the item had variants. */
+  variantName?: string;
+  /** Add-ons selected for this line, with their quantities. */
+  addOns?: SelectedAddOn[];
 }
 
 export interface Order {

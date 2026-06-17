@@ -270,6 +270,8 @@ export default function OrderPage() {
           productId: item.id,
           quantity: item.quantity,
           price: item.price,
+          variantName: item.variantName,
+          addOns: item.selectedAddOns,
         })),
         totalAmount: finalAmount,
         discountAmount: couponDiscountAmount,
@@ -479,7 +481,7 @@ export default function OrderPage() {
 
         <div className="bg-white rounded-xl p-3 space-y-3">
           {items.map((item, index) => (
-            <div key={item.id}>
+            <div key={item.cartItemId}>
               <CartItem item={item} />
               {index < items.length - 1 && (
                 <div className="border-b border-gray-100 my-3" />
@@ -550,13 +552,18 @@ export default function OrderPage() {
                 <span className="font-semibold text-sm text-[#111]">
                   ₹{finalPrice}
                 </span>
-                <span className="text-[#777] text-[13px] line-through">
-                  ₹{totalOriginalPrice}
-                </span>
+                {couponDiscount ? (
+                  <span className="text-[#777] text-[13px] line-through">
+                    ₹{Math.round(totalPrice + totalPrice * 0.05)}
+                  </span>
+                ) : null}
               </div>
-              <p className="text-[#00a86e] text-[11px] font-medium text-left">
-                ₹{Number(totalOriginalPrice - finalPrice).toFixed(2)} saved!
-              </p>
+              {couponDiscount ? (
+                <p className="text-[#00a86e] text-[11px] font-medium text-left">
+                  ₹{Math.round(totalPrice + totalPrice * 0.05) - finalPrice}{" "}
+                  saved!
+                </p>
+              ) : null}
             </div>
             <svg
               className={`w-5 h-5 text-[#666] transition-transform ${
@@ -582,12 +589,7 @@ export default function OrderPage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-[#666]">Item Total</span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[#666] line-through text-[13px]">
-                      ₹{totalOriginalPrice}
-                    </span>
-                    <span className="text-[#00a86e]">
-                      ₹{Math.round(totalPrice)}
-                    </span>
+                    <span className="text-[#00a86e]">₹{totalPrice}</span>
                   </div>
                 </div>
                 <div className="flex justify-between text-sm">

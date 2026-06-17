@@ -2,27 +2,45 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Product, useCart } from "@/context/CartContext";
+import { Product, useCart, buildCartItemId } from "@/context/CartContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
+import AddToCartSheet from "./AddToCartSheet";
 import IngredientsSheet from "./IngredientsSheet";
 
 interface MenuItemProps {
   product: Product;
+  addOnProducts?: Product[];
 }
 
-export default function MenuItem({ product }: MenuItemProps) {
+export default function MenuItem({
+  product,
+  addOnProducts = [],
+}: MenuItemProps) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
   const { open: storeOpen } = useStoreStatus();
   const [subscriptionSheetOpen, setSubscriptionSheetOpen] = useState(false);
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [ingredientsSheetOpen, setIngredientsSheetOpen] = useState(false);
-  const cartItem = items.find((item) => item.id === product.id);
-  const quantity = cartItem?.quantity || 0;
+
+  // Items with variants and/or add-ons are configured in a sheet and can land
+  // on multiple cart lines, so the card just totals the quantity across them.
+  const hasOptions =
+    (product.variants?.length ?? 0) > 0 || addOnProducts.length > 0;
+  const plainCartItemId = buildCartItemId(product.id);
+  const plainLine = items.find((item) => item.cartItemId === plainCartItemId);
+  const quantity = hasOptions
+    ? items
+        .filter((item) => item.id === product.id)
+        .reduce((sum, item) => sum + item.quantity, 0)
+    : plainLine?.quantity || 0;
 
   const handleAddClick = () => {
     if (product.isAvailableForSubscription) {
       setSubscriptionSheetOpen(true);
+    } else if (hasOptions) {
+      setAddSheetOpen(true);
     } else {
       addToCart(product);
     }
@@ -72,13 +90,21 @@ export default function MenuItem({ product }: MenuItemProps) {
             >
               <path d="M58,0 L10,34 Q6,38 10,40 L160,40 L160,0 Z" />
             </svg>
-            {quantity > 0 ? (
+            {!hasOptions && quantity > 0 ? (
               <div className="relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] flex items-center justify-between w-[84px] px-[12px] py-[6px] mb-[9px] mr-0 ml-auto mt-[11px]">
-                <button onClick={() => updateQuantity(product.id, quantity - 1)}>
+                <button
+                  onClick={() =>
+                    updateQuantity(plainCartItemId, quantity - 1)
+                  }
+                >
                   -
                 </button>
                 <span className="text-[14px]">{quantity}</span>
-                <button onClick={() => updateQuantity(product.id, quantity + 1)}>
+                <button
+                  onClick={() =>
+                    updateQuantity(plainCartItemId, quantity + 1)
+                  }
+                >
                   +
                 </button>
               </div>
@@ -88,6 +114,11 @@ export default function MenuItem({ product }: MenuItemProps) {
                 className="flex items-center justify-center relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] w-[84px] px-[12px] py-[6px] text-center leading-[18px] mb-[9px] mt-[11px] block ml-auto"
               >
                 Add<span className="text-[14px] font-medium ml-1">+</span>
+                {hasOptions && quantity > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-white text-[#f56215] border border-[#f56215] text-[11px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {quantity}
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -177,6 +208,16 @@ export default function MenuItem({ product }: MenuItemProps) {
         onSubscribe={handleSubscribe}
         onOrderOnce={() => addToCart(product)}
       />
+
+      {addSheetOpen && (
+        <AddToCartSheet
+          open
+          onClose={() => setAddSheetOpen(false)}
+          product={product}
+          addOnProducts={addOnProducts}
+          onConfirm={(selection) => addToCart(product, selection)}
+        />
+      )}
 
       <IngredientsSheet
         open={ingredientsSheetOpen}
