@@ -12,7 +12,7 @@ const ORDER_STATUSES = [
   "cancelled",
 ] as const;
 const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"] as const;
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 30_000;
 
 const statusColors: Record<string, string> = {
   pending: "#faad14",
@@ -77,10 +77,8 @@ export default function AdminOrdersPage() {
             (o: Record<string, unknown>) => ({
               key: String(o._id),
               orderNumber: String(o.orderNumber ?? "-"),
-              kotNumber:
-                o.kotNumber == null ? null : Number(o.kotNumber),
-              billNumber:
-                o.billNumber == null ? null : Number(o.billNumber),
+              kotNumber: o.kotNumber == null ? null : Number(o.kotNumber),
+              billNumber: o.billNumber == null ? null : Number(o.billNumber),
               userPhone: (o.user as { phone?: string })?.phone ?? "-",
               userName: (o.user as { name?: string })?.name ?? "-",
               receiverName: (o.receiver as { name?: string })?.name ?? "-",
@@ -147,7 +145,9 @@ export default function AdminOrdersPage() {
                   ...o,
                   [field]: value,
                   kotNumber:
-                    data.kotNumber != null ? Number(data.kotNumber) : o.kotNumber,
+                    data.kotNumber != null
+                      ? Number(data.kotNumber)
+                      : o.kotNumber,
                 }
               : o,
           ),

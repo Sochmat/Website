@@ -42,9 +42,9 @@ FSSAI_NO = os.environ.get("FSSAI_NO", "")
 GST_NO = os.environ.get("GST_NO", "")
 
 # Used on the customer bill only.
-SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "Sochmat - by fitfuel")
-SHOP_CONTACT = os.environ.get("SHOP_CONTACT", "+91 7042816413")
-SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS", "Shop-18, Pivotal Paradise,Sector-62,12202, Gurgaon")
+SHOP_LEGAL_NAME = os.environ.get("SHOP_LEGAL_NAME", "")
+SHOP_CONTACT = os.environ.get("SHOP_CONTACT","")
+SHOP_ADDRESS = os.environ.get("SHOP_ADDRESS","")
 CASHIER = os.environ.get("CASHIER", "biller")
 
 # Vertical line spacing (in dots) used for the bill only, to make it more
@@ -64,7 +64,7 @@ BILL_IMG_WIDTH = int(os.environ.get("BILL_IMG_WIDTH", "600"))
 # Lower KOT_FONT_PX = smaller text. Emphasised lines (shop name, KOT number)
 # are scaled up automatically. Set KOT_AS_IMAGE=0 for plain text (font A).
 KOT_AS_IMAGE = os.environ.get("KOT_AS_IMAGE", "1") not in ("0", "false", "False")
-KOT_FONT_PX = int(os.environ.get("KOT_FONT_PX", "22"))
+KOT_FONT_PX = int(os.environ.get("KOT_FONT_PX", "30"))
 KOT_IMG_WIDTH = int(os.environ.get("KOT_IMG_WIDTH", "600"))
 
 # Shop local time (Asia/Kolkata = UTC+5:30) for the printed timestamp.
@@ -114,7 +114,7 @@ def render_lines(ticket):
     kot_label = f"KOT - {kot_no}" if kot_no is not None else "KOT"
 
     center(f"From: {ORDER_SOURCE}", bold=True)
-    center(SHOP_NAME, bold=True, double=True)
+    center(SHOP_NAME, bold=True)
     center(fmt_local(ticket.get("createdAt")))
     center(kot_label, bold=True, double=True)
     center(f"Order ID: {ticket.get('orderNumber', '')}")
@@ -179,7 +179,6 @@ def render_bill_lines(bill):
     paid = str(bill.get("paymentStatus", "")).lower() == "paid"
 
     center("PAID" if paid else "UNPAID", bold=True)
-    center("Duplicate")
     center(SHOP_LEGAL_NAME, bold=True)
     if GST_NO:
         center(f"GST No:-{GST_NO}")
@@ -187,12 +186,22 @@ def render_bill_lines(bill):
         center(f"FSSAI:-{FSSAI_NO}")
 
     left("-" * w)
+    receiver = bill.get("receiver") or {}
     left(f"From {ORDER_SOURCE}[{bill.get('orderNumber', '')}]")
-    left(f"Name: {(bill.get('receiver') or {}).get('name', '')}")
+    left(f"Name: {receiver.get('name', '')}")
+    phone = receiver.get("phone", "")
+    if phone:
+        left(f"Phone: {phone}")
+    address = receiver.get("address", "")
+    if address:
+        wrapped = textwrap.wrap(address, w - len("Address: ")) or [""]
+        left(f"Address: {wrapped[0]}")
+        for chunk in wrapped[1:]:
+            left(" " * len("Address: ") + chunk)
 
     left("-" * w)
     date_part, _, time_part = fmt_local(bill.get("createdAt")).partition(" ")
-    row(f"Date: {date_part}", str(bill.get("method", "Delivery")))
+    row(f"Date: {date_part}", str(bill.get("method", "Delivery")), bold=True)
     left(time_part)
     bill_no = bill.get("billNumber")
     row(f"Cashier: {CASHIER}", f"Bill No.: {bill_no if bill_no is not None else '-'}")
@@ -269,25 +278,30 @@ def print_to_printer(lines, line_spacing=None):
     from escpos.printer import Win32Raw
 
     p = Win32Raw(PRINTER_NAME)
-    if line_spacing is not None:
-        # ESC 3 n -> set line spacing to n dots (tighter than default).
-        p._raw(b"\x1b\x33" + bytes([max(0, min(255, int(line_spacing)))]))
-    for text, attrs in lines:
+    try:
+        if line_spacing is not None:
+            # ESC 3 n -> set line spacing to n dots (tighter than default).
+            p._raw(b"\x1b\x33" + bytes([max(0, min(255, int(line_spacing)))]))
+        for text, attrs in lines:
+            p.set(
+                align=attrs.get("align", "left"),
+                font=attrs.get("font", "a"),
+                bold=bool(attrs.get("bold")),
+                double_height=bool(attrs.get("double")),
+                double_width=bool(attrs.get("double")),
+            )
+            p.text(text + "\n")
         p.set(
-            align=attrs.get("align", "left"),
-            font=attrs.get("font", "a"),
-            bold=bool(attrs.get("bold")),
-            double_height=bool(attrs.get("double")),
-            double_width=bool(attrs.get("double")),
+            align="left", font="a", bold=False, double_height=False, double_width=False
         )
-        p.text(text + "\n")
-    p.set(
-        align="left", font="a", bold=False, double_height=False, double_width=False
-    )
-    if line_spacing is not None:
-        p._raw(b"\x1b\x32")  # ESC 2 -> restore default line spacing
-    p.text("\n")
-    p.cut()
+        if line_spacing is not None:
+            p._raw(b"\x1b\x32")  # ESC 2 -> restore default line spacing
+        p.text("\n")
+        p.cut()
+    finally:
+        # Finalize the spooler job (EndDoc + ClosePrinter). Without this the job
+        # stays open and only prints when the process exits.
+        p.close()
 
 
 def _load_mono_font(px):
@@ -371,10 +385,15 @@ def print_image(lines, font_px=BILL_FONT_PX, width=BILL_IMG_WIDTH):
 
     img = render_image(lines, font_px=font_px, width=width)
     p = Win32Raw(PRINTER_NAME)
-    _ensure_media_width(p, width)
-    p.image(img, center=False)
-    p.text("\n")
-    p.cut()
+    try:
+        _ensure_media_width(p, width)
+        p.image(img, center=False)
+        p.text("\n")
+        p.cut()
+    finally:
+        # Finalize the spooler job (EndDoc + ClosePrinter). Without this the job
+        # stays open and only prints when the process exits.
+        p.close()
 
 
 def emit(
