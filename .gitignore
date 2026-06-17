@@ -1,3 +1,11 @@
 node_modules
 .next
 tsconfig.tsbuildinfo
+.DS_Store
+next-env.d.ts
+
+# Secrets — never commit. Use .env.example as the tracked template.
+.env
+.env.*
+!.env.example
+tools/kot-print-agent/.env
