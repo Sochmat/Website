@@ -3,18 +3,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Select, message } from "antd";
 
+type FreeItem = { id: string; name: string; price: number };
+
 type Coupon = {
   code: string;
-  discountType: "flat" | "percent";
+  discountType: "flat" | "percent" | "freeItem";
   discountAmount: number;
   discountPercent: number;
   maxDiscount: number;
   minAmount?: number;
+  freeItem?: FreeItem | null;
 };
 
 export type AppliedCoupon = {
   code: string;
   discountAmount: number;
+  /** Item granted free, present only for free-item coupons. */
+  freeItem?: FreeItem;
 };
 
 interface CouponSelectorProps {
@@ -22,10 +27,46 @@ interface CouponSelectorProps {
   onCouponChange: (coupon: AppliedCoupon | null) => void;
 }
 
+function percentDiscount(total: number, pct: number, max: number): number {
+  const raw = Math.round((total * pct) / 100);
+  return max > 0 ? Math.min(raw, max) : raw;
+}
+
+/** Extra flat/percent discount a free-item coupon may also carry. */
+function freeItemExtra(coupon: Coupon): string {
+  if (coupon.discountPercent > 0)
+    return ` + ${coupon.discountPercent}% off${
+      coupon.maxDiscount > 0 ? ` upto Rs ${coupon.maxDiscount}` : ""
+    }`;
+  if (coupon.discountAmount > 0) return ` + Rs ${coupon.discountAmount} off`;
+  return "";
+}
+
+function couponLabel(coupon: Coupon): string {
+  if (coupon.discountType === "percent")
+    return `${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`;
+  if (coupon.discountType === "freeItem")
+    return `Free ${coupon.freeItem?.name ?? "item"}${freeItemExtra(coupon)}`;
+  return `Save Rs ${coupon.discountAmount}`;
+}
+
 function computeDiscount(coupon: Coupon, totalPrice: number): number {
-  if (coupon.discountType === "percent") {
-    const raw = Math.round((totalPrice * coupon.discountPercent) / 100);
-    return coupon.maxDiscount > 0 ? Math.min(raw, coupon.maxDiscount) : raw;
+  if (coupon.discountType === "percent")
+    return percentDiscount(
+      totalPrice,
+      coupon.discountPercent,
+      coupon.maxDiscount,
+    );
+  // Free-item coupons grant an extra item, plus an optional flat/percent
+  // discount on the bill.
+  if (coupon.discountType === "freeItem") {
+    if (coupon.discountPercent > 0)
+      return percentDiscount(
+        totalPrice,
+        coupon.discountPercent,
+        coupon.maxDiscount,
+      );
+    return coupon.discountAmount || 0;
   }
   return coupon.discountAmount;
 }
@@ -86,10 +127,22 @@ export default function CouponSelector({
       return;
     }
 
+    if (
+      selectedCoupon.discountType === "freeItem" &&
+      !selectedCoupon.freeItem
+    ) {
+      message.info("This coupon's free item is unavailable");
+      return;
+    }
+
     setAppliedCouponCode(selectedCoupon.code);
     onCouponChange({
       code: selectedCoupon.code,
       discountAmount: computeDiscount(selectedCoupon, totalPrice),
+      freeItem:
+        selectedCoupon.discountType === "freeItem" && selectedCoupon.freeItem
+          ? selectedCoupon.freeItem
+          : undefined,
     });
   };
 
@@ -116,8 +169,9 @@ export default function CouponSelector({
             <p className="font-medium text-sm text-black">Apply Coupon</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Select
+              allowClear
               value={selectedCouponCode || undefined}
               onChange={(value) => setSelectedCouponCode(value)}
               placeholder="Select a coupon"
@@ -126,30 +180,37 @@ export default function CouponSelector({
               popupMatchSelectWidth={false}
               optionFilterProp="label"
               options={coupons.map((coupon) => {
-                const meetsMin = !coupon.minAmount || totalPrice >= coupon.minAmount;
-                const label =
-                  coupon.discountType === "percent"
-                    ? `${coupon.code} - ${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`
-                    : `${coupon.code} - Save Rs ${coupon.discountAmount}`;
-                return { value: coupon.code, label, title: coupon.code, disabled: !meetsMin };
+                const meetsMin =
+                  !coupon.minAmount || totalPrice >= coupon.minAmount;
+                const unavailable =
+                  coupon.discountType === "freeItem" && !coupon.freeItem;
+                const label = `${coupon.code} - ${couponLabel(coupon)}`;
+                return {
+                  value: coupon.code,
+                  label,
+                  title: coupon.code,
+                  disabled: !meetsMin || unavailable,
+                };
               })}
               optionRender={(option) => {
                 const coupon = coupons.find(
                   (item) => item.code === option.value,
                 );
                 if (!coupon) return option.label;
-                const meetsMin = !coupon.minAmount || totalPrice >= coupon.minAmount;
-                const desc =
-                  coupon.discountType === "percent"
-                    ? `${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`
-                    : `Save Rs ${coupon.discountAmount}`;
+                const meetsMin =
+                  !coupon.minAmount || totalPrice >= coupon.minAmount;
+                const desc = couponLabel(coupon);
                 return (
                   <div>
                     <div className="flex items-center justify-between gap-6">
-                      <span className={`font-medium ${meetsMin ? "text-[#111]" : "text-gray-400"}`}>
+                      <span
+                        className={`font-medium ${meetsMin ? "text-[#111]" : "text-gray-400"}`}
+                      >
                         {coupon.code}
                       </span>
-                      <span className={`text-xs font-medium ${meetsMin ? "text-[#00a86e]" : "text-gray-400"}`}>
+                      <span
+                        className={`text-xs font-medium ${meetsMin ? "text-[#00a86e]" : "text-gray-400"}`}
+                      >
                         {desc}
                       </span>
                     </div>
@@ -172,12 +233,22 @@ export default function CouponSelector({
             </button>
           </div>
 
-          {appliedCoupon && (
-            <p className="text-sm text-[#00a86e]">
-              Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
-              {computeDiscount(appliedCoupon, totalPrice)}.
-            </p>
-          )}
+          {appliedCoupon &&
+            (appliedCoupon.discountType === "freeItem" ? (
+              <p className="text-sm text-[#00a86e]">
+                Coupon &quot;{appliedCoupon.code}&quot; applied. You get{" "}
+                {appliedCoupon.freeItem?.name ?? "an item"} free
+                {computeDiscount(appliedCoupon, totalPrice) > 0
+                  ? ` and save Rs ${computeDiscount(appliedCoupon, totalPrice)}`
+                  : ""}
+                !
+              </p>
+            ) : (
+              <p className="text-sm text-[#00a86e]">
+                Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
+                {computeDiscount(appliedCoupon, totalPrice)}.
+              </p>
+            ))}
         </>
       )}
     </div>

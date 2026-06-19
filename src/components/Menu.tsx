@@ -119,6 +119,7 @@ export default function Menu({
   );
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -190,13 +191,18 @@ export default function Menu({
       .map((id) => addOnsById.get(id))
       .filter((p): p is MenuProduct => Boolean(p));
 
-  const listProducts = products.filter(
-    (p) =>
-      (p.type ?? "food") === activeTab &&
-      (activeCategory === "all" ||
-        !p.category ||
-        p.category === activeCategory),
-  );
+  // While searching, match by name/description across the whole active tab and
+  // ignore the selected category; otherwise filter by the chosen category.
+  const query = search.trim().toLowerCase();
+  const listProducts = products.filter((p) => {
+    if ((p.type ?? "food") !== activeTab) return false;
+    if (query) {
+      return `${p.name} ${p.description ?? ""}`.toLowerCase().includes(query);
+    }
+    return (
+      activeCategory === "all" || !p.category || p.category === activeCategory
+    );
+  });
 
   const displayProducts = listProducts;
 
@@ -239,12 +245,59 @@ export default function Menu({
               </button>
             </div>
 
-            <CategoryFilter
-              activeTab={activeTab}
-              categories={categories}
-              activeCategory={activeCategory}
-              onCategoryChange={setActiveCategory}
-            />
+            <div className="relative mt-3">
+              <svg
+                className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                />
+              </svg>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search for dishes"
+                className="w-full pl-10 pr-9 py-2.5 bg-[#f0f0f0] rounded-lg text-[#111] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1c1c1c]"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {!query && (
+              <CategoryFilter
+                activeTab={activeTab}
+                categories={categories}
+                activeCategory={activeCategory}
+                onCategoryChange={setActiveCategory}
+              />
+            )}
           </div>
         )}
 
@@ -254,18 +307,28 @@ export default function Menu({
           ) : error ? (
             <p className="text-center text-red-500 py-8">{error}</p>
           ) : (
-            displayProducts
-              .filter((product) =>
+            (() => {
+              const visible = displayProducts.filter((product) =>
                 showOnHomePage ? product.showOnHomePage : true,
-              )
-              .map((product) => (
+              );
+              if (visible.length === 0) {
+                return (
+                  <p className="text-center text-gray-500 py-8">
+                    {query
+                      ? `No dishes found for "${search.trim()}"`
+                      : "No items available"}
+                  </p>
+                );
+              }
+              return visible.map((product) => (
                 <div key={product.id} className="shrink-0">
                   <MenuItem
                     product={product}
                     addOnProducts={resolveAddOns(product)}
                   />
                 </div>
-              ))
+              ));
+            })()
           )}
         </div>
       </div>

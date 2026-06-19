@@ -21,7 +21,12 @@ export async function POST(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();
     const data: Coupon = await request.json();
-    const discountType = data.discountType === "percent" ? "percent" : "flat";
+    const discountType =
+      data.discountType === "percent"
+        ? "percent"
+        : data.discountType === "freeItem"
+          ? "freeItem"
+          : "flat";
     const coupon: Record<string, unknown> = {
       code: data.code.trim().toUpperCase(),
       discountType,
@@ -33,6 +38,12 @@ export async function POST(request: NextRequest) {
       coupon.discountPercent = Number(data.discountPercent) || 0;
       coupon.maxDiscount = Number(data.maxDiscount) || 0;
       coupon.discountAmount = 0;
+    } else if (discountType === "freeItem") {
+      coupon.freeItemId = String(data.freeItemId ?? "");
+      // Free-item coupons may also carry an optional flat OR percent discount.
+      coupon.discountAmount = Number(data.discountAmount) || 0;
+      coupon.discountPercent = Number(data.discountPercent) || 0;
+      coupon.maxDiscount = Number(data.maxDiscount) || 0;
     } else {
       coupon.discountAmount = Number(data.discountAmount) || 0;
       coupon.discountPercent = 0;
@@ -64,7 +75,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const discountType = fields.discountType === "percent" ? "percent" : "flat";
+    const discountType =
+      fields.discountType === "percent"
+        ? "percent"
+        : fields.discountType === "freeItem"
+          ? "freeItem"
+          : "flat";
     const update: Record<string, unknown> = {
       code: String(fields.code ?? "").trim().toUpperCase(),
       discountType,
@@ -76,10 +92,18 @@ export async function PUT(request: NextRequest) {
       update.discountPercent = Number(fields.discountPercent) || 0;
       update.maxDiscount = Number(fields.maxDiscount) || 0;
       update.discountAmount = 0;
+      update.freeItemId = "";
+    } else if (discountType === "freeItem") {
+      update.freeItemId = String(fields.freeItemId ?? "");
+      // Free-item coupons may also carry an optional flat OR percent discount.
+      update.discountAmount = Number(fields.discountAmount) || 0;
+      update.discountPercent = Number(fields.discountPercent) || 0;
+      update.maxDiscount = Number(fields.maxDiscount) || 0;
     } else {
       update.discountAmount = Number(fields.discountAmount) || 0;
       update.discountPercent = 0;
       update.maxDiscount = 0;
+      update.freeItemId = "";
     }
 
     await db

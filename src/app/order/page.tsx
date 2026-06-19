@@ -266,13 +266,25 @@ export default function OrderPage() {
           lng: BUSINESS_LNG,
         },
         address: addressStr,
-        orderItems: items.map((item) => ({
-          productId: item.id,
-          quantity: item.quantity,
-          price: item.price,
-          variantName: item.variantName,
-          addOns: item.selectedAddOns,
-        })),
+        orderItems: [
+          ...items.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity,
+            price: item.price,
+            variantName: item.variantName,
+            addOns: item.selectedAddOns,
+          })),
+          // Free-item coupon grants an extra item at no charge.
+          ...(appliedCoupon?.freeItem
+            ? [
+                {
+                  productId: appliedCoupon.freeItem.id,
+                  quantity: 1,
+                  price: 0,
+                },
+              ]
+            : []),
+        ],
         totalAmount: finalAmount,
         discountAmount: couponDiscountAmount,
         tax: gstAmount,
@@ -488,6 +500,23 @@ export default function OrderPage() {
               )}
             </div>
           ))}
+
+          {appliedCoupon?.freeItem && (
+            <>
+              <div className="border-b border-gray-100 my-3" />
+              <div className="flex items-center justify-between gap-2 py-0.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base shrink-0">🎁</span>
+                  <p className="font-medium text-[15px] text-black truncate">
+                    {appliedCoupon.freeItem.name}
+                  </p>
+                </div>
+                <span className="text-[#00a86e] font-semibold text-sm shrink-0">
+                  FREE
+                </span>
+              </div>
+            </>
+          )}
 
           <Link
             href="/menu"

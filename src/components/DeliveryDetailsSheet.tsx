@@ -116,7 +116,7 @@ export default function DeliveryDetailsSheet({
         aria-hidden
       />
       <div
-        className="fixed left-0 right-0 bottom-0 z-[231] mx-auto max-w-[430px] animate-slide-up overflow-y-auto rounded-t-[28px] bg-[#faf7f2] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] max-h-[92vh]"
+        className="fixed left-0 right-0 bottom-0 z-[231] mx-auto max-w-[430px] animate-slide-up overflow-y-auto rounded-t-[28px] bg-[#faf7f2] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] max-h-[90dvh]"
         role="dialog"
         aria-modal="true"
         aria-label="Delivery details"

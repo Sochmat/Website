@@ -58,11 +58,13 @@ export interface Category {
 export interface Coupon {
   _id?: ObjectId | string;
   code: string;
-  discountType: "flat" | "percent";
+  discountType: "flat" | "percent" | "freeItem";
   discountAmount: number;
   discountPercent?: number;
   maxDiscount?: number;
   minAmount?: number;
+  /** Menu item granted free when discountType === "freeItem". */
+  freeItemId?: string;
   active: boolean;
   createdAt?: Date;
 }

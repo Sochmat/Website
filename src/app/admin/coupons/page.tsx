@@ -1,21 +1,30 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Coupon } from "@/lib/types";
+import { Select } from "antd";
+import { Coupon, MenuItem } from "@/lib/types";
+
+type DiscountType = "flat" | "percent" | "freeItem";
 
 export default function AdminCouponsPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [code, setCode] = useState("");
-  const [discountType, setDiscountType] = useState<"flat" | "percent">("flat");
+  const [discountType, setDiscountType] = useState<DiscountType>("flat");
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountPercent, setDiscountPercent] = useState("");
   const [maxDiscount, setMaxDiscount] = useState("");
   const [minAmount, setMinAmount] = useState("");
+  const [freeItemId, setFreeItemId] = useState("");
+  const [freeItemDiscountMode, setFreeItemDiscountMode] = useState<
+    "none" | "flat" | "percent"
+  >("none");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchCoupons();
+    fetchMenuItems();
   }, []);
 
   const fetchCoupons = async () => {
@@ -28,6 +37,19 @@ export default function AdminCouponsPage() {
     }
   };
 
+  const fetchMenuItems = async () => {
+    try {
+      const res = await fetch("/api/admin/menu");
+      const data = await res.json();
+      if (data.success) setMenuItems(data.items ?? []);
+    } catch (err) {
+      console.error("Failed to fetch menu items:", err);
+    }
+  };
+
+  const freeItemName = (id?: string) =>
+    menuItems.find((item) => String(item._id) === String(id))?.name ?? "item";
+
   const resetForm = () => {
     setEditingId(null);
     setCode("");
@@ -36,6 +58,8 @@ export default function AdminCouponsPage() {
     setDiscountPercent("");
     setMaxDiscount("");
     setMinAmount("");
+    setFreeItemId("");
+    setFreeItemDiscountMode("none");
   };
 
   const handleEdit = (coupon: Coupon) => {
@@ -46,22 +70,43 @@ export default function AdminCouponsPage() {
     setDiscountPercent(coupon.discountPercent ? String(coupon.discountPercent) : "");
     setMaxDiscount(coupon.maxDiscount ? String(coupon.maxDiscount) : "");
     setMinAmount(coupon.minAmount ? String(coupon.minAmount) : "");
+    setFreeItemId(coupon.freeItemId ? String(coupon.freeItemId) : "");
+    setFreeItemDiscountMode(
+      coupon.discountType === "freeItem"
+        ? coupon.discountPercent
+          ? "percent"
+          : coupon.discountAmount
+            ? "flat"
+            : "none"
+        : "none",
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const isFlat =
+        discountType === "flat" ||
+        (discountType === "freeItem" && freeItemDiscountMode === "flat");
+      const isPercent =
+        discountType === "percent" ||
+        (discountType === "freeItem" && freeItemDiscountMode === "percent");
       const payload = {
         ...(editingId ? { id: editingId } : {}),
         code: code.trim(),
         discountType,
-        discountAmount: discountType === "flat" ? Number(discountAmount) || 0 : 0,
-        discountPercent: discountType === "percent" ? Number(discountPercent) || 0 : 0,
-        maxDiscount: discountType === "percent" ? Number(maxDiscount) || 0 : 0,
+        discountAmount: isFlat ? Number(discountAmount) || 0 : 0,
+        discountPercent: isPercent ? Number(discountPercent) || 0 : 0,
+        maxDiscount: isPercent ? Number(maxDiscount) || 0 : 0,
+        freeItemId: discountType === "freeItem" ? freeItemId : "",
         minAmount: Number(minAmount) || 0,
         active: true,
       };
+      if (discountType === "freeItem" && !freeItemId) {
+        setLoading(false);
+        return;
+      }
       await fetch("/api/admin/coupons", {
         method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -143,10 +188,21 @@ export default function AdminCouponsPage() {
               >
                 Percentage (%)
               </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType("freeItem")}
+                className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  discountType === "freeItem"
+                    ? "bg-[#1c1c1c] text-white border-[#1c1c1c]"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Free Item
+              </button>
             </div>
           </div>
 
-          {discountType === "flat" ? (
+          {discountType === "flat" && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Discount (₹)
@@ -160,7 +216,8 @@ export default function AdminCouponsPage() {
                 required
               />
             </div>
-          ) : (
+          )}
+          {discountType === "percent" && (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -190,6 +247,99 @@ export default function AdminCouponsPage() {
                   required
                 />
               </div>
+            </div>
+          )}
+          {discountType === "freeItem" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Free Item
+              </label>
+              <Select
+                showSearch
+                value={freeItemId || undefined}
+                onChange={(value) => setFreeItemId(value)}
+                placeholder="Search and select an item"
+                className="w-full"
+                optionFilterProp="label"
+                popupMatchSelectWidth={false}
+                options={menuItems.map((item) => ({
+                  value: String(item._id),
+                  label: item.name,
+                }))}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                The customer gets this item free once the order meets the
+                minimum amount below.
+              </p>
+
+              <label className="block text-sm font-medium text-gray-700 mb-1 mt-4">
+                Additional discount
+              </label>
+              <div className="flex gap-2">
+                {(["none", "flat", "percent"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setFreeItemDiscountMode(mode)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                      freeItemDiscountMode === mode
+                        ? "bg-[#1c1c1c] text-white border-[#1c1c1c]"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    {mode === "none"
+                      ? "None"
+                      : mode === "flat"
+                        ? "Flat (₹)"
+                        : "Percentage (%)"}
+                  </button>
+                ))}
+              </div>
+
+              {freeItemDiscountMode === "flat" && (
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Discount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
+                    placeholder="e.g., 50"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                  />
+                </div>
+              )}
+              {freeItemDiscountMode === "percent" && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Discount (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={discountPercent}
+                      onChange={(e) => setDiscountPercent(e.target.value)}
+                      placeholder="e.g., 10"
+                      min={1}
+                      max={100}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Max Discount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={maxDiscount}
+                      onChange={(e) => setMaxDiscount(e.target.value)}
+                      placeholder="e.g., 100 (0 = no cap)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <div>
@@ -235,7 +385,15 @@ export default function AdminCouponsPage() {
                   <p className="text-sm text-gray-500">
                     {coupon.discountType === "percent"
                       ? `${coupon.discountPercent}% off upto ₹${coupon.maxDiscount}`
-                      : `₹${coupon.discountAmount} off`}
+                      : coupon.discountType === "freeItem"
+                        ? `Free: ${freeItemName(coupon.freeItemId)}${
+                            coupon.discountPercent
+                              ? ` + ${coupon.discountPercent}% off`
+                              : coupon.discountAmount
+                                ? ` + ₹${coupon.discountAmount} off`
+                                : ""
+                          }`
+                        : `₹${coupon.discountAmount} off`}
                     {coupon.minAmount ? ` · Min ₹${coupon.minAmount}` : ""}
                   </p>
                   <span
