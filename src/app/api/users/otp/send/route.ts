@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
+import {
+  limiters,
+  rateLimit,
+  enforce,
+  tooManyRequests,
+} from "@/lib/rateLimit";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 export async function POST(request: NextRequest) {
+  const ipLimited = await rateLimit(request, limiters.otpSend);
+  if (ipLimited) return ipLimited;
   try {
     const body = await request.json();
     const phone = String(body.phone ?? "")
@@ -15,6 +23,13 @@ export async function POST(request: NextRequest) {
       .replace(/\D/g, "");
     const email = String(body.email ?? "").trim().toLowerCase();
     const isEmailFlow = Boolean(email);
+
+    // Also cap per target so one phone/email can't be flooded across many IPs.
+    const target = email || phone;
+    if (target) {
+      const t = await enforce(limiters.otpSend, `otp-target:${target}`);
+      if (!t.ok) return tooManyRequests(t.retryAfter);
+    }
 
     if (!phone && !email) {
       return NextResponse.json(

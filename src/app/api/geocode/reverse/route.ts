@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 export async function GET(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.geocode);
+  if (limited) return limited;
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get("lat");
   const lng = searchParams.get("lng");

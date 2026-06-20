@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.auth);
+  if (limited) return limited;
   try {
     const body = await request.json();
     const phone = String(body.phone ?? "")

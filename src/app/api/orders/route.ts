@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order, User } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -59,6 +60,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.order);
+  if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
     const storeDoc = await settingsDb

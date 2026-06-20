@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 /**
  * Marks an order's payment as failed after a Razorpay failure. Only a
@@ -8,6 +9,8 @@ import { connectToDatabase } from "@/lib/mongodb";
  * sets "paid" via verify-order) is never clobbered.
  */
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.order);
+  if (limited) return limited;
   try {
     const { orderId } = await request.json();
     if (!orderId || !ObjectId.isValid(orderId)) {

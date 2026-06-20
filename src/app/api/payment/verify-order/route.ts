@@ -4,8 +4,11 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.order);
+  if (limited) return limited;
   try {
     const {
       razorpay_order_id,

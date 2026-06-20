@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 type Role = "admin" | "shop";
 
@@ -23,6 +24,8 @@ function matchRole(user: string, password: string): Role | null {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.auth);
+  if (limited) return limited;
   try {
     const { user, password } = await request.json();
 

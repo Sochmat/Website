@@ -20,6 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Rate limiting
+
+API routes are rate limited using [Upstash Redis](https://upstash.com/) (a serverless, HTTP-based store shared across all instances). Set these env vars to enable it:
+
+```
+UPSTASH_REDIS_REST_URL=...
+UPSTASH_REDIS_REST_TOKEN=...
+```
+
+Create a Redis database in the Upstash console and copy the REST URL + token. If these are **not** set, rate limiting fails open (every request is allowed) so the app still runs — but you should configure them in production.
+
+Limits are defined in `src/lib/rateLimit.ts`:
+
+- A lenient blanket per-IP limit on all `/api/*` (applied in `middleware.ts`; internal `/api/print/*` is exempt).
+- Stricter limits on sensitive endpoints: OTP send (per IP **and** per phone/email), OTP verify / logins, order + payment, and geocode lookups.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 interface GoogleTokenInfo {
   sub?: string;
@@ -10,6 +11,8 @@ interface GoogleTokenInfo {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.auth);
+  if (limited) return limited;
   try {
     const body = await request.json();
     const credential = String(body.credential ?? "").trim();

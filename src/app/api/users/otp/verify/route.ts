@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.auth);
+  if (limited) return limited;
   try {
     const body = await request.json();
     const phone = String(body.phone ?? "")

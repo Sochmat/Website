@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
+import { limiters, rateLimit } from "@/lib/rateLimit";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -7,6 +8,8 @@ const razorpay = new Razorpay({
 });
 
 export async function POST(request: NextRequest) {
+  const limited = await rateLimit(request, limiters.order);
+  if (limited) return limited;
   try {
     const { amount, currency = "INR" } = await request.json();
 
