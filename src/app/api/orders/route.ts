@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     let discountAmount = Number(body.discountAmount) ?? 0;
+    let allowedDiscount = 0;
     if (body.couponCode) {
       const coupon = await db.collection("coupons").findOne({
         code: String(body.couponCode).trim().toUpperCase(),
@@ -139,8 +140,89 @@ export async function POST(request: NextRequest) {
       });
       if (coupon) {
         discountAmount = Number(coupon.discountAmount) || 0;
+        allowedDiscount = discountAmount;
       }
     }
+
+    // --- Server-side price recomputation (anti-tampering) -----------------
+    // Never trust the client's totalAmount. Recompute the cart's minimum
+    // legitimate subtotal from the DB and reject orders that undercut it. This
+    // makes the amount stored on the order authoritative, which verify-order
+    // later checks against the actual Razorpay payment. Unresolved products
+    // only relax the floor (fail-open), so this never rejects a valid order.
+    const lookupIds = new Set<string>();
+    for (const it of body.orderItems) {
+      if (it?.productId) lookupIds.add(String(it.productId));
+      for (const a of it?.addOns ?? []) {
+        if (a?.id) lookupIds.add(String(a.id));
+      }
+    }
+    const objIds: ObjectId[] = [];
+    const strIds: string[] = [];
+    for (const idStr of lookupIds) {
+      if (ObjectId.isValid(idStr)) objIds.push(new ObjectId(idStr));
+      else strIds.push(idStr);
+    }
+    const menuOr: Record<string, unknown>[] = [];
+    if (objIds.length) menuOr.push({ _id: { $in: objIds } });
+    if (strIds.length) menuOr.push({ _id: { $in: strIds } });
+    const menuDocs = menuOr.length
+      ? await db.collection("menuItems").find({ $or: menuOr }).toArray()
+      : [];
+    const menuMap = new Map<string, Record<string, unknown>>();
+    for (const m of menuDocs) menuMap.set(String(m._id), m);
+
+    let serverSubtotal = 0;
+    for (const it of body.orderItems) {
+      const menu = it?.productId
+        ? menuMap.get(String(it.productId))
+        : undefined;
+      const qty = Math.max(0, Number(it.quantity) || 0);
+      let unit: number;
+      if (!menu) {
+        // Unknown product → trust the line price (fail-open, never over-reject).
+        unit = Number(it.price) || 0;
+      } else {
+        const variants =
+          (menu.variants as { name: string; price: number }[]) ?? [];
+        const matched = it.variantName
+          ? variants.find((v) => v.name === it.variantName)
+          : undefined;
+        if (matched) {
+          unit = Number(matched.price) || 0;
+        } else {
+          // No exact variant match → cheapest legitimate option (no false reject).
+          const candidates = [
+            Number(menu.price) || 0,
+            ...variants.map((v) => Number(v.price) || 0),
+          ];
+          unit = Math.min(...candidates);
+        }
+      }
+      let lineTotal = unit * qty;
+      for (const a of it?.addOns ?? []) {
+        const addMenu = a?.id ? menuMap.get(String(a.id)) : undefined;
+        const addUnit = addMenu
+          ? Number(addMenu.price) || 0
+          : Number(a.price) || 0;
+        lineTotal += addUnit * Math.max(0, Number(a.quantity) || 0);
+      }
+      serverSubtotal += lineTotal;
+    }
+
+    const minAcceptable = Math.max(
+      0,
+      serverSubtotal - Math.max(0, allowedDiscount),
+    );
+    const clientNet = Number(body.netAmount ?? body.totalAmount);
+    // 1-rupee epsilon for rounding; tax/delivery only ever raise the real total.
+    if (Number.isFinite(clientNet) && clientNet + 1 < minAcceptable) {
+      return NextResponse.json(
+        { success: false, message: "Order amount validation failed" },
+        { status: 400 },
+      );
+    }
+    // ---------------------------------------------------------------------
 
     const tax = Number(body.tax) ?? 0;
     const orderNumber = generateOrderNumber();

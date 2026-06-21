@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { ADMIN_COOKIE, signSession } from "@/lib/adminAuth";
 
 type Role = "admin" | "shop";
 
@@ -31,10 +32,18 @@ export async function POST(request: NextRequest) {
 
     const role = matchRole(user, password);
     if (role) {
-      const token = Buffer.from(`${user}:${role}:${Date.now()}`).toString(
-        "base64",
-      );
-      return NextResponse.json({ success: true, token, role });
+      // The real credential is a signed, httpOnly session cookie. The returned
+      // role is only used client-side to pick which UI to render.
+      const token = await signSession(role);
+      const res = NextResponse.json({ success: true, role });
+      res.cookies.set(ADMIN_COOKIE, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 12 * 60 * 60,
+      });
+      return res;
     }
 
     return NextResponse.json(

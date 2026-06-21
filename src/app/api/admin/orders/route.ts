@@ -79,12 +79,37 @@ export async function GET() {
   }
 }
 
+const ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
+const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
+
 export async function PATCH(req: NextRequest) {
   try {
     const { id, status, paymentStatus, printBill, reject } = await req.json();
-    if (!id) {
+    if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: "Order id is required" },
+        { success: false, message: "Valid order id is required" },
+        { status: 400 }
+      );
+    }
+    // Reject unknown status values before they can be written to the DB.
+    if (status !== undefined && !ORDER_STATUSES.includes(status)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid status" },
+        { status: 400 }
+      );
+    }
+    if (
+      paymentStatus !== undefined &&
+      !PAYMENT_STATUSES.includes(paymentStatus)
+    ) {
+      return NextResponse.json(
+        { success: false, message: "Invalid payment status" },
         { status: 400 }
       );
     }

@@ -96,6 +96,8 @@ export interface Order {
   paymentId?: string;
   paymentUrl?: string;
   paymentSignature?: string;
+  /** Razorpay order id bound to this order at payment verification time. */
+  razorpayOrderId?: string;
   /** Razorpay refund id + time, set when an order is rejected & refunded. */
   refundId?: string;
   refundedAt?: Date;

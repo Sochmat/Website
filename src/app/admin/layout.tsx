@@ -202,9 +202,15 @@ export default function AdminLayout({
     };
   }, [mounted, pathname]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("adminToken");
     localStorage.removeItem("adminRole");
+    // Clear the server session cookie too, so the token can't be reused.
+    try {
+      await fetch("/api/admin/logout", { method: "POST" });
+    } catch {
+      // ignore — local state is cleared regardless
+    }
     router.replace("/admin/login");
   };
 
