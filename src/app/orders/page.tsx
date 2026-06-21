@@ -57,7 +57,13 @@ export default function MyOrdersPage() {
       .then((data) => {
         if (cancelled) return;
         if (data.success && Array.isArray(data.orders)) {
-          setOrders(data.orders);
+          // Only surface orders whose payment went through (paid, or later
+          // refunded). Unpaid/pending/failed orders stay hidden.
+          const visible = (data.orders as Order[]).filter(
+            (o) =>
+              o.paymentStatus === "paid" || o.paymentStatus === "refunded",
+          );
+          setOrders(visible);
         }
       })
       .catch(() => {})
@@ -169,6 +175,13 @@ export default function MyOrdersPage() {
                       <p className="text-xs text-[#737373] mt-0.5">
                         {formatDate(order.createdAt)}
                       </p>
+                      {order.expectedReadyAt &&
+                        order.status !== "cancelled" &&
+                        order.status !== "delivered" && (
+                          <p className="text-xs font-medium text-[#f56215] mt-0.5">
+                            Arriving in 30 mins
+                          </p>
+                        )}
                     </div>
                     <span
                       className={`text-[11px] font-semibold px-2 py-1 rounded-full capitalize ${statusColor(

@@ -1,8 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Table, Select, Button, message } from "antd";
+import { useState, useEffect, useRef } from "react";
+import { Table, Select, Button, Popconfirm, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+
+// Shop delay reminders: replay the alert sound at these minute marks after
+// confirmation, while the order is still "confirmed" (not yet out for delivery).
+const REMINDER_MARKS = [10, 15, 20];
+const REMINDER_GRACE_MIN = 5;
+const REMINDER_SOUND = "/sounds/new-order.mp3";
+const FIRED_REMINDERS_KEY = "shop_delay_reminders_fired";
+
+function notifyOrderHandled() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("admin:order-handled"));
+  }
+}
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 const ORDER_STATUSES = [
   "pending",
@@ -49,6 +69,8 @@ interface OrderRow {
   status: string;
   paymentStatus: string;
   createdAt: string;
+  /** Confirmation time in ms (null until accepted); drives the shop timer. */
+  confirmedAt: number | null;
   items: OrderItemRow[];
 }
 
@@ -56,6 +78,70 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
+  const [isShop, setIsShop] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const reminderAudioRef = useRef<HTMLAudioElement | null>(null);
+  const firedRemindersRef = useRef<Set<string>>(new Set());
+
+  // Shop-only setup: role flag, reminder audio, and the already-fired marks
+  // (persisted so a reload doesn't replay reminders for the same order).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsShop(localStorage.getItem("adminRole") === "shop");
+    reminderAudioRef.current = new Audio(REMINDER_SOUND);
+    reminderAudioRef.current.preload = "auto";
+    try {
+      const raw = localStorage.getItem(FIRED_REMINDERS_KEY);
+      if (raw) firedRemindersRef.current = new Set(JSON.parse(raw) as string[]);
+    } catch {
+      // ignore malformed data
+    }
+  }, []);
+
+  // Tick once a second so the per-order timer counts up (shop panel only).
+  useEffect(() => {
+    if (!isShop) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [isShop]);
+
+  // Replay the alert sound at T+10/15/20 min while an order is still
+  // "confirmed" (i.e. not yet out for delivery). Each mark fires at most once.
+  useEffect(() => {
+    if (!isShop) return;
+    const audio = reminderAudioRef.current;
+    let changed = false;
+    for (const o of orders) {
+      if (o.status !== "confirmed" || !o.confirmedAt) continue;
+      const elapsedMin = (now - o.confirmedAt) / 60000;
+      for (const mark of REMINDER_MARKS) {
+        if (elapsedMin < mark || elapsedMin >= mark + REMINDER_GRACE_MIN)
+          continue;
+        const key = `${o.key}:${mark}`;
+        if (firedRemindersRef.current.has(key)) continue;
+        firedRemindersRef.current.add(key);
+        changed = true;
+        if (audio) {
+          try {
+            audio.currentTime = 0;
+          } catch {
+            // ignore
+          }
+          audio.play().catch(() => {});
+        }
+      }
+    }
+    if (changed) {
+      try {
+        localStorage.setItem(
+          FIRED_REMINDERS_KEY,
+          JSON.stringify([...firedRemindersRef.current]),
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }, [now, orders, isShop]);
 
   useEffect(() => {
     fetchOrders();
@@ -93,6 +179,9 @@ export default function AdminOrdersPage() {
               createdAt: o.createdAt
                 ? new Date(o.createdAt as string).toLocaleString()
                 : "-",
+              confirmedAt: o.confirmedAt
+                ? new Date(o.confirmedAt as string).getTime()
+                : null,
               items: Array.isArray(o.orderItems)
                 ? (o.orderItems as Array<Record<string, unknown>>).map(
                     (it) => ({
@@ -106,14 +195,19 @@ export default function AdminOrdersPage() {
                 : [],
             }),
           );
-          // Shop users don't see failed-payment orders.
+          // Shop users only see orders whose payment went through (paid, or
+          // later refunded). Pending/failed orders stay hidden from the shop.
           const role =
             typeof window !== "undefined"
               ? localStorage.getItem("adminRole")
               : null;
           setOrders(
             role === "shop"
-              ? mapped.filter((o) => o.paymentStatus !== "failed")
+              ? mapped.filter(
+                  (o) =>
+                    o.paymentStatus === "paid" ||
+                    o.paymentStatus === "refunded",
+                )
               : mapped,
           );
         }
@@ -138,6 +232,8 @@ export default function AdminOrdersPage() {
       });
       const data = await res.json();
       if (data.success) {
+        // Accepting/rejecting an order stops the new-order ring.
+        if (field === "status") notifyOrderHandled();
         setOrders((prev) =>
           prev.map((o) =>
             o.key === id
@@ -148,6 +244,10 @@ export default function AdminOrdersPage() {
                     data.kotNumber != null
                       ? Number(data.kotNumber)
                       : o.kotNumber,
+                  confirmedAt:
+                    data.confirmedAt != null
+                      ? new Date(data.confirmedAt).getTime()
+                      : o.confirmedAt,
                 }
               : o,
           ),
@@ -158,6 +258,46 @@ export default function AdminOrdersPage() {
       }
     } catch {
       message.error("Update failed");
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  async function handleReject(id: string) {
+    setUpdatingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, reject: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Rejecting an order stops the new-order ring.
+        notifyOrderHandled();
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.key === id
+              ? {
+                  ...o,
+                  status: "cancelled",
+                  paymentStatus: data.paymentStatus ?? o.paymentStatus,
+                }
+              : o,
+          ),
+        );
+        message.success(
+          data.refunded ? "Order rejected and refunded" : "Order rejected",
+        );
+      } else {
+        message.error(data.message || "Failed to reject order");
+      }
+    } catch {
+      message.error("Failed to reject order");
     } finally {
       setUpdatingIds((prev) => {
         const next = new Set(prev);
@@ -284,6 +424,7 @@ export default function AdminOrdersPage() {
           size="small"
           style={{ width: "100%" }}
           loading={updatingIds.has(record.key)}
+          disabled={isShop}
           onChange={(v) => handleUpdate(record.key, "status", v)}
         >
           {ORDER_STATUSES.map((s) => (
@@ -298,6 +439,42 @@ export default function AdminOrdersPage() {
         </Select>
       ),
     },
+    ...(isShop
+      ? ([
+          {
+            title: "Timer",
+            key: "timer",
+            width: 90,
+            align: "center",
+            render: (_: unknown, record: OrderRow) => {
+              if (record.status !== "confirmed" || !record.confirmedAt) {
+                return <span style={{ color: "#bbb" }}>-</span>;
+              }
+              const elapsed = now - record.confirmedAt;
+              const min = elapsed / 60000;
+              const color =
+                min >= 20
+                  ? "#ff4d4f"
+                  : min >= 15
+                    ? "#fa541c"
+                    : min >= 10
+                      ? "#faad14"
+                      : "#52c41a";
+              return (
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {formatElapsed(elapsed)}
+                </span>
+              );
+            },
+          },
+        ] as ColumnsType<OrderRow>)
+      : []),
     {
       title: "Payment Status",
       dataIndex: "paymentStatus",
@@ -309,6 +486,7 @@ export default function AdminOrdersPage() {
           size="small"
           style={{ width: "100%" }}
           loading={updatingIds.has(record.key)}
+          disabled={isShop}
           onChange={(v) => handleUpdate(record.key, "paymentStatus", v)}
         >
           {PAYMENT_STATUSES.map((s) => (
@@ -327,10 +505,10 @@ export default function AdminOrdersPage() {
     {
       title: "Action",
       key: "action",
-      width: 200,
+      width: 300,
       fixed: "right",
       render: (_: unknown, record: OrderRow) => (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {record.status === "pending" && (
             <Button
               type="primary"
@@ -340,6 +518,43 @@ export default function AdminOrdersPage() {
             >
               Accept
             </Button>
+          )}
+          {record.status === "confirmed" && (
+            <Button
+              type="primary"
+              size="small"
+              loading={updatingIds.has(record.key)}
+              onClick={() => handleUpdate(record.key, "status", "shipped")}
+            >
+              Out for Delivery
+            </Button>
+          )}
+          {record.status === "shipped" && (
+            <Button
+              type="primary"
+              size="small"
+              loading={updatingIds.has(record.key)}
+              onClick={() => handleUpdate(record.key, "status", "delivered")}
+            >
+              Delivered
+            </Button>
+          )}
+          {record.status !== "cancelled" && record.status !== "delivered" && (
+            <Popconfirm
+              title="Reject this order?"
+              description={
+                record.paymentStatus === "paid"
+                  ? "This will refund the customer via Razorpay."
+                  : "This will cancel the order."
+              }
+              okText="Reject"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleReject(record.key)}
+            >
+              <Button danger size="small" loading={updatingIds.has(record.key)}>
+                Reject
+              </Button>
+            </Popconfirm>
           )}
           <Button
             size="small"
@@ -463,7 +678,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: 1690 }}
+        scroll={{ x: isShop ? 1880 : 1790 }}
       />
     </div>
   );

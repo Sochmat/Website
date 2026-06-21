@@ -15,7 +15,8 @@ const POLL_INTERVAL_MS = 10_000;
 // How far back (by createdAt) to scan for orders that may have just been paid.
 const PAID_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const SOUND_PATH = "/sounds/new-order.mp3";
-const SOUND_MAX_MS = 5_000;
+// Keep ringing for up to 30s, or until the order is accepted/rejected.
+const SOUND_MAX_MS = 30_000;
 
 export default function AdminLayout({
   children,
@@ -80,11 +81,29 @@ export default function AdminLayout({
     setSoundEnabled(localStorage.getItem(SOUND_ENABLED_KEY) === "1");
   }, [mounted]);
 
+  const stopSound = () => {
+    const audio = audioRef.current;
+    if (stopTimerRef.current) {
+      window.clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+    if (!audio) return;
+    try {
+      audio.pause();
+      audio.loop = false;
+      audio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+  };
+
   const playSuccessTone = () => {
     const audio = audioRef.current;
     if (!audio) return;
     try {
       audio.currentTime = 0;
+      // Loop so a short clip keeps ringing for the full window.
+      audio.loop = true;
     } catch {
       // ignore
     }
@@ -96,15 +115,16 @@ export default function AdminLayout({
       });
     }
     if (stopTimerRef.current) window.clearTimeout(stopTimerRef.current);
-    stopTimerRef.current = window.setTimeout(() => {
-      try {
-        audio.pause();
-        audio.currentTime = 0;
-      } catch {
-        // ignore
-      }
-    }, SOUND_MAX_MS);
+    stopTimerRef.current = window.setTimeout(stopSound, SOUND_MAX_MS);
   };
+
+  // Stop the new-order ring the moment an order is accepted/rejected.
+  useEffect(() => {
+    if (!mounted || typeof window === "undefined") return;
+    const handler = () => stopSound();
+    window.addEventListener("admin:order-handled", handler);
+    return () => window.removeEventListener("admin:order-handled", handler);
+  }, [mounted]);
 
   const enableSound = async () => {
     const audio = audioRef.current;

@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
             $set: {
               paymentStatus: "paid",
               paymentId: razorpay_payment_id,
+              // Freeze the promised ready time at 30 minutes from payment.
+              expectedReadyAt: new Date(Date.now() + 30 * 60 * 1000),
               updatedAt: new Date(),
             },
           }

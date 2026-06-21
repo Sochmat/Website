@@ -96,6 +96,13 @@ export interface Order {
   paymentId?: string;
   paymentUrl?: string;
   paymentSignature?: string;
+  /** Razorpay refund id + time, set when an order is rejected & refunded. */
+  refundId?: string;
+  refundedAt?: Date;
+  /** Frozen ETA stamped at successful payment (paidAt + 30 min). */
+  expectedReadyAt?: Date | string;
+  /** Time the order was first accepted/confirmed (drives the shop timer). */
+  confirmedAt?: Date | string;
 
   orderItems: OrderItem[];
   method?: "Dine-in" | "Delivery";

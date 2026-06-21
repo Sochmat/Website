@@ -69,6 +69,20 @@ function SuccessContent() {
     };
   }, [orderId]);
 
+  // Block the tracking page for orders that haven't been paid yet (e.g. opening
+  // /success?orderId= directly for a pending/failed order). Refunded orders
+  // (paid then rejected) stay viewable.
+  useEffect(() => {
+    if (isSubscription) return;
+    if (
+      order &&
+      order.paymentStatus !== "paid" &&
+      order.paymentStatus !== "refunded"
+    ) {
+      router.replace("/orders");
+    }
+  }, [order, isSubscription, router]);
+
   const activeIndex = order?.status ? STATUS_STEP_INDEX[order.status] : 1;
   const isCancelled = order?.status === "cancelled";
 
@@ -79,8 +93,16 @@ function SuccessContent() {
     3: "2 min",
     4: "Delivered",
   };
-  const etaLabel = STEP_ETA[activeIndex] ?? "30 min";
+  // Once payment succeeds the ETA is fixed at 30 minutes for the whole order.
+  const showFixedEta =
+    !!order?.expectedReadyAt && !isCancelled && activeIndex < 4;
   const etaHeading = activeIndex >= 4 ? "Status" : "Arriving in";
+  const etaLabel =
+    activeIndex >= 4
+      ? (STEP_ETA[activeIndex] ?? "Delivered")
+      : showFixedEta
+        ? "30 mins"
+        : (STEP_ETA[activeIndex] ?? "30 min");
 
   const stepStatus = (index: number): TrackingStep["status"] => {
     if (isCancelled) return "pending";
