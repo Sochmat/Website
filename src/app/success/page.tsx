@@ -420,7 +420,8 @@ function SuccessContent() {
           )}
         </div>
 
-        {/* Tracking Card */}
+        {/* Tracking Card — shown only once the order is confirmed */}
+        {activeIndex >= 2 && (
         <div className="bg-white rounded-xl px-5 py-4 mt-5">
           {/* Arriving Info */}
           <div className="flex items-center justify-between">
@@ -476,6 +477,7 @@ function SuccessContent() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Footer */}
         <div className="text-center mt-16">
