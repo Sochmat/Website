@@ -131,17 +131,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let discountAmount = Number(body.discountAmount) ?? 0;
+    const discountAmount = Number(body.discountAmount) || 0;
     let allowedDiscount = 0;
+    let coupon: Record<string, unknown> | null = null;
     if (body.couponCode) {
-      const coupon = await db.collection("coupons").findOne({
+      coupon = await db.collection("coupons").findOne({
         code: String(body.couponCode).trim().toUpperCase(),
         active: true,
       });
-      if (coupon) {
-        discountAmount = Number(coupon.discountAmount) || 0;
-        allowedDiscount = discountAmount;
-      }
     }
 
     // --- Server-side price recomputation (anti-tampering) -----------------
@@ -157,6 +154,12 @@ export async function POST(request: NextRequest) {
         if (a?.id) lookupIds.add(String(a.id));
       }
     }
+    // The granted free item is excluded from the subtotal entirely (see loop
+    // below), so its price never needs to enter the floor calculation.
+    const freeItemId =
+      coupon?.discountType === "freeItem" && coupon.freeItemId
+        ? String(coupon.freeItemId)
+        : null;
     const objIds: ObjectId[] = [];
     const strIds: string[] = [];
     for (const idStr of lookupIds) {
@@ -174,6 +177,11 @@ export async function POST(request: NextRequest) {
 
     let serverSubtotal = 0;
     for (const it of body.orderItems) {
+      // Skip the coupon's granted free item — it's free, so it must not raise
+      // the floor. Excluding it only lowers the subtotal (fail-open).
+      if (freeItemId && it?.productId && String(it.productId) === freeItemId) {
+        continue;
+      }
       const menu = it?.productId
         ? menuMap.get(String(it.productId))
         : undefined;
@@ -210,10 +218,26 @@ export async function POST(request: NextRequest) {
       serverSubtotal += lineTotal;
     }
 
+    // Maximum monetary discount this coupon can legitimately grant: flat plus
+    // percent (capped by maxDiscount). The free item is already excluded from
+    // serverSubtotal, so it needs no offset here. Being generous only relaxes
+    // the floor, so this never over-rejects.
+    if (coupon) {
+      let allowed = Number(coupon.discountAmount) || 0;
+      const pct = Number(coupon.discountPercent) || 0;
+      if (pct > 0) {
+        const pctValue = (serverSubtotal * pct) / 100;
+        const maxDisc = Number(coupon.maxDiscount) || 0;
+        allowed += maxDisc > 0 ? Math.min(pctValue, maxDisc) : pctValue;
+      }
+      allowedDiscount = allowed;
+    }
+
     const minAcceptable = Math.max(
       0,
       serverSubtotal - Math.max(0, allowedDiscount),
     );
+
     const clientNet = Number(body.netAmount ?? body.totalAmount);
     // 1-rupee epsilon for rounding; tax/delivery only ever raise the real total.
     if (Number.isFinite(clientNet) && clientNet + 1 < minAcceptable) {
