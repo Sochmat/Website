@@ -132,6 +132,14 @@ def render_lines(ticket):
         left(f"{chunks[0]:<{name_width}}{qty:>4}", bold=True)
         for extra in chunks[1:]:
             left(extra, bold=True)
+        variant = item.get("variantName")
+        if variant:
+            left(f"  ({variant})")
+        for add_on in item.get("addOns", []) or []:
+            add_name = str(add_on.get("name", ""))
+            add_qty = int(add_on.get("quantity", 0) or 0)
+            suffix = f" x {add_qty}" if add_qty > 1 else ""
+            left(f"  + {add_name}{suffix}")
 
     left("-" * w)
     payment = ticket.get("paymentStatus", "")
@@ -219,6 +227,14 @@ def render_bill_lines(bill):
         name = str(item.get("name", ""))
         for i in range(0, len(name), w):
             left(name[i : i + w], bold=True)
+        variant = item.get("variantName")
+        if variant:
+            left(f"  ({variant})")
+        for add_on in item.get("addOns", []) or []:
+            add_name = str(add_on.get("name", ""))
+            add_qty = int(add_on.get("quantity", 0) or 0)
+            suffix = f" x {add_qty}" if add_qty > 1 else ""
+            left(f"  + {add_name}{suffix}")
         row(f"  {qty} x {price:.2f}", f"{amount:.2f}")
 
     left("-" * w)
@@ -522,9 +538,20 @@ SAMPLE_TICKET = {
         "address": "12 MG Road, Indiranagar, Bengaluru 560038",
     },
     "items": [
-        {"name": "Veg Beetroot Burger", "quantity": 1, "price": 199},
+        {
+            "name": "Veg Beetroot Burger",
+            "quantity": 1,
+            "price": 199,
+            "addOns": [{"name": "Extra Cheese", "price": 20, "quantity": 1}],
+        },
         {"name": "Diet Coke (300ml)", "quantity": 1, "price": 50},
-        {"name": "Chole Masala Rice Bowl (large)", "quantity": 1, "price": 200},
+        {
+            "name": "Chole Masala Rice Bowl",
+            "quantity": 1,
+            "price": 200,
+            "variantName": "Large",
+            "addOns": [{"name": "Extra Raita", "price": 15, "quantity": 2}],
+        },
     ],
 }
 
@@ -542,8 +569,19 @@ SAMPLE_BILL = {
         "address": "12 MG Road, Indiranagar, Bengaluru 560038",
     },
     "items": [
-        {"name": "Veg Beetroot Burger", "quantity": 1, "price": 180},
-        {"name": "Chole Masala Rice Bowl (large)", "quantity": 1, "price": 150},
+        {
+            "name": "Veg Beetroot Burger",
+            "quantity": 1,
+            "price": 180,
+            "addOns": [{"name": "Extra Cheese", "price": 20, "quantity": 1}],
+        },
+        {
+            "name": "Chole Masala Rice Bowl",
+            "quantity": 1,
+            "price": 150,
+            "variantName": "Large",
+            "addOns": [{"name": "Extra Raita", "price": 15, "quantity": 2}],
+        },
     ],
     "subTotal": 330,
     "discountAmount": 31,

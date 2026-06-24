@@ -96,12 +96,20 @@ export async function GET(req: NextRequest) {
         productId?: string;
         quantity?: number;
         price?: number;
+        variantName?: string;
+        addOns?: Array<{ name?: string; price?: number; quantity?: number }>;
       }>).map((item) => ({
         name: item.productId
           ? nameMap.get(String(item.productId)) ?? "Unknown product"
           : "Unknown product",
         quantity: Number(item.quantity ?? 0),
         price: Number(item.price ?? 0),
+        variantName: item.variantName ?? null,
+        addOns: (item.addOns ?? []).map((addOn) => ({
+          name: String(addOn?.name ?? ""),
+          price: Number(addOn?.price ?? 0),
+          quantity: Number(addOn?.quantity ?? 0),
+        })),
       })),
     }));
 

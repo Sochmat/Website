@@ -45,12 +45,20 @@ const statusColors: Record<string, string> = {
   refunded: "#faad14",
 };
 
+interface OrderItemAddOn {
+  name: string;
+  price: number;
+  quantity: number;
+}
+
 interface OrderItemRow {
   productId: string;
   name: string;
   image?: string;
   quantity: number;
   price: number;
+  variantName?: string;
+  addOns?: OrderItemAddOn[];
 }
 
 interface OrderRow {
@@ -190,6 +198,18 @@ export default function AdminOrdersPage() {
                       image: it.image ? String(it.image) : undefined,
                       quantity: Number(it.quantity ?? 0),
                       price: Number(it.price ?? 0),
+                      variantName: it.variantName
+                        ? String(it.variantName)
+                        : undefined,
+                      addOns: Array.isArray(it.addOns)
+                        ? (it.addOns as Array<Record<string, unknown>>).map(
+                            (a) => ({
+                              name: String(a.name ?? ""),
+                              price: Number(a.price ?? 0),
+                              quantity: Number(a.quantity ?? 0),
+                            }),
+                          )
+                        : undefined,
                     }),
                   )
                 : [],
@@ -598,7 +618,27 @@ export default function AdminOrdersPage() {
           />
         ),
     },
-    { title: "Product", dataIndex: "name", key: "name" },
+    {
+      title: "Product",
+      dataIndex: "name",
+      key: "name",
+      render: (name: string, item: OrderItemRow) => (
+        <div>
+          <div>{name}</div>
+          {item.variantName ? (
+            <div style={{ fontSize: 12, color: "#888" }}>
+              {item.variantName}
+            </div>
+          ) : null}
+          {item.addOns?.map((addOn, idx) => (
+            <div key={idx} style={{ fontSize: 12, color: "#888" }}>
+              + {addOn.name}
+              {addOn.quantity > 1 ? ` × ${addOn.quantity}` : ""}
+            </div>
+          ))}
+        </div>
+      ),
+    },
     {
       title: "Qty",
       dataIndex: "quantity",
