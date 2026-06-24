@@ -5,8 +5,12 @@ REM Task Scheduler / the Startup folder at this file (see README).
 
 cd /d "%~dp0"
 
-REM Use the venv if one exists, else fall back to the system Python.
+REM Pick a Python without depending on PATH order. A Microsoft Store stub at
+REM ...\WindowsApps\python.exe can otherwise hijack "python" and fail with
+REM "Python was not found". Order: py launcher -> known install -> local .venv.
 set PY=python
+where py >nul 2>&1 && set PY=py
+if exist "C:\Users\Sochmat\AppData\Local\Programs\Python\Python313\python.exe" set PY="C:\Users\Sochmat\AppData\Local\Programs\Python\Python313\python.exe"
 if exist ".venv\Scripts\python.exe" set PY=.venv\Scripts\python.exe
 
 :loop

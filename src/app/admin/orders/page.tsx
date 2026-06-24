@@ -391,7 +391,10 @@ export default function AdminOrdersPage() {
       title: "Receiver",
       dataIndex: "receiverName",
       key: "receiverName",
-      ellipsis: true,
+      width: 160,
+      onCell: () => ({
+        style: { whiteSpace: "normal", wordBreak: "break-word" },
+      }),
     },
     {
       title: "Receiver Phone",
@@ -403,8 +406,10 @@ export default function AdminOrdersPage() {
       title: "Address",
       dataIndex: "receiverAddress",
       key: "receiverAddress",
-      width: 220,
-      ellipsis: true,
+      width: 260,
+      onCell: () => ({
+        style: { whiteSpace: "normal", wordBreak: "break-word" },
+      }),
       render: (_: string, record: OrderRow) => (
         <div>
           <span style={{ fontSize: 12 }}>{record.receiverAddress}</span>
@@ -718,7 +723,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: isShop ? 1880 : 1790 }}
+        scroll={{ x: isShop ? 2080 : 1990 }}
       />
     </div>
   );
