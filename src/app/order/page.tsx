@@ -52,7 +52,11 @@ export default function OrderPage() {
   const { distanceFromStoreKm, isServiceable, society } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
-  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
+  const {
+    open: storeOpen,
+    deliveryOn,
+    loading: storeLoading,
+  } = useStoreStatus();
   const router = useRouter();
 
   useEffect(() => {
@@ -700,6 +704,7 @@ export default function OrderPage() {
           defaultFloor={savedDeliveryDetails?.floor ?? ""}
           defaultRoom={savedDeliveryDetails?.room ?? ""}
           submitting={placingOrder}
+          deliveryAvailable={deliveryOn}
           onConfirm={placeOrder}
         />
       )}

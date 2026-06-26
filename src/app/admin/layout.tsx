@@ -33,10 +33,13 @@ export default function AdminLayout({
 
   const {
     open: storeOpen,
+    deliveryOn,
     loading: storeLoading,
     setOpen: setStoreOpen,
+    setDeliveryOn,
   } = useStoreStatus();
   const [storeToggleBusy, setStoreToggleBusy] = useState(false);
+  const [deliveryToggleBusy, setDeliveryToggleBusy] = useState(false);
 
   const handleStoreToggle = async () => {
     if (storeToggleBusy || storeLoading) return;
@@ -45,6 +48,15 @@ export default function AdminLayout({
     setStoreToggleBusy(false);
     if (!ok) message.error("Failed to update store status");
     else message.success(`Store ${!storeOpen ? "opened" : "closed"}`);
+  };
+
+  const handleDeliveryToggle = async () => {
+    if (deliveryToggleBusy || storeLoading) return;
+    setDeliveryToggleBusy(true);
+    const ok = await setDeliveryOn(!deliveryOn);
+    setDeliveryToggleBusy(false);
+    if (!ok) message.error("Failed to update delivery status");
+    else message.success(`Delivery ${!deliveryOn ? "enabled" : "disabled"}`);
   };
 
   useEffect(() => {
@@ -271,7 +283,9 @@ export default function AdminLayout({
               <Link
                 href="/admin/coupons"
                 className={`font-medium ${
-                  pathname === "/admin/coupons" ? "underline" : "hover:underline"
+                  pathname === "/admin/coupons"
+                    ? "underline"
+                    : "hover:underline"
                 }`}
               >
                 Coupons
@@ -318,6 +332,18 @@ export default function AdminLayout({
               >
                 Store: {storeOpen ? "ON" : "OFF"}
               </button>
+              <button
+                type="button"
+                onClick={handleDeliveryToggle}
+                disabled={deliveryToggleBusy || storeLoading}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
+                  deliveryOn
+                    ? "bg-[#024731] hover:bg-[#013a28]"
+                    : "bg-red-600 hover:bg-red-700"
+                } ${deliveryToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
+              >
+                Delivery: {deliveryOn ? "ON" : "OFF"}
+              </button>
             </>
           )}
           <button
@@ -343,7 +369,7 @@ export default function AdminLayout({
           </button>
         </div>
       )}
-      <main className="p-6 max-w-7xl mx-auto">{children}</main>
+      <main className="p-6 mx-auto">{children}</main>
     </div>
   );
 }

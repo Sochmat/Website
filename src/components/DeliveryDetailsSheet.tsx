@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { message } from "antd";
 import type { Society } from "@/lib/societies";
 
 export const SUPPORT_PHONE = "+91-7042816413";
@@ -30,6 +31,8 @@ interface DeliveryDetailsSheetProps {
   defaultRoom?: string;
   /** Shows a busy state on the CTA while the order is being placed. */
   submitting?: boolean;
+  /** When false, delivery is turned off by admin — only dine-in is allowed. */
+  deliveryAvailable?: boolean;
   onConfirm: (details: DeliveryDetails) => void;
 }
 
@@ -53,11 +56,15 @@ export default function DeliveryDetailsSheet({
   defaultFloor = "",
   defaultRoom = "",
   submitting = false,
+  deliveryAvailable = true,
   onConfirm,
 }: DeliveryDetailsSheetProps) {
   // State initialises fresh on each mount; the parent mounts this sheet only
   // while open, so re-opening always starts from the pre-filled defaults.
-  const [orderType, setOrderType] = useState<OrderType>("delivery");
+  // When delivery is disabled by admin, fall back to dine-in.
+  const [orderType, setOrderType] = useState<OrderType>(
+    deliveryAvailable ? "delivery" : "dine-in",
+  );
   const [name, setName] = useState(defaultName);
   const [phone, setPhone] = useState(defaultPhone);
   const [tower, setTower] = useState<string | null>(
@@ -187,11 +194,22 @@ export default function DeliveryDetailsSheet({
             </button>
             <button
               type="button"
-              onClick={() => setOrderType("delivery")}
+              aria-disabled={!deliveryAvailable}
+              onClick={() => {
+                if (!deliveryAvailable) {
+                  message.info(
+                    "Delivery is currently unavailable. Please continue with Dine-in.",
+                  );
+                  return;
+                }
+                setOrderType("delivery");
+              }}
               className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-[15px] font-semibold transition-colors ${
-                orderType === "delivery"
-                  ? "bg-white text-[#1c1c1c] shadow-sm"
-                  : "text-[#8a8378]"
+                !deliveryAvailable
+                  ? "cursor-not-allowed text-[#bcb6ab] opacity-60"
+                  : orderType === "delivery"
+                    ? "bg-white text-[#1c1c1c] shadow-sm"
+                    : "text-[#8a8378]"
               }`}
             >
               <svg
@@ -212,6 +230,13 @@ export default function DeliveryDetailsSheet({
               Delivery
             </button>
           </div>
+
+          {!deliveryAvailable && (
+            <p className="mb-4 -mt-2 text-[12px] font-medium text-[#c0492b]">
+              Delivery is unavailable right now — only Dine-in orders can be
+              placed.
+            </p>
+          )}
 
           {/* Info banner */}
           <div className="mb-5 flex items-start gap-3 rounded-2xl bg-[#fdeada] px-4 py-3.5">

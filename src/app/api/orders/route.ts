@@ -64,9 +64,10 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const storeDoc = await settingsDb
-      .collection("settings")
-      .findOne({ key: "store" });
+    const [storeDoc, deliveryDoc] = await Promise.all([
+      settingsDb.collection("settings").findOne({ key: "store" }),
+      settingsDb.collection("settings").findOne({ key: "delivery" }),
+    ]);
     if (storeDoc?.open === false) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -75,6 +76,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as Order;
+
+    if (deliveryDoc?.on === false && body.orderType === "delivery") {
+      return NextResponse.json(
+        { success: false, message: "Delivery is currently unavailable" },
+        { status: 503 },
+      );
+    }
+
     const phone = String(body.receiver?.phone ?? "")
       .trim()
       .replace(/\D/g, "");
