@@ -34,7 +34,7 @@ export default function RootLayout({
             <CartProvider>
               <StoreStatusProvider>
                 <LocationProvider>
-                  <LocationPrompt />
+                  {/* <LocationPrompt /> */}
                   {children}
                   <LoginPopup />
                   {/* <OrderPromptModal /> */}
