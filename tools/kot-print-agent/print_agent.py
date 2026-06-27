@@ -123,23 +123,27 @@ def render_lines(ticket):
     left(f"{'Item':<{w - 4}}{'Qty':>4}")
     left("-" * w)
 
-    for item in ticket.get("items", []):
-        qty = str(item.get("quantity", 0))
-        name = str(item.get("name", ""))
-        # Wrap long item names across lines; qty sits on the first line.
-        name_width = w - 4
-        chunks = [name[i : i + name_width] for i in range(0, len(name), name_width)] or [""]
-        left(f"{chunks[0]:<{name_width}}{qty:>4}", bold=True)
+    # Wrap a long name across lines with the qty pinned to the first line's
+    # right edge — used for both the dish row and each add-on row.
+    name_width = w - 4
+
+    def qty_row(text, qty_val):
+        chunks = [text[i : i + name_width] for i in range(0, len(text), name_width)] or [""]
+        left(f"{chunks[0]:<{name_width}}{str(qty_val):>4}", bold=True)
         for extra in chunks[1:]:
             left(extra, bold=True)
+
+    for item in ticket.get("items", []):
+        item_qty = int(item.get("quantity", 0) or 0)
+        qty_row(str(item.get("name", "")), item_qty)
         variant = item.get("variantName")
         if variant:
             left(f"  ({variant})")
+        # Each add-on prints as its own row; its qty scales with the dish qty.
         for add_on in item.get("addOns", []) or []:
             add_name = str(add_on.get("name", ""))
-            add_qty = int(add_on.get("quantity", 0) or 0)
-            suffix = f" x {add_qty}" if add_qty > 1 else ""
-            left(f"  + {add_name}{suffix}")
+            add_qty = int(add_on.get("quantity", 0) or 0) * item_qty
+            qty_row(f"+ {add_name}", add_qty)
 
     left("-" * w)
     payment = ticket.get("paymentStatus", "")
@@ -222,20 +226,33 @@ def render_bill_lines(bill):
     for item in bill.get("items", []):
         qty = int(item.get("quantity", 0))
         price = float(item.get("price", 0))
-        amount = price * qty
+        add_ons = item.get("addOns", []) or []
+        # item price bundles the add-ons (basePrice + add-ons); split it back so
+        # the dish row shows its base price and each add-on prints as its own
+        # priced row. The per-row amounts still sum to the same line total.
+        add_ons_unit_sum = sum(
+            float(a.get("price", 0) or 0) * int(a.get("quantity", 0) or 0)
+            for a in add_ons
+        )
+        base_price = price - add_ons_unit_sum
         total_qty += qty
+
         name = str(item.get("name", ""))
         for i in range(0, len(name), w):
             left(name[i : i + w], bold=True)
         variant = item.get("variantName")
         if variant:
             left(f"  ({variant})")
-        for add_on in item.get("addOns", []) or []:
+        row(f"  {qty} x {base_price:.2f}", f"{base_price * qty:.2f}")
+
+        for add_on in add_ons:
             add_name = str(add_on.get("name", ""))
-            add_qty = int(add_on.get("quantity", 0) or 0)
-            suffix = f" x {add_qty}" if add_qty > 1 else ""
-            left(f"  + {add_name}{suffix}")
-        row(f"  {qty} x {price:.2f}", f"{amount:.2f}")
+            add_unit = float(add_on.get("price", 0) or 0)
+            add_qty = int(add_on.get("quantity", 0) or 0) * qty
+            label = f"+ {add_name}"
+            for i in range(0, len(label), w):
+                left(label[i : i + w], bold=True)
+            row(f"  {add_qty} x {add_unit:.2f}", f"{add_unit * add_qty:.2f}")
 
     left("-" * w)
     sub = float(bill.get("subTotal", 0))
