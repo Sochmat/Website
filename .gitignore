@@ -4,6 +4,9 @@ tsconfig.tsbuildinfo
 .DS_Store
 next-env.d.ts
 
+# Git worktrees created for isolated task execution
+.claude/worktrees/
+
 # Secrets — never commit. Use .env.example as the tracked template.
 .env
 .env.*
