@@ -83,6 +83,12 @@ export async function migrate({
   const tenantId = String(tenant!._id);
 
   // ---------------------------------------------------------------------------
+  // 1b. Pre-flight duplicate check: fail early if source data would violate
+  //     unique indexes, giving the operator a chance to clean source first.
+  // ---------------------------------------------------------------------------
+  await preflightDupCheck(source);
+
+  // ---------------------------------------------------------------------------
   // 2. Copy tenant-scoped collections from source -> target (idempotent).
   //    NEVER write to source.
   // ---------------------------------------------------------------------------
@@ -164,6 +170,67 @@ export async function migrate({
   // 4. Indexes.
   // ---------------------------------------------------------------------------
   await createIndexes(target);
+}
+
+/**
+ * Pre-flight check: scan the source database for duplicates that would violate
+ * the unique indexes in the target (phone in users, orderNumber in orders, code
+ * in coupons). Throws with a descriptive error listing offending values so the
+ * operator can clean the source before running a cutover.
+ */
+export async function preflightDupCheck(source: Db): Promise<void> {
+  const errors: string[] = [];
+
+  // Duplicate non-null phone in users.
+  const dupPhones = await source
+    .collection("users")
+    .aggregate([
+      { $match: { phone: { $type: "string" } } },
+      { $group: { _id: "$phone", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+  if (dupPhones.length > 0) {
+    errors.push(
+      `users: duplicate non-null phone values: ${dupPhones.map((d) => d._id).join(", ")}`
+    );
+  }
+
+  // Duplicate orderNumber in orders.
+  const dupOrders = await source
+    .collection("orders")
+    .aggregate([
+      { $match: { orderNumber: { $exists: true } } },
+      { $group: { _id: "$orderNumber", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+  if (dupOrders.length > 0) {
+    errors.push(
+      `orders: duplicate orderNumber values: ${dupOrders.map((d) => d._id).join(", ")}`
+    );
+  }
+
+  // Duplicate coupon code in coupons.
+  const dupCoupons = await source
+    .collection("coupons")
+    .aggregate([
+      { $match: { code: { $exists: true } } },
+      { $group: { _id: "$code", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+  if (dupCoupons.length > 0) {
+    errors.push(
+      `coupons: duplicate code values: ${dupCoupons.map((d) => d._id).join(", ")}`
+    );
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `Pre-flight duplicate check failed — deduplicate source before cutover:\n  ${errors.join("\n  ")}`
+    );
+  }
 }
 
 function escapeRegex(s: string): string {

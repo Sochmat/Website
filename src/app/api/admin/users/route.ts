@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const users = await db
-      .collection("users")
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    const users = await t.find("users", {}).sort({ createdAt: -1 }).toArray();
     return NextResponse.json({
       success: true,
       users: users.map((u) => ({
@@ -42,10 +42,11 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    const result = await db
-      .collection("users")
-      .deleteOne({ _id: new ObjectId(id) });
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    const result = await t.deleteOne("users", { _id: new ObjectId(id) });
 
     if (result.deletedCount === 0) {
       return NextResponse.json(

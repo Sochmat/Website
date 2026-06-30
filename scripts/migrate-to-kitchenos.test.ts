@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { withMemoryMongo } from "../test/setup-mongo";
-import { migrate } from "./migrate-to-kitchenos";
+import { migrate, preflightDupCheck } from "./migrate-to-kitchenos";
 
 const env = {
   ADMIN_USER: "admin", ADMIN_PASSWORD: "ap",
@@ -36,5 +36,85 @@ describe("migrate", () => {
     expect(srcItems.every((i) => i.tenantId === undefined)).toBe(true);
 
     await src.cleanup(); await tgt.cleanup();
+  });
+});
+
+describe("preflightDupCheck", () => {
+  it("passes when source has no duplicates (including phone-less users)", async () => {
+    const { db: source, cleanup } = await withMemoryMongo();
+
+    await source.collection("users").insertMany([
+      { name: "Alice", phone: "9999900001" },
+      { name: "Bob", phone: "9999900002" },
+      { name: "Google User 1", email: "g1@example.com" }, // no phone
+      { name: "Google User 2", email: "g2@example.com" }, // no phone
+    ]);
+    await source.collection("orders").insertMany([
+      { orderNumber: 1 },
+      { orderNumber: 2 },
+    ]);
+    await source.collection("coupons").insertMany([
+      { code: "SAVE10" },
+      { code: "FREESHIP" },
+    ]);
+
+    await expect(preflightDupCheck(source)).resolves.toBeUndefined();
+    await cleanup();
+  });
+
+  it("throws when source has duplicate non-null phone", async () => {
+    const { db: source, cleanup } = await withMemoryMongo();
+
+    await source.collection("users").insertMany([
+      { name: "Alice", phone: "9999900001" },
+      { name: "Alice Dup", phone: "9999900001" }, // duplicate!
+    ]);
+
+    await expect(preflightDupCheck(source)).rejects.toThrow(
+      /duplicate non-null phone/
+    );
+    await cleanup();
+  });
+
+  it("throws when source has duplicate orderNumber", async () => {
+    const { db: source, cleanup } = await withMemoryMongo();
+
+    await source.collection("orders").insertMany([
+      { orderNumber: 42 },
+      { orderNumber: 42 }, // duplicate!
+    ]);
+
+    await expect(preflightDupCheck(source)).rejects.toThrow(
+      /duplicate orderNumber/
+    );
+    await cleanup();
+  });
+
+  it("throws when source has duplicate coupon code", async () => {
+    const { db: source, cleanup } = await withMemoryMongo();
+
+    await source.collection("coupons").insertMany([
+      { code: "SAVE10", active: true },
+      { code: "SAVE10", active: false }, // duplicate!
+    ]);
+
+    await expect(preflightDupCheck(source)).rejects.toThrow(
+      /duplicate code/
+    );
+    await cleanup();
+  });
+
+  it("does NOT throw for multiple phone-less users (null/missing phone)", async () => {
+    const { db: source, cleanup } = await withMemoryMongo();
+
+    // Multiple users with no phone — must not trigger dup check (partial index rule).
+    await source.collection("users").insertMany([
+      { name: "Google User 1", email: "g1@example.com" },
+      { name: "Google User 2", email: "g2@example.com" },
+      { name: "Google User 3", email: "g3@example.com" },
+    ]);
+
+    await expect(preflightDupCheck(source)).resolves.toBeUndefined();
+    await cleanup();
   });
 });
