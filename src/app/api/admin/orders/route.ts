@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import Razorpay from "razorpay";
-import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
-import { getTenantId } from "@/lib/tenant";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -12,10 +12,11 @@ const razorpay = new Razorpay({
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const orders = await db
-      .collection("orders")
-      .find({})
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const orders = await t
+      .find("orders", {})
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -42,9 +43,8 @@ export async function GET() {
     if (rawIds.length) orQuery.push({ _id: { $in: rawIds } });
 
     const products = orQuery.length
-      ? await db
-          .collection("menuItems")
-          .find({ $or: orQuery })
+      ? await t
+          .find("menuItems", { $or: orQuery })
           .project({ name: 1, image: 1 })
           .toArray()
       : [];
@@ -91,6 +91,10 @@ const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
 
 export async function PATCH(req: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const { id, status, paymentStatus, printBill, reject } = await req.json();
     if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -119,9 +123,8 @@ export async function PATCH(req: NextRequest) {
     // refund. The order is only cancelled once the refund succeeds, so a
     // failed refund leaves the order untouched for the admin to retry.
     if (reject) {
-      const { db } = await connectToDatabase();
       const _id = new ObjectId(id);
-      const order = await db.collection("orders").findOne({ _id });
+      const order = await t.findOne("orders", { _id });
       if (!order) {
         return NextResponse.json(
           { success: false, message: "Order not found" },
@@ -165,9 +168,7 @@ export async function PATCH(req: NextRequest) {
         }
       }
 
-      await db
-        .collection("orders")
-        .updateOne({ _id }, { $set: rejectUpdate });
+      await t.updateOne("orders", { _id }, { $set: rejectUpdate });
 
       return NextResponse.json({
         success: true,
@@ -188,8 +189,6 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    const tenantId = await getTenantId();
     const _id = new ObjectId(id);
 
     // On the first transition to "confirmed", allocate a daily KOT number and
@@ -197,12 +196,13 @@ export async function PATCH(req: NextRequest) {
     let kotNumber: number | undefined;
     let confirmedAt: Date | undefined;
     if (update.status === "confirmed") {
-      const existing = await db
-        .collection("orders")
-        .findOne({ _id }, { projection: { kotNumber: 1, confirmedAt: 1 } });
+      const existing = await t.raw("orders").findOne(
+        { _id, tenantId: r.tenantId },
+        { projection: { kotNumber: 1, confirmedAt: 1 } }
+      );
       if (existing && existing.kotNumber == null) {
         const day = kotDayKey();
-        kotNumber = await nextKotNumber(tenantId, day);
+        kotNumber = await nextKotNumber(r.tenantId, day);
         update.kotNumber = kotNumber;
         update.kotDate = day;
         update.kotPrinted = false;
@@ -225,12 +225,13 @@ export async function PATCH(req: NextRequest) {
     // already-billed order won't reprint it.
     let billNumber: number | undefined;
     if (printBill || update.status === "confirmed") {
-      const existing = await db
-        .collection("orders")
-        .findOne({ _id }, { projection: { billNumber: 1 } });
+      const existing = await t.raw("orders").findOne(
+        { _id, tenantId: r.tenantId },
+        { projection: { billNumber: 1 } }
+      );
       const firstBill = !existing?.billNumber;
       if (firstBill) {
-        billNumber = await nextBillNumber(tenantId);
+        billNumber = await nextBillNumber(r.tenantId);
         update.billNumber = billNumber;
       } else {
         billNumber = existing!.billNumber as number;
@@ -241,9 +242,11 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const result = await db
-      .collection("orders")
-      .updateOne({ _id }, { $set: { ...update, updatedAt: new Date() } });
+    const result = await t.updateOne(
+      "orders",
+      { _id },
+      { $set: { ...update, updatedAt: new Date() } }
+    );
 
     if (result.matchedCount === 0) {
       return NextResponse.json(
