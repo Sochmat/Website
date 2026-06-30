@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { Coupon } from "@/lib/types";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const coupons = await db.collection("coupons").find({}).toArray();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const coupons = await t.find("coupons", {}).toArray();
     return NextResponse.json({ success: true, coupons });
   } catch (error) {
     console.error("Error fetching coupons:", error);
@@ -19,7 +22,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const data: Coupon = await request.json();
     const discountType =
       data.discountType === "percent"
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest) {
       coupon.discountPercent = 0;
       coupon.maxDiscount = 0;
     }
-    const result = await db.collection("coupons").insertOne(coupon);
+    const result = await t.insertOne("coupons", coupon);
     return NextResponse.json({
       success: true,
       coupon: { ...coupon, _id: result.insertedId },
@@ -65,7 +70,9 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const data = await request.json();
     const { id, ...fields } = data;
     if (!id) {
@@ -106,9 +113,7 @@ export async function PUT(request: NextRequest) {
       update.freeItemId = "";
     }
 
-    await db
-      .collection("coupons")
-      .updateOne({ _id: new ObjectId(id) }, { $set: update });
+    await t.updateOne("coupons", { _id: new ObjectId(id) }, { $set: update });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error updating coupon:", error);
@@ -121,7 +126,9 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -130,7 +137,7 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
-    await db.collection("coupons").deleteOne({ _id: new ObjectId(id) });
+    await t.deleteOne("coupons", { _id: new ObjectId(id) });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting coupon:", error);

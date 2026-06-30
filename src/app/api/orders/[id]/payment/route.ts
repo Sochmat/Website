@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function PATCH(
   request: NextRequest,
@@ -31,7 +32,10 @@ export async function PATCH(
       );
     }
 
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const updateData: any = {
       paymentStatus,
       updatedAt: new Date(),
@@ -41,7 +45,7 @@ export async function PATCH(
       updateData.paymentId = paymentId;
     }
 
-    const result = await db.collection("orders").updateOne(
+    const result = await t.updateOne("orders",
       { _id: new ObjectId(orderId) },
       { $set: updateData }
     );
@@ -53,9 +57,7 @@ export async function PATCH(
       );
     }
 
-    const order = await db
-      .collection("orders")
-      .findOne({ _id: new ObjectId(orderId) });
+    const order = await t.findOne("orders", { _id: new ObjectId(orderId) });
 
     return NextResponse.json({ success: true, order });
   } catch (error) {

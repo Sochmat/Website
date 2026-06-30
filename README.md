@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Multi-tenancy
+
+This app runs as **KitchenOS** — a multi-tenant platform where each kitchen gets its own subdomain. See [docs/MULTITENANCY.md](docs/MULTITENANCY.md) for:
+
+- Required env vars (`ROOT_DOMAIN`, `KITCHENOS_SECRET_KEY`, migration-only inputs, etc.)
+- Local dev with subdomains (`sochmat.localhost:3000`, `admin.localhost:3000`)
+- Run order (`npm run migrate:kitchenos` once, then `npm run dev`)
+- Admin login paths and roles
+- Per-tenant print agent setup
+
 ## Getting Started
 
 First, run the development server:

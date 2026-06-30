@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -27,13 +28,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const query = isEmailFlow ? { email } : { phone };
 
-    let user = await db.collection("users").findOne(query);
+    let user = await t.findOne("users", query);
 
     if (user && name) {
-      await db.collection("users").updateOne(
+      await t.updateOne(
+        "users",
         query,
         { $set: { name, updatedAt: new Date() } }
       );
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest) {
       };
       if (isEmailFlow) newUser.email = email;
       else newUser.phone = phone;
-      const result = await db.collection("users").insertOne(newUser);
+      const result = await t.insertOne("users", newUser);
       user = { _id: result.insertedId, ...newUser };
     }
 
@@ -62,7 +67,8 @@ export async function POST(request: NextRequest) {
     if (isEmailFlow) otpSet.email = email;
     else otpSet.phone = phone;
 
-    await db.collection("otps").updateOne(
+    await t.updateOne(
+      "otps",
       query,
       {
         $set: otpSet,

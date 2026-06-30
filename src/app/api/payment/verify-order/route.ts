@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { ObjectId } from "mongodb";
 import Razorpay from "razorpay";
-import { connectToDatabase } from "@/lib/mongodb";
 import { Order } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -59,9 +60,11 @@ export async function POST(request: NextRequest) {
     // it paid. This blocks reusing a cheap/foreign payment for an expensive
     // order.
     if (orderId && ObjectId.isValid(orderId)) {
-      const { db } = await connectToDatabase();
+      const r = await resolveTenantId();
+      if ("error" in r) return r.error;
+      const t = await forTenant(r.tenantId);
       const _id = new ObjectId(orderId);
-      const order = await db.collection("orders").findOne({ _id });
+      const order = await t.findOne("orders", { _id });
 
       if (order) {
         // Idempotent: an already-paid order short-circuits (no double push).
@@ -109,9 +112,7 @@ export async function POST(request: NextRequest) {
 
         // Reject payment-id replay: a captured payment can settle exactly one
         // order. (Razorpay also enforces this server-side, but fail fast here.)
-        const reused = await db
-          .collection("orders")
-          .findOne({ paymentId: razorpay_payment_id, _id: { $ne: _id } });
+        const reused = await t.findOne("orders", { paymentId: razorpay_payment_id, _id: { $ne: _id } });
         if (reused) {
           return NextResponse.json(
             { success: false, message: "Payment already used" },
@@ -119,42 +120,36 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        await db.collection("orders").updateOne(
-          { _id },
-          {
-            $set: {
-              paymentStatus: "paid",
-              paymentId: razorpay_payment_id,
-              razorpayOrderId: razorpay_order_id,
-              // Freeze the promised ready time at 30 minutes from payment.
-              expectedReadyAt: new Date(Date.now() + 30 * 60 * 1000),
-              updatedAt: new Date(),
-            },
-          }
-        );
+        await t.updateOne("orders", { _id }, {
+          $set: {
+            paymentStatus: "paid",
+            paymentId: razorpay_payment_id,
+            razorpayOrderId: razorpay_order_id,
+            // Freeze the promised ready time at 30 minutes from payment.
+            expectedReadyAt: new Date(Date.now() + 30 * 60 * 1000),
+            updatedAt: new Date(),
+          },
+        });
 
         // Order is now paid — push it to Petpooja. The push never blocks
         // verification; its outcome is recorded on the order for admin.
-        const paidOrder = await db.collection("orders").findOne({ _id });
+        const paidOrder = await t.findOne("orders", { _id });
         if (paidOrder) {
           const pushResult = await pushOrderToPetpooja(
             paidOrder as unknown as Order,
-            db
+            r.tenantId
           );
-          await recordPushResult(db, _id, pushResult);
+          await recordPushResult(r.tenantId, _id, pushResult);
         }
       } else {
         // Not an order — try subscriptions (signature already validated).
-        await db.collection("subscriptions").updateOne(
-          { _id },
-          {
-            $set: {
-              paymentStatus: "paid",
-              paymentId: razorpay_payment_id,
-              updatedAt: new Date(),
-            },
-          }
-        );
+        await t.updateOne("subscriptions", { _id }, {
+          $set: {
+            paymentStatus: "paid",
+            paymentId: razorpay_payment_id,
+            updatedAt: new Date(),
+          },
+        });
       }
     }
 

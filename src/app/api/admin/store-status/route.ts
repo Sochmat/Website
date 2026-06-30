@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const body = await request.json();
     if (typeof body?.open !== "boolean") {
       return NextResponse.json(
@@ -12,8 +16,8 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const { db } = await connectToDatabase();
-    await db.collection("settings").updateOne(
+    await t.updateOne(
+      "settings",
       { key: "store" },
       { $set: { key: "store", open: body.open, updatedAt: new Date() } },
       { upsert: true },

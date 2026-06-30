@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
 import {
@@ -8,6 +7,8 @@ import {
   enforce,
   tooManyRequests,
 } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -38,10 +39,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    const user = await db
-      .collection("users")
-      .findOne(isEmailFlow ? { email } : { phone });
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    const user = await t.findOne("users", isEmailFlow ? { email } : { phone });
 
     if (!user) {
       return NextResponse.json(
@@ -62,7 +64,8 @@ export async function POST(request: NextRequest) {
     if (isEmailFlow) otpSet.email = email;
     else otpSet.phone = phone;
 
-    await db.collection("otps").updateOne(
+    await t.updateOne(
+      "otps",
       isEmailFlow ? { email } : { phone },
       { $set: otpSet },
       { upsert: true }

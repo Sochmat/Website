@@ -1,4 +1,4 @@
-import { Db } from "mongodb";
+import { connectToDatabase } from "./mongodb";
 
 /**
  * Returns the day key (YYYY-MM-DD) used to scope the daily KOT sequence.
@@ -10,15 +10,16 @@ export function kotDayKey(date: Date = new Date()): string {
 }
 
 /**
- * Atomically allocates the next KOT number for the given day. The sequence
- * resets each day (a new counter document is created via upsert).
+ * Atomically allocates the next KOT number for the given tenant and day.
+ * The sequence resets each day (a new counter document is created via upsert).
  */
 export async function nextKotNumber(
-  db: Db,
+  tenantId: string,
   day: string = kotDayKey()
 ): Promise<number> {
+  const { db } = await connectToDatabase();
   const result = await db.collection("counters").findOneAndUpdate(
-    { _id: `kot:${day}` as unknown as object },
+    { _id: `${tenantId}:kot:${day}` as unknown as object },
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: "after" }
   );
@@ -27,12 +28,14 @@ export async function nextKotNumber(
 }
 
 /**
- * Atomically allocates the next global bill number. Unlike the KOT sequence
- * this never resets — it is an ever-increasing running counter across all days.
+ * Atomically allocates the next global bill number for the given tenant.
+ * Unlike the KOT sequence this never resets — it is an ever-increasing
+ * running counter across all days.
  */
-export async function nextBillNumber(db: Db): Promise<number> {
+export async function nextBillNumber(tenantId: string): Promise<number> {
+  const { db } = await connectToDatabase();
   const result = await db.collection("counters").findOneAndUpdate(
-    { _id: "bill:global" as unknown as object },
+    { _id: `${tenantId}:bill:global` as unknown as object },
     { $inc: { seq: 1 } },
     { upsert: true, returnDocument: "after" }
   );

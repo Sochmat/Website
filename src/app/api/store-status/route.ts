@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const [storeDoc, deliveryDoc] = await Promise.all([
-      db.collection("settings").findOne({ key: "store" }),
-      db.collection("settings").findOne({ key: "delivery" }),
+      t.findOne("settings", { key: "store" }),
+      t.findOne("settings", { key: "delivery" }),
     ]);
     const open = storeDoc?.open ?? true;
     const delivery = deliveryDoc?.on ?? true;

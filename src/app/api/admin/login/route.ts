@@ -1,41 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { limiters, rateLimit } from "@/lib/rateLimit";
-import { ADMIN_COOKIE, signSession } from "@/lib/adminAuth";
-
-type Role = "admin" | "shop";
-
-function matchRole(user: string, password: string): Role | null {
-  if (
-    process.env.ADMIN_USER &&
-    process.env.ADMIN_PASSWORD &&
-    user === process.env.ADMIN_USER &&
-    password === process.env.ADMIN_PASSWORD
-  ) {
-    return "admin";
-  }
-  if (
-    process.env.SHOP_USER &&
-    process.env.SHOP_PASSWORD &&
-    user === process.env.SHOP_USER &&
-    password === process.env.SHOP_PASSWORD
-  ) {
-    return "shop";
-  }
-  return null;
-}
+import { ADMIN_COOKIE, createSession } from "@/lib/adminAuth";
+import { connectToDatabase } from "@/lib/mongodb";
+import { authenticate } from "./authenticate";
 
 export async function POST(request: NextRequest) {
   const limited = await rateLimit(request, limiters.auth);
   if (limited) return limited;
   try {
-    const { user, password } = await request.json();
+    const body = await request.json();
+    // Accept both new `email` field and legacy `user` field from the existing login page.
+    const email = body.email ?? body.user;
+    const { password } = body;
 
-    const role = matchRole(user, password);
-    if (role) {
-      // The real credential is a signed, httpOnly session cookie. The returned
-      // role is only used client-side to pick which UI to render.
-      const token = await signSession(role);
-      const res = NextResponse.json({ success: true, role });
+    const scopeKind = request.headers.get("x-tenant-scope");
+    const slug = request.headers.get("x-tenant-slug");
+    const scope =
+      scopeKind === "super"
+        ? { kind: "super" as const }
+        : scopeKind === "tenant"
+          ? { kind: "tenant" as const, slug: slug ?? "" }
+          : { kind: scopeKind ?? "unknown" };
+
+    const { db } = await connectToDatabase();
+    const payload = await authenticate(db, scope, email, password);
+
+    if (payload) {
+      const token = createSession(payload);
+      const res = NextResponse.json({ success: true, role: payload.role });
       res.cookies.set(ADMIN_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

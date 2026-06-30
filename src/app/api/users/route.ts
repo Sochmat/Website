@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
-    const { db } = await connectToDatabase();
     if (id) {
-      const user = await db
-        .collection("users")
-        .findOne({ _id: new ObjectId(id) });
+      const user = await t.findOne("users", { _id: new ObjectId(id) });
       if (!user) {
         return NextResponse.json(
           { success: false, message: "User not found" },
@@ -31,11 +33,7 @@ export async function GET(request: NextRequest) {
         },
       });
     }
-    const users = await db
-      .collection("users")
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
+    const users = await t.find("users", {}).sort({ createdAt: -1 }).toArray();
     return NextResponse.json({
       success: true,
       users: users.map((u) => ({
@@ -60,6 +58,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const body = await request.json();
     const phone = String(body.phone ?? "")
       .trim()
@@ -72,13 +74,12 @@ export async function POST(request: NextRequest) {
     }
     const name = body.name ? String(body.name).trim() : undefined;
 
-    const { db } = await connectToDatabase();
-    let user = await db.collection("users").findOne({ phone });
+    let user = await t.findOne("users", { phone });
     if (user) {
       const updates: Record<string, unknown> = { updatedAt: new Date() };
       if (name !== undefined) updates.name = name;
       if (Object.keys(updates).length > 1) {
-        await db.collection("users").updateOne({ phone }, { $set: updates });
+        await t.updateOne("users", { phone }, { $set: updates });
         user = { ...user, ...updates };
       }
       return NextResponse.json({
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const result = await db.collection("users").insertOne(newUser);
+    const result = await t.insertOne("users", newUser);
     return NextResponse.json({
       success: true,
       user: {
@@ -126,6 +127,10 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const body = await request.json();
     const { _id, ...update } = body;
     if (!_id) {
@@ -148,19 +153,14 @@ export async function PATCH(request: NextRequest) {
     for (const key of allowed) {
       if (update[key] !== undefined) set[key] = update[key];
     }
-    const { db } = await connectToDatabase();
-    const result = await db
-      .collection("users")
-      .updateOne({ _id: new ObjectId(_id) }, { $set: set });
+    const result = await t.updateOne("users", { _id: new ObjectId(_id) }, { $set: set });
     if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, message: "User not found" },
         { status: 404 }
       );
     }
-    const user = await db
-      .collection("users")
-      .findOne({ _id: new ObjectId(_id) });
+    const user = await t.findOne("users", { _id: new ObjectId(_id) });
     if (!user) {
       return NextResponse.json(
         { success: false, message: "User not found" },

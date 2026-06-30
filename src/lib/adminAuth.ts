@@ -5,6 +5,10 @@
 // (no XSS exfiltration). Signing/verification uses Web Crypto only, so this
 // module is safe to import from both Edge middleware and Node route handlers.
 
+import type { Role } from "@/lib/types";
+
+// Legacy role type kept for backward-compat with the login route (Task 13 will
+// replace it).
 export type AdminRole = "admin" | "shop";
 
 export const ADMIN_COOKIE = "admin_session";
@@ -54,6 +58,14 @@ async function hmac(message: string): Promise<Uint8Array> {
   return new Uint8Array(sig);
 }
 
+/** Synchronous HMAC-SHA256 via Node built-in crypto. Used by createSession (Node runtime only). */
+function hmacSync(message: string): Uint8Array {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createHmac } = require("crypto") as typeof import("crypto");
+  const raw = createHmac("sha256", sessionSecret()).update(message).digest();
+  return new Uint8Array(raw);
+}
+
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
@@ -61,12 +73,16 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+// ---------------------------------------------------------------------------
+// Legacy payload — kept for signSession (Task 13 will replace the login route)
+// ---------------------------------------------------------------------------
+
 interface SessionPayload {
   role: AdminRole;
   exp: number;
 }
 
-/** Create a signed session token for the given role. */
+/** Create a signed session token for the given role (legacy). */
 export async function signSession(role: AdminRole): Promise<string> {
   const payload: SessionPayload = { role, exp: Date.now() + SESSION_TTL_MS };
   const body = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
@@ -74,10 +90,34 @@ export async function signSession(role: AdminRole): Promise<string> {
   return `${body}.${sig}`;
 }
 
-/** Verify a session token; returns the payload or null if invalid/expired. */
+// ---------------------------------------------------------------------------
+// New tenant-bound Session
+// ---------------------------------------------------------------------------
+
+export interface Session {
+  userId: string;
+  tenantId: string | null;
+  tenantSlug: string | null;
+  role: Role;
+  exp: number;
+}
+
+/**
+ * Create a signed session token synchronously (using Node crypto.createHmac).
+ * Returns `body.sig` where body = base64url(JSON) and sig = base64url(HMAC).
+ * The format is byte-identical to signSession so verifySession can parse it.
+ */
+export function createSession(payload: Omit<Session, "exp">): string {
+  const full: Session = { ...payload, exp: Date.now() + SESSION_TTL_MS };
+  const body = base64UrlEncode(encoder.encode(JSON.stringify(full)));
+  const sig = base64UrlEncode(hmacSync(body));
+  return `${body}.${sig}`;
+}
+
+/** Verify a session token; returns the Session or null if invalid/expired. */
 export async function verifySession(
   token: string | undefined | null,
-): Promise<SessionPayload | null> {
+): Promise<Session | null> {
   if (!token) return null;
   const dot = token.indexOf(".");
   if (dot <= 0) return null;
@@ -90,15 +130,19 @@ export async function verifySession(
     }
     const payload = JSON.parse(
       new TextDecoder().decode(base64UrlDecode(body)),
-    ) as SessionPayload;
+    ) as Partial<Session>;
+    const validRoles: Role[] = ["superadmin", "kitchen-admin", "shop"];
     if (
-      (payload.role !== "admin" && payload.role !== "shop") ||
+      typeof payload.userId !== "string" ||
+      !(payload.tenantId === null || typeof payload.tenantId === "string") ||
+      !(payload.tenantSlug === null || typeof payload.tenantSlug === "string") ||
+      !validRoles.includes(payload.role as Role) ||
       typeof payload.exp !== "number" ||
       payload.exp < Date.now()
     ) {
       return null;
     }
-    return payload;
+    return payload as Session;
   } catch {
     return null;
   }

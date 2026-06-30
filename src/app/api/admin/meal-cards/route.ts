@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const cards = await db
-      .collection("mealCards")
-      .find({})
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const cards = await t
+      .find("mealCards", {})
       .sort({ order: 1 })
       .toArray();
     return NextResponse.json({ success: true, cards });
@@ -22,7 +24,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { title, subtitle, images, startingPrice, category, link, order, active } =
       await request.json();
     if (!title || !images || !Array.isArray(images) || images.length === 0 || startingPrice === undefined) {
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const result = await db.collection("mealCards").insertOne({
+    const result = await t.insertOne("mealCards", {
       title,
       subtitle: subtitle ?? "",
       images,
@@ -55,7 +59,9 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { _id, title, subtitle, images, startingPrice, category, link, order, active } =
       await request.json();
     if (!_id) {
@@ -64,7 +70,8 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    await db.collection("mealCards").updateOne(
+    await t.updateOne(
+      "mealCards",
       { _id: new ObjectId(_id) },
       {
         $set: {
@@ -92,7 +99,9 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -101,9 +110,7 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
-    await db
-      .collection("mealCards")
-      .deleteOne({ _id: new ObjectId(id) });
+    await t.deleteOne("mealCards", { _id: new ObjectId(id) });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting meal card:", error);

@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const subscriptions = await db
-      .collection("subscriptions")
-      .find({})
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const subscriptions = await t
+      .find("subscriptions", {})
       .sort({ createdAt: -1 })
       .toArray();
-    
+
     const subscriptionsWithUser = await Promise.all(
       subscriptions.map(async (sub) => {
         if (sub.receiver?.phone) {
-          const user = await db.collection("users").findOne({
+          const user = await t.findOne("users", {
             phone: sub.receiver.phone,
           });
           return { ...sub, user };

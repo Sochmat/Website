@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { MenuItem } from "@/lib/types";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const items = await db.collection("menuItems").find({}).toArray();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const items = await t.find("menuItems", {}).toArray();
     return NextResponse.json({ success: true, items });
   } catch (error) {
     console.error("Error fetching menu items:", error);
@@ -19,7 +22,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const data: MenuItem = await request.json();
 
     const menuItem: MenuItem = {
@@ -28,7 +33,7 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    const result = await db.collection("menuItems").insertOne({
+    const result = await t.insertOne("menuItems", {
       ...menuItem,
       _id: new ObjectId(menuItem._id),
     });
@@ -47,7 +52,9 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const data = await request.json();
     const { _id, ...updateData } = data;
 
@@ -58,7 +65,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const result = await db.collection("menuItems").updateOne(
+    const result = await t.updateOne(
+      "menuItems",
       { _id: new ObjectId(_id) },
       {
         $set: {
@@ -87,7 +95,9 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
@@ -98,9 +108,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const result = await db
-      .collection("menuItems")
-      .deleteOne({ _id: new ObjectId(id) });
+    const result = await t.deleteOne("menuItems", { _id: new ObjectId(id) });
 
     if (result.deletedCount === 0) {
       return NextResponse.json(
