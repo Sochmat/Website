@@ -181,11 +181,13 @@ export async function migrate({
 export async function preflightDupCheck(source: Db): Promise<void> {
   const errors: string[] = [];
 
-  // Duplicate non-null phone in users.
+  // Duplicate non-empty phone in users. Empty string "" is the no-phone sentinel
+  // (used by Google/email users) and must not be flagged as a duplicate.
+  // Mirrors the index predicate: phone > "" means only real phones are unique.
   const dupPhones = await source
     .collection("users")
     .aggregate([
-      { $match: { phone: { $type: "string" } } },
+      { $match: { phone: { $type: "string", $ne: "" } } },
       { $group: { _id: "$phone", count: { $sum: 1 } } },
       { $match: { count: { $gt: 1 } } },
     ])
