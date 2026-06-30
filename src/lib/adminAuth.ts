@@ -5,7 +5,6 @@
 // (no XSS exfiltration). Signing/verification uses Web Crypto only, so this
 // module is safe to import from both Edge middleware and Node route handlers.
 
-import { createHmac } from "crypto";
 import type { Role } from "@/lib/types";
 
 // Legacy role type kept for backward-compat with the login route (Task 13 will
@@ -59,11 +58,11 @@ async function hmac(message: string): Promise<Uint8Array> {
   return new Uint8Array(sig);
 }
 
-/** Synchronous HMAC-SHA256 via Node built-in crypto. Used by createSession. */
+/** Synchronous HMAC-SHA256 via Node built-in crypto. Used by createSession (Node runtime only). */
 function hmacSync(message: string): Uint8Array {
-  const raw = createHmac("sha256", sessionSecret())
-    .update(message)
-    .digest();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createHmac } = require("crypto") as typeof import("crypto");
+  const raw = createHmac("sha256", sessionSecret()).update(message).digest();
   return new Uint8Array(raw);
 }
 
