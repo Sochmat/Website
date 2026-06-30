@@ -4,6 +4,8 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order, User } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -13,18 +15,18 @@ function generateOrderNumber() {
 
 export async function GET(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("_id");
     const userId = searchParams.get("userId");
     const gte = searchParams.get("gte");
     const lte = searchParams.get("lte");
 
-    const { db } = await connectToDatabase();
-
     if (id) {
-      const order = await db
-        .collection("orders")
-        .findOne({ _id: new ObjectId(id) });
+      const order = await t.findOne("orders", { _id: new ObjectId(id) });
       return NextResponse.json({ success: true, order });
     }
 
@@ -44,9 +46,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const orders = await db
-      .collection("orders")
-      .find({ ...filter })
+    const orders = await t
+      .find("orders", { ...filter })
       .sort({ createdAt: -1 })
       .toArray();
     return NextResponse.json({ success: true, orders });
@@ -63,10 +64,13 @@ export async function POST(request: NextRequest) {
   const limited = await rateLimit(request, limiters.order);
   if (limited) return limited;
   try {
-    const { db: settingsDb } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const [storeDoc, deliveryDoc] = await Promise.all([
-      settingsDb.collection("settings").findOne({ key: "store" }),
-      settingsDb.collection("settings").findOne({ key: "delivery" }),
+      t.findOne("settings", { key: "store" }),
+      t.findOne("settings", { key: "delivery" }),
     ]);
     if (storeDoc?.open === false) {
       return NextResponse.json(
@@ -110,9 +114,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-
-    let user = (await db.collection("users").findOne({ phone })) as {
+    let user = (await t.findOne("users", { phone })) as {
       _id: ObjectId;
       phone: string;
       name?: string;
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const insertResult = await db.collection("users").insertOne(newUser);
+      const insertResult = await t.insertOne("users", newUser);
       user = {
         _id: insertResult.insertedId as ObjectId,
         phone,
@@ -144,7 +146,7 @@ export async function POST(request: NextRequest) {
     let allowedDiscount = 0;
     let coupon: Record<string, unknown> | null = null;
     if (body.couponCode) {
-      coupon = await db.collection("coupons").findOne({
+      coupon = await t.findOne("coupons", {
         code: String(body.couponCode).trim().toUpperCase(),
         active: true,
       });
@@ -179,7 +181,7 @@ export async function POST(request: NextRequest) {
     if (objIds.length) menuOr.push({ _id: { $in: objIds } });
     if (strIds.length) menuOr.push({ _id: { $in: strIds } });
     const menuDocs = menuOr.length
-      ? await db.collection("menuItems").find({ $or: menuOr }).toArray()
+      ? await t.find("menuItems", { $or: menuOr }).toArray()
       : [];
     const menuMap = new Map<string, Record<string, unknown>>();
     for (const m of menuDocs) menuMap.set(String(m._id), m);
@@ -316,21 +318,20 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    const result = await db.collection("orders").insertOne(orderDoc as any);
-    let order = await db
-      .collection("orders")
-      .findOne({ _id: result.insertedId });
+    const result = await t.insertOne("orders", orderDoc as any);
+    let order = await t.findOne("orders", { _id: result.insertedId });
 
     // COD orders are pushed to Petpooja at creation (online orders push from
     // verify-order once payment is confirmed). The push never blocks the
     // response: its outcome is recorded on the order for admin to handle.
     if (order && orderDoc.paymentMethod === "cash") {
+      const { db } = await connectToDatabase();
       const pushResult = await pushOrderToPetpooja(
         order as unknown as Order,
         db,
       );
       await recordPushResult(db, result.insertedId, pushResult);
-      order = await db.collection("orders").findOne({ _id: result.insertedId });
+      order = await t.findOne("orders", { _id: result.insertedId });
     }
 
     return NextResponse.json({ success: true, order });

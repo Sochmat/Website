@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const items = await db
-      .collection("menuItems")
-      .find({ hidden: { $ne: true } })
-      .toArray();
-    const categories = await db
-      .collection("categories")
-      .find({ hidden: { $ne: true } })
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    const items = await t.find("menuItems", { hidden: { $ne: true } }).toArray();
+    const categories = await t
+      .find("categories", { hidden: { $ne: true } })
       .toArray();
 
     const formattedItems = items.map((item) => ({
