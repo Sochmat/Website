@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
+import { getTenantId } from "@/lib/tenant";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -188,6 +189,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const { db } = await connectToDatabase();
+    const tenantId = await getTenantId();
     const _id = new ObjectId(id);
 
     // On the first transition to "confirmed", allocate a daily KOT number and
@@ -200,7 +202,7 @@ export async function PATCH(req: NextRequest) {
         .findOne({ _id }, { projection: { kotNumber: 1, confirmedAt: 1 } });
       if (existing && existing.kotNumber == null) {
         const day = kotDayKey();
-        kotNumber = await nextKotNumber(db, day);
+        kotNumber = await nextKotNumber(tenantId, day);
         update.kotNumber = kotNumber;
         update.kotDate = day;
         update.kotPrinted = false;
@@ -228,7 +230,7 @@ export async function PATCH(req: NextRequest) {
         .findOne({ _id }, { projection: { billNumber: 1 } });
       const firstBill = !existing?.billNumber;
       if (firstBill) {
-        billNumber = await nextBillNumber(db);
+        billNumber = await nextBillNumber(tenantId);
         update.billNumber = billNumber;
       } else {
         billNumber = existing!.billNumber as number;
