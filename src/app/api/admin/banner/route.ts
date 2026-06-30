@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function GET() {
   try {
-    const { db } = await connectToDatabase();
-    const slides = await db
-      .collection("bannerSlides")
-      .find({})
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const slides = await t
+      .find("bannerSlides", {})
       .sort({ order: 1 })
       .toArray();
     return NextResponse.json({ success: true, slides });
@@ -22,7 +24,9 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { url, order } = await request.json();
     if (!url) {
       return NextResponse.json(
@@ -30,7 +34,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const result = await db.collection("bannerSlides").insertOne({
+    const result = await t.insertOne("bannerSlides", {
       url,
       order: order ?? 0,
       createdAt: new Date(),
@@ -47,7 +51,9 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { _id, url, order } = await request.json();
     if (!_id) {
       return NextResponse.json(
@@ -55,12 +61,11 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    await db
-      .collection("bannerSlides")
-      .updateOne(
-        { _id: new ObjectId(_id) },
-        { $set: { url, order: order ?? 0 } }
-      );
+    await t.updateOne(
+      "bannerSlides",
+      { _id: new ObjectId(_id) },
+      { $set: { url, order: order ?? 0 } }
+    );
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error updating banner slide:", error);
@@ -73,7 +78,9 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -82,9 +89,7 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
-    await db
-      .collection("bannerSlides")
-      .deleteOne({ _id: new ObjectId(id) });
+    await t.deleteOne("bannerSlides", { _id: new ObjectId(id) });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting banner slide:", error);

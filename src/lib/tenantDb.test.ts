@@ -28,4 +28,13 @@ describe("forTenant isolation", () => {
     expect(() => A.raw("tenants")).toThrow();
     await cleanup();
   });
+  it("stamps tenantId on upsert insert", async () => {
+    const { db, cleanup } = await withMemoryMongo();
+    mockConn = { db };
+    const A = await forTenant("aaaaaaaaaaaaaaaaaaaaaaaa");
+    await A.updateOne("settings", { key: "store" }, { $set: { open: false } }, { upsert: true });
+    const doc = await db.collection("settings").findOne({ key: "store" });
+    expect(doc?.tenantId).toBe("aaaaaaaaaaaaaaaaaaaaaaaa");
+    await cleanup();
+  });
 });
