@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
+import { forTenant } from "@/lib/tenantDb";
+import { tenantIdForPrintToken } from "@/lib/printAuth";
 
 /**
  * Print queue for customer bills, requested on demand from the admin panel.
@@ -8,37 +9,25 @@ import { connectToDatabase } from "@/lib/mongodb";
  *  GET  /api/print/bill      -> orders flagged for bill printing (enriched)
  *  POST /api/print/bill      -> { id } marks a bill as printed
  *
- * Both require Authorization: Bearer <PRINT_AGENT_TOKEN>.
+ * Both require Authorization: Bearer <per-tenant printAgentToken>.
  */
 
-function authorize(req: NextRequest): NextResponse | null {
-  const token = process.env.PRINT_AGENT_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      { success: false, message: "Print agent token not configured" },
-      { status: 500 }
-    );
-  }
+async function resolveTenant(req: NextRequest): Promise<string | null> {
   const header = req.headers.get("authorization") ?? "";
-  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (provided !== token) {
-    return NextResponse.json(
-      { success: false, message: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-  return null;
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  return tenantIdForPrintToken(token || null);
 }
 
 export async function GET(req: NextRequest) {
-  const unauthorized = authorize(req);
-  if (unauthorized) return unauthorized;
+  const tenantId = await resolveTenant(req);
+  if (!tenantId) {
+    return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+  }
 
   try {
-    const { db } = await connectToDatabase();
-    const orders = await db
-      .collection("orders")
-      .find({ billRequested: true, billPrinted: { $ne: true } })
+    const t = await forTenant(tenantId);
+    const orders = await t
+      .find("orders", { billRequested: true, billPrinted: { $ne: true } })
       .sort({ updatedAt: 1 })
       .limit(20)
       .toArray();
@@ -68,9 +57,8 @@ export async function GET(req: NextRequest) {
     if (rawIds.length) orQuery.push({ _id: { $in: rawIds } });
 
     const products = orQuery.length
-      ? await db
-          .collection("menuItems")
-          .find({ $or: orQuery })
+      ? await t
+          .find("menuItems", { $or: orQuery })
           .project({ name: 1 })
           .toArray()
       : [];
@@ -134,8 +122,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const unauthorized = authorize(req);
-  if (unauthorized) return unauthorized;
+  const tenantId = await resolveTenant(req);
+  if (!tenantId) {
+    return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const { id } = await req.json();
@@ -156,8 +146,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    const result = await db.collection("orders").updateOne(
+    const t = await forTenant(tenantId);
+    const result = await t.updateOne(
+      "orders",
       { _id },
       {
         $set: {
