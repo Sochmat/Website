@@ -1,5 +1,6 @@
-import { ObjectId, Db } from "mongodb";
+import { ObjectId } from "mongodb";
 import { Order } from "@/lib/types";
+import { forTenant } from "./tenantDb";
 
 /**
  * Outbound integration with Petpooja's `/saveorder` endpoint.
@@ -91,7 +92,7 @@ function formatDateParts(d: Date): {
  */
 async function resolveItems(
   order: Order,
-  db: Db,
+  tenantId: string,
 ): Promise<
   | { ok: true; items: Array<{ petpoojaItemId: string; name: string; price: number; quantity: number }> }
   | { ok: false; unmapped: string[] }
@@ -105,10 +106,8 @@ async function resolveItems(
     }
   }
 
-  const menuDocs = await db
-    .collection("menuItems")
-    .find({ _id: { $in: objectIds } })
-    .toArray();
+  const t = await forTenant(tenantId);
+  const menuDocs = await t.find("menuItems", { _id: { $in: objectIds } }).toArray();
   const byId = new Map(menuDocs.map((m) => [m._id.toString(), m]));
 
   const items: Array<{
@@ -228,7 +227,7 @@ function buildPayload(
 
 export async function pushOrderToPetpooja(
   order: Order,
-  db: Db,
+  tenantId: string,
 ): Promise<PetpoojaPushResult> {
   const config = getConfig();
   if (!config) {
@@ -240,7 +239,7 @@ export async function pushOrderToPetpooja(
   }
 
   try {
-    const resolved = await resolveItems(order, db);
+    const resolved = await resolveItems(order, tenantId);
     if (!resolved.ok) {
       return {
         status: "skipped",
@@ -294,20 +293,18 @@ export async function pushOrderToPetpooja(
  * both trigger points (COD creation, online verify) stay consistent.
  */
 export async function recordPushResult(
-  db: Db,
+  tenantId: string,
   orderId: ObjectId,
   result: PetpoojaPushResult,
 ): Promise<void> {
-  await db.collection("orders").updateOne(
-    { _id: orderId },
-    {
-      $set: {
-        petpoojaStatus: result.status,
-        petpoojaOrderId: result.petpoojaOrderId,
-        petpoojaError: result.error,
-        petpoojaPushedAt: new Date(),
-        updatedAt: new Date(),
-      },
+  const t = await forTenant(tenantId);
+  await t.updateOne("orders", { _id: orderId }, {
+    $set: {
+      petpoojaStatus: result.status,
+      petpoojaOrderId: result.petpoojaOrderId,
+      petpoojaError: result.error,
+      petpoojaPushedAt: new Date(),
+      updatedAt: new Date(),
     },
-  );
+  });
 }

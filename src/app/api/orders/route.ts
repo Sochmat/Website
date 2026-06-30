@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { Order, User } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
@@ -325,12 +324,11 @@ export async function POST(request: NextRequest) {
     // verify-order once payment is confirmed). The push never blocks the
     // response: its outcome is recorded on the order for admin to handle.
     if (order && orderDoc.paymentMethod === "cash") {
-      const { db } = await connectToDatabase();
       const pushResult = await pushOrderToPetpooja(
         order as unknown as Order,
-        db,
+        r.tenantId,
       );
-      await recordPushResult(db, result.insertedId, pushResult);
+      await recordPushResult(r.tenantId, result.insertedId, pushResult);
       order = await t.findOne("orders", { _id: result.insertedId });
     }
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 /**
  * Marks an order's payment as failed after a Razorpay failure. Only a
@@ -20,8 +21,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    const result = await db.collection("orders").updateOne(
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+    const result = await t.updateOne("orders",
       { _id: new ObjectId(orderId), paymentStatus: "pending" },
       { $set: { paymentStatus: "failed", updatedAt: new Date() } },
     );
