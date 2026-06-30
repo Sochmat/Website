@@ -15,13 +15,42 @@ Admin clicks "Print Bill"  ->  bill number assigned + order flagged for bill
    prints  ->  POST /api/print/<kot|bill> { id }  (marks it printed)
 ```
 
-## Server setup (once)
+## Multi-tenant auth (KitchenOS)
 
-Set the shared secret on the deployed site (same value the agent uses):
+Each kitchen runs its own print agent. The agent authenticates with that
+kitchen's **per-tenant** `printAgentToken`, which is stored in the `tenants`
+collection under `integrations.printAgentToken`. The server resolves the
+correct tenant from the token alone — no special URL path is needed.
+
+**Sochmat** keeps working without reconfiguration: the migration script
+(`npm run migrate:kitchenos`) seeds the Sochmat tenant's token from the
+old `PRINT_AGENT_TOKEN` env var.
+
+For a new kitchen, generate a random token, store it in that tenant's
+`integrations.printAgentToken` in MongoDB, and set the same value in the
+agent's `.env`.
+
+Set `SERVER_URL` to the tenant's subdomain:
+
+```
+SERVER_URL=https://sochmat.<ROOT_DOMAIN>   # e.g. https://sochmat.kitchenos.com
+SERVER_URL=http://sochmat.localhost:3000   # local dev
+```
+
+The `PRINT_AGENT_TOKEN` value in `.env` must match the tenant's
+`integrations.printAgentToken` — this is the Bearer token sent with every
+request to `/api/print/kot` and `/api/print/bill`.
+
+## Server setup (once, legacy single-tenant)
+
+For the original single-tenant Sochmat deployment the server env var was:
 
 ```
 PRINT_AGENT_TOKEN=<a long random string>
 ```
+
+In KitchenOS this value is migrated into the tenant record and no longer
+needs to be set as a server env var.
 
 ## Windows PC setup
 
