@@ -17,6 +17,7 @@ export interface SelectedAddOn {
 
 export interface MenuItem {
   _id?: ObjectId | string;
+  tenantId?: string;
   name: string;
   kcal: number;
   protein: number;
@@ -48,6 +49,7 @@ export interface MenuItem {
 
 export interface Category {
   _id?: ObjectId | string;
+  tenantId?: string;
   id: string;
   name: string;
   image: string;
@@ -57,6 +59,7 @@ export interface Category {
 
 export interface Coupon {
   _id?: ObjectId | string;
+  tenantId?: string;
   code: string;
   discountType: "flat" | "percent" | "freeItem";
   discountAmount: number;
@@ -81,6 +84,7 @@ export interface OrderItem {
 
 export interface Order {
   _id?: ObjectId | string;
+  tenantId?: string;
   orderNumber?: string;
   userId?: ObjectId | string;
   couponCode?: ObjectId | string;
@@ -146,6 +150,7 @@ export interface UserAddress {
 
 export interface MealCard {
   _id?: ObjectId | string;
+  tenantId?: string;
   title: string;
   subtitle: string;
   images: string[];
@@ -160,6 +165,7 @@ export interface MealCard {
 
 export interface User {
   _id?: ObjectId | string;
+  tenantId?: string;
   phone: string;
   name?: string;
   email?: string;
@@ -169,6 +175,42 @@ export interface User {
   country?: string;
   pincode?: string;
   addresses?: UserAddress[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type Role = "superadmin" | "kitchen-admin" | "shop";
+
+export interface TenantBranding { logoUrl: string; primaryColor: string; accentColor: string; }
+export interface TenantDeliveryZone { id: string; name: string; sector: string; towers: string[]; }
+export interface TenantIntegrations {
+  razorpay: { keyId: string; keySecretEnc: string; enabled: boolean } | null;
+  petpooja: { appKey: string; appSecretEnc: string; accessToken: string; restId: string; enabled: boolean } | null;
+  smtp: { host: string; port: number; user: string; passEnc: string; from: string; secure: boolean; authMethod: string } | null;
+  printAgentToken: string;
+}
+export interface Tenant {
+  _id?: string;
+  slug: string;
+  name: string;
+  legalName: string;
+  status: "active" | "suspended";
+  branding: TenantBranding;
+  contact: { phone: string; email: string; address: string };
+  compliance: { gstNo: string; fssaiNo: string };
+  location: { lat: number; lng: number; serviceRadiusKm: number };
+  deliveryZones: TenantDeliveryZone[];
+  integrations: TenantIntegrations;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+export interface AdminUser {
+  _id?: string;
+  tenantId: string | null;
+  email: string;
+  passwordHash: string;
+  role: Role;
+  name: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
