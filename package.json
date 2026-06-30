@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate:kitchenos": "tsx scripts/migrate-to-kitchenos.ts",
+    "create-indexes": "tsx scripts/create-indexes.ts"
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
@@ -35,8 +39,11 @@
     "code-inspector-plugin": "^1.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "mongodb-memory-server": "^10.4.3",
     "nodemailer": "^8.0.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.22.4",
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }
