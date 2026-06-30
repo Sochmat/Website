@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 interface GoogleTokenInfo {
   sub?: string;
@@ -58,8 +59,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-    let user = await db.collection("users").findOne({ email });
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    let user = await t.findOne("users", { email });
 
     if (user) {
       const updates: Record<string, unknown> = {
@@ -68,7 +72,7 @@ export async function POST(request: NextRequest) {
       };
       if (name && !user.name) updates.name = name;
 
-      await db.collection("users").updateOne({ email }, { $set: updates });
+      await t.updateOne("users", { email }, { $set: updates });
       user = { ...user, ...updates };
     } else {
       const newUser = {
@@ -80,7 +84,7 @@ export async function POST(request: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const result = await db.collection("users").insertOne(newUser);
+      const result = await t.insertOne("users", newUser);
       user = { _id: result.insertedId, ...newUser };
     }
 

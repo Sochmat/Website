@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "@/lib/mongodb";
 import { User } from "@/lib/types";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 function generateSubscriptionNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -11,8 +12,11 @@ function generateSubscriptionNumber() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { db: settingsDb } = await connectToDatabase();
-    const storeDoc = await settingsDb.collection("settings").findOne({ key: "store" });
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
+    const storeDoc = await t.findOne("settings", { key: "store" });
     if (storeDoc?.open === false) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -47,9 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
-
-    let user = (await db.collection("users").findOne({ phone })) as {
+    let user = (await t.findOne("users", { phone })) as {
       _id: ObjectId;
       phone: string;
       name?: string;
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const insertResult = await db.collection("users").insertOne(newUser);
+      const insertResult = await t.insertOne("users", newUser);
       user = {
         _id: insertResult.insertedId as ObjectId,
         phone,
@@ -105,10 +107,8 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date(),
     };
 
-    const result = await db.collection("subscriptions").insertOne(subscriptionDoc);
-    const subscription = await db
-      .collection("subscriptions")
-      .findOne({ _id: result.insertedId });
+    const result = await t.insertOne("subscriptions", subscriptionDoc);
+    const subscription = await t.findOne("subscriptions", { _id: result.insertedId });
 
     return NextResponse.json({ success: true, subscription });
   } catch (error) {
@@ -122,6 +122,10 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const body = await request.json();
     const { _id, paymentId, paymentStatus } = body;
 
@@ -132,7 +136,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
     };
@@ -144,7 +147,8 @@ export async function PATCH(request: NextRequest) {
       updateData.paymentStatus = paymentStatus;
     }
 
-    const result = await db.collection("subscriptions").updateOne(
+    const result = await t.updateOne(
+      "subscriptions",
       { _id: new ObjectId(_id) },
       { $set: updateData }
     );
@@ -156,9 +160,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const subscription = await db
-      .collection("subscriptions")
-      .findOne({ _id: new ObjectId(_id) });
+    const subscription = await t.findOne("subscriptions", { _id: new ObjectId(_id) });
 
     return NextResponse.json({ success: true, subscription });
   } catch (error) {

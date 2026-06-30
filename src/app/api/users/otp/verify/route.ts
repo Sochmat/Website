@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { resolveTenantId } from "@/lib/apiTenant";
+import { forTenant } from "@/lib/tenantDb";
 
 export async function POST(request: NextRequest) {
   const limited = await rateLimit(request, limiters.auth);
@@ -28,9 +29,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { db } = await connectToDatabase();
+    const r = await resolveTenantId();
+    if ("error" in r) return r.error;
+    const t = await forTenant(r.tenantId);
+
     const query = isEmailFlow ? { email } : { phone };
-    const otpRecord = await db.collection("otps").findOne(query);
+    const otpRecord = await t.findOne("otps", query);
 
     if (!otpRecord) {
       return NextResponse.json(
@@ -40,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (new Date() > otpRecord.expiresAt) {
-      await db.collection("otps").deleteOne(query);
+      await t.deleteOne("otps", query);
       return NextResponse.json(
         { success: false, message: "OTP has expired. Please request a new one." },
         { status: 400 }
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await db.collection("users").findOne(query);
+    const user = await t.findOne("users", query);
 
     if (!user) {
       return NextResponse.json(
@@ -63,10 +67,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await db.collection("otps").deleteOne(query);
+    await t.deleteOne("otps", query);
 
     const token = Buffer.from(`${user._id}:${Date.now()}`).toString("base64");
-    
+
     return NextResponse.json({
       success: true,
       token,
