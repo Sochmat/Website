@@ -36,6 +36,9 @@ export interface MenuItem {
   isRecommended?: boolean;
   showOnHomePage?: boolean;
   isAvailableForSubscription?: boolean;
+  /** Flat price charged per delivery inside a weekly subscription plan. Offered in
+   *  the builder only when > 0 AND isAvailableForSubscription is true. */
+  subscriptionPrice?: number;
   hidden?: boolean;
   addOns?: string[];
   variants?: MenuVariant[];
@@ -169,6 +172,44 @@ export interface User {
   country?: string;
   pincode?: string;
   addresses?: UserAddress[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface SubscriptionPlanDay {
+  date: string; // yyyy-mm-dd
+  weekday: string;
+  productId: string;
+  itemName: string;
+  subscriptionPrice: number;
+  protein: number;
+  kcal: number;
+}
+
+export interface SubscriptionPlan {
+  _id?: ObjectId | string;
+  planNumber: string;
+  userId: ObjectId | string;
+  weekStartDate: string; // yyyy-mm-dd
+  days: SubscriptionPlanDay[]; // skipped days omitted; length 1..7
+  totalProtein: number;
+  totalKcal: number;
+  itemCount: number;
+  subtotal: number;
+  tax: number;
+  totalAmount: number;
+  receiver: {
+    name: string;
+    phone: string;
+    address: string;
+    lat?: number;
+    long?: number;
+  };
+  deliveryTime: string; // "HH:mm", applies to every day
+  paymentMethod: "razorpay";
+  paymentStatus: "pending" | "paid" | "failed" | "refunded";
+  paymentId?: string;
+  status: "active" | "cancelled" | "completed";
   createdAt?: Date;
   updatedAt?: Date;
 }

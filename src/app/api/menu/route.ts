@@ -33,6 +33,7 @@ export async function GET() {
       isRecommended: item.isRecommended ?? false,
       showOnHomePage: item.showOnHomePage ?? false,
       isAvailableForSubscription: item.isAvailableForSubscription ?? false,
+      subscriptionPrice: item.subscriptionPrice ?? 0,
       addOns: item.addOns ?? [],
       variants: item.variants ?? [],
       isAddOn: item.isAddOn ?? false,
