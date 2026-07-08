@@ -11,22 +11,31 @@ export default function SubscriptionOrdersPage() {
   const { user, isAuthenticated, isLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fetched, setFetched] = useState(false);
+
+  const userId = user?._id;
+  const willFetch = !isLoading && isAuthenticated && !!userId;
 
   useEffect(() => {
-    if (isLoading) return;
-    if (!isAuthenticated || !user?._id) {
-      setLoading(false);
-      return;
-    }
-    fetch(`/api/subscriptions/plans?userId=${user._id}`)
+    if (!willFetch) return;
+    let cancelled = false;
+    fetch(`/api/subscriptions/plans?userId=${userId}`)
       .then((r) => r.json())
       .then((d) => {
+        if (cancelled) return;
         if (d?.success && Array.isArray(d.plans)) setPlans(d.plans);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isAuthenticated, isLoading, user?._id]);
+      .finally(() => {
+        if (!cancelled) setFetched(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [willFetch, userId]);
+
+  // Still loading while the session resolves, or while our fetch is in flight.
+  const loading = isLoading || (willFetch && !fetched);
 
   return (
     <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-10">

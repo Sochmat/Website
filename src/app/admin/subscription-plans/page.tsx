@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { SubscriptionPlan } from "@/lib/types";
 
 type Tab = "plans" | "daily";
@@ -10,23 +10,31 @@ export default function AdminSubscriptionPlansPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const qs = tab === "daily" ? `?date=${date}` : "";
-    try {
-      const res = await fetch(`/api/admin/subscription-plans${qs}`);
-      const data = await res.json();
-      if (data?.success) setPlans(data.plans);
-    } catch {
-      /* ignore */
-    }
-    setLoading(false);
-  }, [tab, date]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    const qs = tab === "daily" ? `?date=${date}` : "";
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/subscription-plans${qs}`);
+        const data = await res.json();
+        if (!cancelled && data?.success) setPlans(data.plans);
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, date, reloadKey]);
+
+  // Refetch after a mutation, showing the spinner while it is in flight.
+  const refresh = () => {
+    setLoading(true);
+    setReloadKey((k) => k + 1);
+  };
 
   const updateStatus = async (id: string, status: string) => {
     await fetch("/api/admin/subscription-plans", {
@@ -34,7 +42,7 @@ export default function AdminSubscriptionPlansPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ _id: id, status }),
     });
-    load();
+    refresh();
   };
 
   // Flatten to per-delivery rows for the daily view.
@@ -59,7 +67,11 @@ export default function AdminSubscriptionPlansPage() {
         {(["plans", "daily"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              if (t === tab) return;
+              setLoading(true);
+              setTab(t);
+            }}
             className={`px-4 py-2 rounded-lg text-sm font-medium ${
               tab === t ? "bg-[#1c1c1c] text-white" : "bg-gray-100 text-gray-700"
             }`}
@@ -73,7 +85,10 @@ export default function AdminSubscriptionPlansPage() {
         <input
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            setLoading(true);
+            setDate(e.target.value);
+          }}
           className="mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm"
         />
       )}

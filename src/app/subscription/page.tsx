@@ -174,7 +174,7 @@ export default function SubscriptionBuilderPage() {
   const [activeItem, setActiveItem] = useState<BuilderItem | null>(null);
 
   const [deliveryTime, setDeliveryTime] = useState("08:00");
-  const [selectedAddress, setSelectedAddress] = useState<UserAddress | null>(null);
+  const [pickedAddress, setPickedAddress] = useState<UserAddress | null>(null);
   const [showSelectAddress, setShowSelectAddress] = useState(false);
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
@@ -207,10 +207,12 @@ export default function SubscriptionBuilderPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    const addrs = isAuthenticated ? user?.addresses ?? [] : [];
-    if (addrs.length > 0 && !selectedAddress) setSelectedAddress(addrs[0]);
-  }, [isAuthenticated, user?.addresses, selectedAddress]);
+  const addresses = useMemo(
+    () => (isAuthenticated ? user?.addresses ?? [] : []),
+    [isAuthenticated, user?.addresses],
+  );
+  // Default to the first saved address until the user picks another.
+  const selectedAddress = pickedAddress ?? addresses[0] ?? null;
 
   const week = useMemo(() => buildWeekDates(startDate), [startDate]);
   const itemsById = useMemo(
@@ -218,17 +220,16 @@ export default function SubscriptionBuilderPage() {
     [items],
   );
 
-  // When start date changes, drop any assignment whose date left the window.
-  useEffect(() => {
-    const valid = new Set(week.map((w) => w.date));
-    setAssignments((prev) => {
-      const next: Record<string, string> = {};
-      for (const [date, pid] of Object.entries(prev)) {
-        if (valid.has(date)) next[date] = pid;
-      }
-      return next;
-    });
-  }, [week]);
+  // Changing the start date drops any assignment whose date left the window.
+  const changeStartDate = useCallback((nextStart: string) => {
+    setStartDate(nextStart);
+    const valid = new Set(buildWeekDates(nextStart).map((w) => w.date));
+    setAssignments((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).filter(([date]) => valid.has(date)),
+      ),
+    );
+  }, []);
 
   const assign = useCallback((date: string, productId: string) => {
     setAssignments((prev) => ({ ...prev, [date]: productId }));
@@ -288,13 +289,13 @@ export default function SubscriptionBuilderPage() {
       const data = await res.json();
       if (data.success && data.user) {
         setUser(data.user);
-        setSelectedAddress(newAddr);
+        setPickedAddress(newAddr);
         message.success(isEditing ? "Address updated" : "Address saved");
       } else {
         message.error(data.message ?? "Failed to save address");
       }
     } else {
-      setSelectedAddress(newAddr);
+      setPickedAddress(newAddr);
       message.success("Address saved");
     }
     setShowAddAddress(false);
@@ -430,7 +431,7 @@ export default function SubscriptionBuilderPage() {
               type="date"
               value={startDate}
               min={tomorrowISO()}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => changeStartDate(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
             />
             <label className="block text-xs text-gray-500 mt-3 mb-1">
@@ -543,10 +544,10 @@ export default function SubscriptionBuilderPage() {
             setShowSelectAddress(false);
             setEditingAddress(null);
           }}
-          addresses={isAuthenticated ? user?.addresses ?? [] : []}
+          addresses={addresses}
           selectedAddress={selectedAddress}
           onSelect={(addr) => {
-            setSelectedAddress(addr);
+            setPickedAddress(addr);
             setShowSelectAddress(false);
           }}
           onAddNew={() => {
