@@ -313,6 +313,16 @@ export default function AdminLayout({
                 Subscriptions
               </Link>
               <Link
+                href="/admin/subscription-plans"
+                className={`font-medium ${
+                  pathname === "/admin/subscription-plans"
+                    ? "underline"
+                    : "hover:underline"
+                }`}
+              >
+                Weekly Plans
+              </Link>
+              <Link
                 href="/admin/users"
                 className={`font-medium ${
                   pathname === "/admin/users" ? "underline" : "hover:underline"
