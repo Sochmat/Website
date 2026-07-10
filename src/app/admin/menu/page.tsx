@@ -16,7 +16,6 @@ type FormState = Omit<
   | "rating"
   | "fiber"
   | "carbs"
-  | "subscriptionPrice"
   | "variants"
 > & {
   price: string;
@@ -26,7 +25,6 @@ type FormState = Omit<
   rating: string;
   fiber: string;
   carbs: string;
-  subscriptionPrice: string;
   variants: VariantForm[];
 };
 
@@ -50,7 +48,6 @@ const initialFormState: FormState = {
   isRecommended: false,
   showOnHomePage: false,
   isAvailableForSubscription: false,
-  subscriptionPrice: "",
   hidden: false,
   addOns: [],
   variants: [],
@@ -172,7 +169,6 @@ export default function AdminMenuPage() {
       fiber: Number(formData.fiber) || 0,
       carbs: Number(formData.carbs) || 0,
       rating: Number(formData.rating) || 0,
-      subscriptionPrice: Number(formData.subscriptionPrice) || 0,
     };
   };
 
@@ -220,7 +216,6 @@ export default function AdminMenuPage() {
       fiber: String(item.fiber ?? 0),
       carbs: String(item.carbs ?? 0),
       rating: String(item.rating),
-      subscriptionPrice: String(item.subscriptionPrice ?? 0),
     });
     setEditingId(item._id?.toString() || null);
   };
@@ -504,20 +499,6 @@ export default function AdminMenuPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, protein: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Subscription price (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.subscriptionPrice}
-                    onChange={(e) =>
-                      setFormData({ ...formData, subscriptionPrice: e.target.value })
-                    }
-                    placeholder="Shown in the subscription app"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                   />
                 </div>

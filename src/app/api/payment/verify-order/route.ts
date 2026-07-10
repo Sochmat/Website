@@ -144,7 +144,10 @@ export async function POST(request: NextRequest) {
           await recordPushResult(db, _id, pushResult);
         }
       } else {
-        // Not an order — try subscriptions (signature already validated).
+        // Not an order — try the legacy single-item `subscriptions` collection
+        // (signature already validated). This can never match a weekly meal plan:
+        // those live in `subscriptionMealPlans` and verify through their own
+        // /api/subscriptions/plans/verify, which re-checks the captured amount.
         await db.collection("subscriptions").updateOne(
           { _id },
           {

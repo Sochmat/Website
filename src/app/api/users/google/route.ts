@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import {
+  CUSTOMER_COOKIE,
+  customerCookieOptions,
+  signCustomerSession,
+} from "@/lib/customerAuth";
 
 interface GoogleTokenInfo {
   sub?: string;
@@ -84,9 +89,11 @@ export async function POST(request: NextRequest) {
       user = { _id: result.insertedId, ...newUser };
     }
 
+    // Legacy opaque token, still read by UserContext for its localStorage state.
+    // It authenticates nothing; the httpOnly cookie below is the real credential.
     const token = Buffer.from(`${user._id}:${Date.now()}`).toString("base64");
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       token,
       user: {
@@ -100,6 +107,13 @@ export async function POST(request: NextRequest) {
         updatedAt: user.updatedAt,
       },
     });
+
+    response.cookies.set(
+      CUSTOMER_COOKIE,
+      await signCustomerSession(String(user._id)),
+      customerCookieOptions(),
+    );
+    return response;
   } catch (error) {
     console.error("Error with Google login:", error);
     return NextResponse.json(

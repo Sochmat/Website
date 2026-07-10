@@ -34,6 +34,12 @@ interface RazorpayOptions {
   image?: string;
   orderId?: string;
   upiApp?: UpiApp;
+  /** Server route that verifies the payment. Defaults to "/api/payment/verify-order". */
+  verifyUrl?: string;
+  /** Extra fields merged into the verify POST body, e.g. `{ planId }`. */
+  verifyBody?: Record<string, unknown>;
+  /** Route pinged when a payment fails. Pass null to skip (nothing to mark). */
+  failUrl?: string | null;
   onSuccess?: (response: {
     razorpay_order_id: string;
     razorpay_payment_id: string;
@@ -53,13 +59,14 @@ async function createRazorpayOrder(amount: number, currency: string) {
 }
 
 /** Best-effort: mark a still-pending order as payment-failed. */
-async function markOrderFailed(orderId?: string) {
-  if (!orderId) return;
+async function markOrderFailed(options: RazorpayOptions) {
+  // `failUrl: null` opts out entirely — subscription plans have nothing to mark.
+  if (options.failUrl === null || !options.orderId) return;
   try {
-    await fetch("/api/payment/fail-order", {
+    await fetch(options.failUrl ?? "/api/payment/fail-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId }),
+      body: JSON.stringify({ orderId: options.orderId }),
     });
   } catch {
     // ignore — failing to record the failure must not break the UX
@@ -72,12 +79,16 @@ async function verifyPayment(
     razorpay_payment_id: string;
     razorpay_signature: string;
   },
-  orderId?: string,
+  options: RazorpayOptions,
 ) {
-  const res = await fetch("/api/payment/verify-order", {
+  const res = await fetch(options.verifyUrl ?? "/api/payment/verify-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...response, orderId }),
+    body: JSON.stringify({
+      ...response,
+      ...(options.orderId ? { orderId: options.orderId } : {}),
+      ...options.verifyBody,
+    }),
   });
   return res.json();
 }
@@ -111,18 +122,18 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
         razorpay_payment_id: r.razorpay_payment_id,
         razorpay_signature: r.razorpay_signature,
       },
-      options.orderId,
+      options,
     );
     if (verifyData.success) {
       options.onSuccess?.(r);
     } else {
-      await markOrderFailed(options.orderId);
+      await markOrderFailed(options);
       options.onError?.(new Error("Payment verification failed"));
     }
   });
 
   rzp.on("payment.error", async (resp: any) => {
-    await markOrderFailed(options.orderId);
+    await markOrderFailed(options);
     const desc =
       resp?.error?.description ??
       resp?.detail?.error?.description ??
@@ -164,11 +175,11 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
       razorpay_payment_id: string;
       razorpay_signature: string;
     }) => {
-      const verifyData = await verifyPayment(response, options.orderId);
+      const verifyData = await verifyPayment(response, options);
       if (verifyData.success) {
         options.onSuccess?.(response);
       } else {
-        await markOrderFailed(options.orderId);
+        await markOrderFailed(options);
         options.onError?.(new Error("Payment verification failed"));
       }
     },
@@ -183,7 +194,7 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
   rzp.on(
     "payment.failed",
     async (resp: { error?: { description?: string } }) => {
-      await markOrderFailed(options.orderId);
+      await markOrderFailed(options);
       const desc = resp?.error?.description ?? "Payment failed";
       options.onError?.(new Error(desc));
     },

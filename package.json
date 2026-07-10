@@ -37,8 +37,10 @@
     "code-inspector-plugin": "^1.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "exceljs": "^4.4.0",
     "nodemailer": "^8.0.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

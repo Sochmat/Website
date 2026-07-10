@@ -1,16 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { generatePlanNumber } from "@/lib/subscription";
 import {
-  computePlanTotals,
-  generatePlanNumber,
-  toPlanItem,
-  type PlanDayInput,
-  type PlanItem,
-} from "@/lib/subscription";
+  MEALS_PER_PLAN,
+  computeBracketPlanTotals,
+  isBracketKey,
+  isDiet,
+} from "@/lib/subscriptionBrackets";
+import { accountCredits, expireCredits } from "@/lib/subscriptionSchedule";
+import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
+import type { SubscriptionBracket, SubscriptionCredit, SubscriptionMealPlan } from "@/lib/types";
 
+// NOTE: there is deliberately no PATCH handler here.
+//
+// The old one accepted `{ _id, paymentStatus: "paid" }` from anyone, with no auth
+// and no payment check — a free plan for the price of one curl. The only path to
+// `paid` is now POST /api/subscriptions/plans/verify, which checks the Razorpay
+// signature, the captured amount, and replay.
+
+/**
+ * Buy MEALS_PER_PLAN credits in one bracket + diet.
+ *
+ * The request carries no prices and no item ids. The bracket is read from Mongo
+ * and priced server-side; the customer picks their meals afterwards, from the
+ * scheduler, by spending credits.
+ */
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getCustomerUserId(request);
+    if (!userId) return unauthorized();
+
     const { db } = await connectToDatabase();
 
     const storeDoc = await db.collection("settings").findOne({ key: "store" });
@@ -22,6 +42,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const { bracket, diet } = body;
+
+    if (!isBracketKey(bracket)) {
+      return NextResponse.json({ success: false, message: "Unknown bracket" }, { status: 400 });
+    }
+    if (!isDiet(diet)) {
+      return NextResponse.json({ success: false, message: "Unknown diet" }, { status: 400 });
+    }
 
     const phone = String(body.receiver?.phone ?? "").trim().replace(/\D/g, "");
     if (!phone) {
@@ -30,98 +58,71 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (!body.weekStartDate) {
+    const address = String(body.receiver?.address ?? "").trim();
+    if (!address) {
       return NextResponse.json(
-        { success: false, message: "weekStartDate is required" },
-        { status: 400 },
-      );
-    }
-    const rawDays = Array.isArray(body.days) ? body.days : [];
-    if (rawDays.length === 0) {
-      return NextResponse.json(
-        { success: false, message: "Pick at least one day" },
+        { success: false, message: "A delivery address is required" },
         { status: 400 },
       );
     }
 
-    const days: PlanDayInput[] = rawDays.map((d: PlanDayInput) => ({
-      date: String(d.date),
-      weekday: String(d.weekday),
-      productId: String(d.productId),
-    }));
-
-    // Authoritative item data straight from the DB, keyed by string id.
-    const ids = days
-      .map((d) => d.productId)
-      .filter((id) => ObjectId.isValid(id))
-      .map((id) => new ObjectId(id));
-    const dbItems = await db
-      .collection("menuItems")
-      .find({ _id: { $in: ids } })
-      .toArray();
-    const itemsById = new Map<string, PlanItem>();
-    for (const it of dbItems) {
-      itemsById.set(it._id.toString(), toPlanItem(it as never));
+    const bracketDoc = (await db
+      .collection("subscriptionBrackets")
+      .findOne({ key: bracket, active: { $ne: false } })) as unknown as SubscriptionBracket | null;
+    if (!bracketDoc) {
+      return NextResponse.json(
+        { success: false, message: "That plan is not available right now" },
+        { status: 400 },
+      );
     }
 
     let totals;
     try {
-      totals = computePlanTotals(days, itemsById);
+      totals = computeBracketPlanTotals(bracketDoc, diet);
     } catch (e) {
-      return NextResponse.json(
-        { success: false, message: (e as Error).message },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, message: (e as Error).message }, { status: 400 });
     }
 
-    // Resolve or create the user by phone (mirrors legacy subscriptions POST).
-    let user = (await db.collection("users").findOne({ phone })) as {
-      _id: ObjectId;
-    } | null;
-    if (!user) {
-      const insert = await db.collection("users").insertOne({
-        phone,
-        name: body.receiver?.name ?? "",
-        address: body.receiver?.address ?? "",
-        addresses: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      user = { _id: insert.insertedId as ObjectId };
-    }
+    const credits: SubscriptionCredit[] = Array.from(
+      { length: MEALS_PER_PLAN },
+      (_, i) => ({ id: `c${i + 1}`, status: "available" as const }),
+    );
 
-    const planDoc = {
+    const now = new Date();
+    const planDoc: Omit<SubscriptionMealPlan, "_id"> = {
       planNumber: generatePlanNumber(),
-      userId: user._id,
-      weekStartDate: String(body.weekStartDate),
-      days: totals.days,
-      totalProtein: totals.totalProtein,
-      totalKcal: totals.totalKcal,
-      itemCount: totals.itemCount,
+      userId,
+      bracket,
+      diet,
+      pricePerMeal: totals.pricePerMeal,
+      mealCount: totals.mealCount,
       subtotal: totals.subtotal,
       tax: totals.tax,
       totalAmount: totals.totalAmount,
+      credits,
+      // Expiry is anchored at payment, not at creation — an abandoned checkout
+      // must not silently burn a customer's 30-day window.
+      expiresOn: "",
       receiver: {
-        name: body.receiver?.name ?? "",
+        name: String(body.receiver?.name ?? ""),
         phone,
-        address: body.receiver?.address ?? "",
+        address,
         lat: body.receiver?.lat,
         long: body.receiver?.long,
       },
       deliveryTime: String(body.deliveryTime ?? ""),
-      paymentMethod: "razorpay" as const,
-      paymentStatus: "pending" as const,
-      status: "active" as const,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      paymentMethod: "razorpay",
+      paymentStatus: "pending",
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
     };
 
-    const result = await db.collection("subscriptionPlans").insertOne(planDoc);
-    const plan = await db
-      .collection("subscriptionPlans")
-      .findOne({ _id: result.insertedId });
-
-    return NextResponse.json({ success: true, plan });
+    const result = await db.collection("subscriptionMealPlans").insertOne(planDoc);
+    return NextResponse.json({
+      success: true,
+      plan: { ...planDoc, _id: result.insertedId },
+    });
   } catch (error) {
     console.error("Error creating subscription plan:", error);
     return NextResponse.json(
@@ -131,73 +132,41 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { _id, paymentId, paymentStatus } = body;
-    if (!_id || !ObjectId.isValid(_id)) {
-      return NextResponse.json(
-        { success: false, message: "Valid plan ID is required" },
-        { status: 400 },
-      );
-    }
-
-    const update: Record<string, unknown> = { updatedAt: new Date() };
-    if (paymentId !== undefined) update.paymentId = paymentId;
-    if (paymentStatus !== undefined) update.paymentStatus = paymentStatus;
-
-    const { db } = await connectToDatabase();
-    const result = await db
-      .collection("subscriptionPlans")
-      .updateOne({ _id: new ObjectId(_id) }, { $set: update });
-    if (result.matchedCount === 0) {
-      return NextResponse.json(
-        { success: false, message: "Plan not found" },
-        { status: 404 },
-      );
-    }
-    const plan = await db
-      .collection("subscriptionPlans")
-      .findOne({ _id: new ObjectId(_id) });
-    return NextResponse.json({ success: true, plan });
-  } catch (error) {
-    console.error("Error updating subscription plan:", error);
-    return NextResponse.json(
-      { success: false, message: "Failed to update subscription plan" },
-      { status: 500 },
-    );
-  }
-}
-
+/** The signed-in customer's plans. Any `?userId=` in the query is ignored. */
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const id = searchParams.get("_id");
-    const userId = searchParams.get("userId");
+    const userId = await getCustomerUserId(request);
+    if (!userId) return unauthorized();
 
     const { db } = await connectToDatabase();
-
-    if (id && ObjectId.isValid(id)) {
-      const plan = await db
-        .collection("subscriptionPlans")
-        .findOne({ _id: new ObjectId(id) });
-      return NextResponse.json({ success: true, plan });
-    }
-
-    const filter: Record<string, unknown> = {};
-    if (userId && ObjectId.isValid(userId)) {
-      filter.userId = new ObjectId(userId);
-    } else {
-      // Never return the whole collection to an unauthenticated customer call.
-      return NextResponse.json({ success: true, plans: [] });
-    }
-
-    const plans = await db
-      .collection("subscriptionPlans")
-      .find(filter)
+    const plans = (await db
+      .collection("subscriptionMealPlans")
+      .find({ userId })
       .sort({ createdAt: -1 })
-      .toArray();
-    return NextResponse.json({ success: true, plans });
+      .toArray()) as unknown as SubscriptionMealPlan[];
+
+    const now = new Date();
+    const withAccounting = [];
+    for (const plan of plans) {
+      // Expiry is lazy: sweep on read so the list never shows spendable credits
+      // that the schedule endpoint would reject.
+      const expired = expireCredits(plan.credits, plan.expiresOn, now);
+      if (expired) {
+        plan.credits = expired;
+        const accounting = accountCredits(expired, plan.expiresOn, now);
+        const status = accounting.exhausted ? "expired" : plan.status;
+        await db
+          .collection("subscriptionMealPlans")
+          .updateOne({ _id: new ObjectId(plan._id) }, { $set: { credits: expired, status, updatedAt: now } });
+        plan.status = status as SubscriptionMealPlan["status"];
+      }
+      withAccounting.push({
+        ...plan,
+        accounting: accountCredits(plan.credits, plan.expiresOn, now),
+      });
+    }
+
+    return NextResponse.json({ success: true, plans: withAccounting });
   } catch (error) {
     console.error("Error fetching subscription plans:", error);
     return NextResponse.json(

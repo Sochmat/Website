@@ -320,7 +320,27 @@ export default function AdminLayout({
                     : "hover:underline"
                 }`}
               >
-                Weekly Plans
+                Meal Plans
+              </Link>
+              <Link
+                href="/admin/subscription-menu"
+                className={`font-medium ${
+                  pathname === "/admin/subscription-menu"
+                    ? "underline"
+                    : "hover:underline"
+                }`}
+              >
+                Sub Menu
+              </Link>
+              <Link
+                href="/admin/subscription-brackets"
+                className={`font-medium ${
+                  pathname === "/admin/subscription-brackets"
+                    ? "underline"
+                    : "hover:underline"
+                }`}
+              >
+                Brackets
               </Link>
               <Link
                 href="/admin/users"

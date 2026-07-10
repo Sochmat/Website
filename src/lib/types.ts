@@ -35,10 +35,9 @@ export interface MenuItem {
   isAddOn?: boolean;
   isRecommended?: boolean;
   showOnHomePage?: boolean;
+  /** Gates the "Subscribe" choice on the à-la-carte item card, which routes to
+   *  the legacy single-item /subscribe flow. Unrelated to the bracket plans. */
   isAvailableForSubscription?: boolean;
-  /** Flat price charged per delivery inside a weekly subscription plan. Offered in
-   *  the builder only when > 0 AND isAvailableForSubscription is true. */
-  subscriptionPrice?: number;
   hidden?: boolean;
   addOns?: string[];
   variants?: MenuVariant[];
@@ -176,28 +175,116 @@ export interface User {
   updatedAt?: Date;
 }
 
-export interface SubscriptionPlanDay {
-  date: string; // yyyy-mm-dd
-  weekday: string;
-  productId: string;
-  itemName: string;
-  subscriptionPrice: number;
-  protein: number;
-  kcal: number;
+export const BRACKET_KEYS = ["25-30", "30-40", "40-50"] as const;
+export type ProteinBracketKey = (typeof BRACKET_KEYS)[number];
+
+/** "veg" = veg items only, veg price. "veg-nonveg" = both lists, non-veg price. */
+export type SubscriptionDiet = "veg" | "veg-nonveg";
+
+/** Flat per-meal pricing for one protein bracket. Admin-editable, and the only
+ *  source of truth the server will price a plan from. Collection: `subscriptionBrackets`. */
+export interface SubscriptionBracket {
+  _id?: ObjectId | string;
+  key: ProteinBracketKey;
+  label: string; // "25-30g protein"
+  proteinMin: number;
+  proteinMax: number;
+  /** Pre-GST price of ONE meal on a veg-only plan. */
+  vegPrice: number;
+  /** Pre-GST price of ONE meal on a veg+non-veg plan (charged even for veg meals). */
+  nonVegPrice: number;
+  sortOrder: number;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-export interface SubscriptionPlan {
+/** A meal offered inside a subscription bracket. Collection: `subscriptionMenuItems`,
+ *  which is completely independent of the à-la-carte `menuItems`. There is no
+ *  per-item price: the plan's bracket + diet sets it. */
+export interface SubscriptionMenuItem {
+  _id?: ObjectId | string;
+  bracket: ProteinBracketKey;
+  name: string;
+  /** Normalized `name`, recomputed on every write. Search + duplicate detection. */
+  nameKey: string;
+  /** Immutable identity of the source spreadsheet row, and the importer's upsert
+   *  key — so an admin renaming an item never causes a duplicate on re-import.
+   *  Absent for items created by hand in the admin UI. */
+  importKey?: string;
+  description?: string;
+  /** 0 means "unknown"; the importer marks such rows `hidden` for an admin to fix. */
+  protein: number;
+  kcal: number;
+  fiber?: number;
+  carbs?: number;
+  image: string;
+  isVeg: boolean;
+  ingredients?: string[];
+  /** The spreadsheet's `price` column. INTERNAL ONLY — never serialized to a
+   *  customer response. Kept for margin analysis. See `toPublicSubscriptionItem`. */
+  referencePrice: number;
+  hidden?: boolean;
+  sortOrder?: number;
+  source?: "sheet" | "admin";
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type SubscriptionCreditStatus =
+  | "available" // unassigned, spendable
+  | "scheduled" // assigned to a date + item, editable until that date's noon IST
+  | "delivered" // kitchen fulfilled it
+  | "expired" // still available when the plan's expiresOn passed
+  | "cancelled"; // admin-voided
+
+/** One of the meals bought. Item fields are snapshotted at schedule time, so a
+ *  later admin edit to the menu item cannot mutate a locked delivery. */
+export interface SubscriptionCredit {
+  /** Stable within the plan: "c1".."c7". Never reused. */
+  id: string;
+  status: SubscriptionCreditStatus;
+  /** IST calendar date (yyyy-mm-dd). Set iff status is scheduled | delivered. */
+  date?: string;
+  weekday?: string;
+  /** `subscriptionMenuItems._id` as a string. */
+  productId?: string;
+  itemName?: string;
+  protein?: number;
+  kcal?: number;
+  isVeg?: boolean;
+  scheduledAt?: Date;
+  deliveredAt?: Date;
+  expiredAt?: Date;
+  cancelledAt?: Date;
+}
+
+/** A purchase of N meal credits inside one bracket + diet.
+ *  Collection: `subscriptionMealPlans`. */
+export interface SubscriptionMealPlan {
   _id?: ObjectId | string;
   planNumber: string;
   userId: ObjectId | string;
-  weekStartDate: string; // yyyy-mm-dd
-  days: SubscriptionPlanDay[]; // skipped days omitted; length 1..7
-  totalProtein: number;
-  totalKcal: number;
-  itemCount: number;
+
+  bracket: ProteinBracketKey;
+  diet: SubscriptionDiet;
+
+  /** Pre-GST price of ONE meal, frozen at purchase. Later bracket price edits
+   *  never re-price an existing plan. */
+  pricePerMeal: number;
+  mealCount: number;
   subtotal: number;
   tax: number;
   totalAmount: number;
+
+  credits: SubscriptionCredit[]; // length === mealCount
+
+  /** Set at payment success. Expiry anchors here, not on createdAt. */
+  activatedAt?: Date;
+  /** Last IST calendar date a credit may be delivered on, inclusive. Empty until paid. */
+  expiresOn: string;
+  expiresAt?: Date;
+
   receiver: {
     name: string;
     phone: string;
@@ -205,11 +292,16 @@ export interface SubscriptionPlan {
     lat?: number;
     long?: number;
   };
-  deliveryTime: string; // "HH:mm", applies to every day
+  deliveryTime: string; // "HH:mm" IST, applies to every scheduled day
+
   paymentMethod: "razorpay";
   paymentStatus: "pending" | "paid" | "failed" | "refunded";
   paymentId?: string;
-  status: "active" | "cancelled" | "completed";
+  razorpayOrderId?: string;
+
+  /** "pending" until paid. "completed" when no credit is available or scheduled. */
+  status: "pending" | "active" | "completed" | "expired" | "cancelled";
+
   createdAt?: Date;
   updatedAt?: Date;
 }
