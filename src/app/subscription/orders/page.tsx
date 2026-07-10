@@ -42,7 +42,7 @@ export default function SubscriptionOrdersPage() {
 
   return (
     <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-10">
-      <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-2">
+      <header className="sticky top-14 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-2">
         <Link href="/subscription" className="p-2 -ml-2 text-[#111]">
           <ArrowLeft className="w-5 h-5" />
         </Link>

@@ -210,7 +210,7 @@ function PurchaseWizard() {
 
   return (
     <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-40">
-      <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3">
+      <header className="sticky top-14 z-10 bg-white border-b border-gray-100 px-4 py-3">
         {step !== "bracket" && (
           <button
             type="button"
