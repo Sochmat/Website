@@ -7,7 +7,8 @@ import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
-import AddAddressSheet from "@/components/AddAddressSheet";
+import LocationSelector from "@/components/LocationSelector";
+import LocationPrompt from "@/components/LocationPrompt";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
 import { GST_RATE } from "@/lib/subscription";
@@ -26,7 +27,7 @@ function priceForDiet(b: BracketOption, diet: SubscriptionDiet) {
 function PurchaseWizard() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user, isAuthenticated, setUser } = useUser();
+  const { user, isAuthenticated } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const { open: storeOpen, loading: storeLoading } = useStoreStatus();
 
@@ -46,7 +47,9 @@ function PurchaseWizard() {
   const [deliveryTime, setDeliveryTime] = useState("08:00");
   const [pickedAddress, setPickedAddress] = useState<UserAddress | null>(null);
   const [showSelectAddress, setShowSelectAddress] = useState(false);
-  const [showAddAddress, setShowAddAddress] = useState(false);
+  // The full-screen Google-map picker (search + drag pin + GPS), used for both
+  // adding and editing. It embeds AddAddressSheet for the flat/receiver details.
+  const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
   const [placing, setPlacing] = useState(false);
 
@@ -118,31 +121,12 @@ function PurchaseWizard() {
     router.push(`/subscription?${sp.toString()}`);
   };
 
-  // Address save — lifted verbatim from the old builder.
-  const handleSaveNewAddress = async (newAddr: UserAddress) => {
-    const isEditing = editingAddress !== null;
-    if (isAuthenticated && user?._id) {
-      const updated = isEditing
-        ? (user.addresses ?? []).map((a) => (a.id === editingAddress?.id ? newAddr : a))
-        : [...(user.addresses ?? []), newAddr];
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ _id: user._id, addresses: updated }),
-      });
-      const data = await res.json();
-      if (data.success && data.user) {
-        setUser(data.user);
-        setPickedAddress(newAddr);
-        message.success(isEditing ? "Address updated" : "Address saved");
-      } else {
-        message.error(data.message ?? "Failed to save address");
-      }
-    } else {
-      setPickedAddress(newAddr);
-      message.success("Address saved");
-    }
-    setShowAddAddress(false);
+  // The map picker's embedded AddAddressSheet has already persisted the address
+  // (PATCH /api/users + UserContext.setUser for signed-in users, or localStorage
+  // for guests). Here we just adopt it as the plan's delivery address.
+  const handleAddressSaved = (addr: UserAddress) => {
+    setPickedAddress(addr);
+    setShowLocationSelector(false);
     setShowSelectAddress(false);
     setEditingAddress(null);
   };
@@ -160,7 +144,8 @@ function PurchaseWizard() {
     }
     if (!selectedAddress.receiverName || !selectedAddress.receiverPhone) {
       message.error("Please enter receiver name and phone");
-      setShowAddAddress(true);
+      setEditingAddress(selectedAddress);
+      setShowLocationSelector(true);
       return;
     }
     if (addressServiceable === false) {
@@ -269,6 +254,9 @@ function PurchaseWizard() {
 
         {step === "browse" && totals && (
           <>
+            {/* Contextual GPS-permission prompt: pre-positions the address map
+                pin at the customer's real location. Shows once per browser. */}
+            <LocationPrompt />
             <div className="bg-white rounded-2xl p-4 shadow-sm text-sm">
               <p className="font-semibold text-[#111]">
                 {rupees(totals.per)} × {MEALS_PER_PLAN} = {rupees(totals.subtotal)}
@@ -326,7 +314,16 @@ function PurchaseWizard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowSelectAddress(true)}
+                  onClick={() => {
+                    // With saved addresses, pick from them first; otherwise jump
+                    // straight into the map picker.
+                    if (addresses.length > 0) {
+                      setShowSelectAddress(true);
+                    } else {
+                      setEditingAddress(null);
+                      setShowLocationSelector(true);
+                    }
+                  }}
                   className="text-[#f56215] font-semibold text-sm underline"
                 >
                   {selectedAddress ? "Change" : "Add"}
@@ -351,7 +348,7 @@ function PurchaseWizard() {
       )}
 
       <SelectAddressSheet
-        open={showSelectAddress && !showAddAddress}
+        open={showSelectAddress && !showLocationSelector}
         onClose={() => {
           setShowSelectAddress(false);
           setEditingAddress(null);
@@ -365,22 +362,22 @@ function PurchaseWizard() {
         onAddNew={() => {
           setEditingAddress(null);
           setShowSelectAddress(false);
-          setShowAddAddress(true);
+          setShowLocationSelector(true);
         }}
         onEdit={(addr) => {
           setEditingAddress(addr);
           setShowSelectAddress(false);
-          setShowAddAddress(true);
+          setShowLocationSelector(true);
         }}
       />
-      <AddAddressSheet
-        open={showAddAddress}
+      <LocationSelector
+        open={showLocationSelector}
         onClose={() => {
-          setShowAddAddress(false);
+          setShowLocationSelector(false);
           setEditingAddress(null);
         }}
-        onSave={handleSaveNewAddress}
         editAddress={editingAddress}
+        onSaved={handleAddressSaved}
       />
     </main>
   );
