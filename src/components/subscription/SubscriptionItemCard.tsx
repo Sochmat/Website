@@ -1,6 +1,5 @@
 "use client";
 
-import { useDraggable } from "@dnd-kit/core";
 import VegDot from "./VegDot";
 import type { SubscriptionItem } from "./types";
 
@@ -8,37 +7,26 @@ import type { SubscriptionItem } from "./types";
  * A meal in the bracket. No price badge: every meal in a plan costs the same,
  * and showing a per-item rupee figure would imply otherwise.
  *
- * `draggable` is off during the purchase wizard (the grid is a preview there) and
- * on in the scheduler, where items get dragged onto day cards.
+ * A read-only preview tile in the purchase wizard; in the scheduler it takes an
+ * `onTap` so the customer can pick it for the armed day.
  */
 export default function SubscriptionItemCard({
   item,
-  draggable = false,
   selected = false,
   onTap,
 }: {
   item: SubscriptionItem;
-  draggable?: boolean;
   selected?: boolean;
   onTap?: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `item-${item.id}`,
-    data: { item },
-    disabled: !draggable,
-  });
-
   const Tag = onTap ? "button" : "div";
 
   return (
     <Tag
-      ref={setNodeRef}
-      {...(draggable ? listeners : {})}
-      {...(draggable ? attributes : {})}
       {...(onTap ? { onClick: onTap, type: "button" as const } : {})}
       className={`text-left w-full bg-white rounded-xl p-3 shadow-sm border-2 ${
         selected ? "border-[#f56215]" : "border-transparent"
-      } ${isDragging ? "opacity-40" : ""}`}
+      }`}
     >
       <div className="flex items-center gap-2">
         <VegDot isVeg={item.isVeg} />

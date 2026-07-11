@@ -5,16 +5,6 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import {
   accountCredits,
   suggestItemForDate,
   type ScheduleDay,
@@ -46,12 +36,6 @@ export default function SchedulerPage({
   const [notFound, setNotFound] = useState(false);
 
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [activeItem, setActiveItem] = useState<SubscriptionItem | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
-  );
 
   const loadPlan = useCallback(async () => {
     const res = await fetch(`/api/subscriptions/plans/${planId}`, { cache: "no-store" });
@@ -167,17 +151,6 @@ export default function SchedulerPage({
     return schedule(date, productId);
   };
 
-  const onDragStart = (e: DragStartEvent) => {
-    const it = e.active.data.current?.item as SubscriptionItem | undefined;
-    if (it) setActiveItem(it);
-  };
-  const onDragEnd = (e: DragEndEvent) => {
-    setActiveItem(null);
-    const it = e.active.data.current?.item as SubscriptionItem | undefined;
-    const overDate = e.over?.data.current?.date as string | undefined;
-    if (it && overDate) void placeOnDate(overDate, it.id);
-  };
-
   if (loading) {
     return (
       <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
@@ -199,8 +172,7 @@ export default function SchedulerPage({
   const expired = plan.status === "expired" || accounting.daysLeft === 0;
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-10">
+    <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-10">
         <header className="sticky top-16 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-2">
           <Link href="/subscription/orders" className="p-2 -ml-2 text-[#111]">
             <ArrowLeft className="w-5 h-5" />
@@ -278,7 +250,6 @@ export default function SchedulerPage({
                       <SubscriptionItemCard
                         key={it.id}
                         item={it}
-                        draggable
                         selected={selectedItemId === it.id}
                         onTap={() =>
                           setSelectedItemId((cur) => (cur === it.id ? null : it.id))
@@ -291,15 +262,6 @@ export default function SchedulerPage({
             </>
           )}
         </div>
-
-        <DragOverlay>
-          {activeItem ? (
-            <div className="bg-white rounded-xl p-3 shadow-lg border-2 border-[#f56215]">
-              <span className="font-medium text-sm text-[#111]">{activeItem.name.trim()}</span>
-            </div>
-          ) : null}
-        </DragOverlay>
       </main>
-    </DndContext>
   );
 }

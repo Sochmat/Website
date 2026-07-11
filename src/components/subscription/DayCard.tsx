@@ -1,13 +1,13 @@
 "use client";
 
-import { useDroppable } from "@dnd-kit/core";
 import type { SubscriptionCredit } from "@/lib/types";
 
 /**
  * One delivery day.
  *
- * `locked` comes from the server (noon IST on the day itself). A locked day is
- * not droppable, shows no clear button, and greys out — the kitchen owns it now.
+ * `locked` comes from the server (noon IST on the day itself). A locked day
+ * shows no clear button and greys out — the kitchen owns it now. When a meal is
+ * armed, tapping an unlocked day assigns it.
  */
 export default function DayCard({
   date,
@@ -26,26 +26,19 @@ export default function DayCard({
   onTapPlace: () => void;
   onClear: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `day-${date}`,
-    data: { date },
-    disabled: locked,
-  });
-
   const dayNum = date.slice(8, 10);
   const delivered = credit?.status === "delivered";
   const armed = tapArmed && !locked;
 
   return (
     <div
-      ref={setNodeRef}
       onClick={armed ? onTapPlace : undefined}
       title={locked ? "Locked — meals are fixed at 12:00 PM" : undefined}
       className={`rounded-xl p-2.5 min-h-[92px] border-2 transition-colors ${
         locked
           ? "border-gray-200 bg-gray-100"
-          : isOver || (armed && !credit)
-            ? "border-[#f56215] bg-[#fff5ef]"
+          : armed && !credit
+            ? "border-[#f56215] bg-[#fff5ef] cursor-pointer"
             : "border-gray-200 bg-white"
       }`}
     >
@@ -91,7 +84,7 @@ export default function DayCard({
         </div>
       ) : (
         <p className="mt-3 text-[11px] text-gray-400 text-center">
-          {locked ? "—" : armed ? "Tap to add" : "Drop item"}
+          {locked ? "—" : armed ? "Tap to add" : "Empty"}
         </p>
       )}
     </div>
