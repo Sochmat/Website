@@ -97,6 +97,22 @@ export function schedulableDates(
   return out;
 }
 
+/**
+ * The earliest day the customer can still book that they haven't already used —
+ * what the in-app "accept a suggestion" card targets.
+ *
+ * Deliberately NOT gated on `suggestionVisible`. That flag is the evening (D-1
+ * 20:00 IST) reveal window for the Phase-2 WhatsApp nudge; the in-app card should
+ * help fill any open day, so between noon and 8pm it must still suggest tomorrow.
+ */
+export function firstOpenDay(
+  days: ScheduleDay[],
+  takenDates: Iterable<string>,
+): ScheduleDay | null {
+  const taken = new Set(takenDates);
+  return days.find((d) => !d.locked && !taken.has(d.date)) ?? null;
+}
+
 export type ScheduleRejection =
   | "plan-not-active"
   | "date-in-past"

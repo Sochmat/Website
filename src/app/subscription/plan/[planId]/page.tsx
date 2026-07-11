@@ -6,6 +6,7 @@ import { ArrowLeft, CalendarDays, X } from "lucide-react";
 import { message } from "antd";
 import {
   accountCredits,
+  firstOpenDay,
   suggestItemForDate,
   type ScheduleDay,
 } from "@/lib/subscriptionSchedule";
@@ -15,7 +16,10 @@ import SuggestionCard from "@/components/subscription/SuggestionCard";
 import CreditsSummary from "@/components/subscription/CreditsSummary";
 import VegDot from "@/components/subscription/VegDot";
 import IngredientsSheet from "@/components/IngredientsSheet";
-import { toProduct, type SubscriptionItem } from "@/components/subscription/types";
+import {
+  toProduct,
+  type SubscriptionItem,
+} from "@/components/subscription/types";
 
 interface PlanResponse {
   plan: SubscriptionMealPlan;
@@ -23,8 +27,18 @@ interface PlanResponse {
 }
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 /** "12 Jul" from a yyyy-mm-dd string. */
@@ -54,7 +68,9 @@ export default function SchedulerPage({
   const [detailItem, setDetailItem] = useState<SubscriptionItem | null>(null);
 
   const loadPlan = useCallback(async () => {
-    const res = await fetch(`/api/subscriptions/plans/${planId}`, { cache: "no-store" });
+    const res = await fetch(`/api/subscriptions/plans/${planId}`, {
+      cache: "no-store",
+    });
     if (res.status === 404) {
       setNotFound(true);
       return null;
@@ -86,7 +102,9 @@ export default function SchedulerPage({
   // Booked meals (scheduled or delivered), oldest first.
   const scheduledCredits = useMemo(() => {
     return (plan?.credits ?? [])
-      .filter((c) => c.date && (c.status === "scheduled" || c.status === "delivered"))
+      .filter(
+        (c) => c.date && (c.status === "scheduled" || c.status === "delivered"),
+      )
       .sort((a, b) => (a.date! < b.date! ? -1 : 1));
   }, [plan]);
 
@@ -96,7 +114,10 @@ export default function SchedulerPage({
   );
 
   // First day the customer may still book (today is excluded once its noon passes).
-  const firstBookable = useMemo(() => days.find((d) => !d.locked)?.date, [days]);
+  const firstBookable = useMemo(
+    () => days.find((d) => !d.locked)?.date,
+    [days],
+  );
   const lockedByDate = useMemo(() => {
     const m = new Map<string, boolean>();
     for (const d of days) m.set(d.date, d.locked);
@@ -104,16 +125,17 @@ export default function SchedulerPage({
   }, [days]);
 
   const accounting = useMemo(
-    () => (plan ? accountCredits(plan.credits, plan.expiresOn, new Date()) : null),
+    () =>
+      plan ? accountCredits(plan.credits, plan.expiresOn, new Date()) : null,
     [plan],
   );
 
-  // Earliest editable, unscheduled day whose suggestion window is open.
+  // A meal suggested for the customer's next open day. Available whenever they
+  // have a credit and an unbooked day — not gated on the evening reveal window.
   const suggestion = useMemo(() => {
-    if (!plan || !accounting || accounting.available <= 0 || items.length === 0) return null;
-    const target = days.find(
-      (d) => d.suggestionVisible && !d.locked && !takenDates.has(d.date),
-    );
+    if (!plan || !accounting || accounting.available <= 0 || items.length === 0)
+      return null;
+    const target = firstOpenDay(days, takenDates);
     if (!target) return null;
     const history = plan.credits
       .filter((c) => c.date && c.productId)
@@ -156,9 +178,12 @@ export default function SchedulerPage({
 
   const unschedule = (creditId: string) =>
     mutate(() =>
-      fetch(`/api/subscriptions/plans/${planId}/schedule?creditId=${creditId}`, {
-        method: "DELETE",
-      }),
+      fetch(
+        `/api/subscriptions/plans/${planId}/schedule?creditId=${creditId}`,
+        {
+          method: "DELETE",
+        },
+      ),
     );
 
   const clearDraft = () => {
@@ -177,7 +202,10 @@ export default function SchedulerPage({
     return (
       <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto p-4">
         <p className="text-gray-500 text-sm">Plan not found.</p>
-        <Link href="/subscription/orders" className="text-[#f56215] font-semibold text-sm">
+        <Link
+          href="/subscription/orders"
+          className="text-[#f56215] font-semibold text-sm"
+        >
           ← My subscriptions
         </Link>
       </main>
@@ -207,7 +235,9 @@ export default function SchedulerPage({
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-lg font-bold text-[#111] leading-tight">Schedule meals</h1>
+          <h1 className="text-lg font-bold text-[#111] leading-tight">
+            Schedule meals
+          </h1>
           <p className="text-xs text-gray-500">{plan.planNumber}</p>
         </div>
       </header>
@@ -227,7 +257,9 @@ export default function SchedulerPage({
                 weekday={suggestion.day.weekday}
                 item={suggestion.item}
                 busy={busy}
-                onAccept={() => schedule(suggestion.day.date, suggestion.item.id)}
+                onAccept={() =>
+                  schedule(suggestion.day.date, suggestion.item.id)
+                }
                 onChooseDifferent={() => {
                   clearDraft();
                   document
@@ -272,7 +304,9 @@ export default function SchedulerPage({
                         item={it}
                         selected={selectedItemId === it.id}
                         onTap={() =>
-                          setSelectedItemId((cur) => (cur === it.id ? null : it.id))
+                          setSelectedItemId((cur) =>
+                            cur === it.id ? null : it.id,
+                          )
                         }
                         onInfo={() => setDetailItem(it)}
                       />
@@ -295,7 +329,7 @@ export default function SchedulerPage({
 
       {/* Sticky action bar: confirm the chosen meal + date */}
       {selectedItem && canAdd && (
-        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-100 px-4 pt-3 pb-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] space-y-3">
+        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-100 px-4 pt-3 pb-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] space-y-3 z-10">
           <div className="flex items-center gap-2">
             <VegDot isVeg={selectedItem.isVeg} />
             <span className="flex-1 font-semibold text-sm text-[#111] truncate">
@@ -335,7 +369,8 @@ export default function SchedulerPage({
 
           {dateTaken && (
             <p className="text-xs text-red-500">
-              You already have a meal on {dayLabel(draftDate)} — pick another day.
+              You already have a meal on {dayLabel(draftDate)} — pick another
+              day.
             </p>
           )}
         </div>
@@ -389,7 +424,10 @@ function ScheduledRow({
       </div>
 
       {delivered ? null : locked ? (
-        <span className="text-[11px] text-gray-400 flex items-center gap-1" title="Locked at 12:00 PM">
+        <span
+          className="text-[11px] text-gray-400 flex items-center gap-1"
+          title="Locked at 12:00 PM"
+        >
           🔒 Locked
         </span>
       ) : (

@@ -33,7 +33,9 @@ export default function SubscriptionItemCard({
     <>
       <div className={`flex items-center gap-2 ${onInfo ? "pr-6" : ""}`}>
         <VegDot isVeg={item.isVeg} />
-        <span className="font-medium text-sm text-[#111] truncate">{item.name.trim()}</span>
+        <span className="font-medium text-sm text-[#111] truncate">
+          {item.name.trim()}
+        </span>
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className="bg-[rgba(0,153,64,0.1)] text-[#009940] text-[11px] font-semibold px-2 py-0.5 rounded-full">
@@ -54,7 +56,7 @@ export default function SubscriptionItemCard({
         onInfo();
       }}
       aria-label={`View ${item.name.trim()} details`}
-      className="absolute top-2 right-2 z-10 text-[#b0b0b0] hover:text-[#f56215] p-0.5"
+      className="absolute top-2 right-2 z-5 text-[#b0b0b0] hover:text-[#f56215] p-0.5"
     >
       <Info className="w-4 h-4" />
     </button>
@@ -73,7 +75,9 @@ export default function SubscriptionItemCard({
             className="absolute inset-0 rounded-xl"
           />
         )}
-        <div className={`relative ${onTap ? "pointer-events-none" : ""}`}>{content}</div>
+        <div className={`relative ${onTap ? "pointer-events-none" : ""}`}>
+          {content}
+        </div>
         {infoButton}
       </div>
     );
@@ -81,7 +85,10 @@ export default function SubscriptionItemCard({
 
   const Tag = onTap ? "button" : "div";
   return (
-    <Tag {...(onTap ? { onClick: onTap, type: "button" as const } : {})} className={base}>
+    <Tag
+      {...(onTap ? { onClick: onTap, type: "button" as const } : {})}
+      className={base}
+    >
       {content}
     </Tag>
   );

@@ -11,6 +11,7 @@ import {
   isSuggestionVisible,
   schedulableWindow,
   schedulableDates,
+  firstOpenDay,
   validateSchedule,
   validateReschedule,
   validateUnschedule,
@@ -138,6 +139,45 @@ describe("schedulableDates", () => {
 
   it("is empty for an expired plan", () => {
     expect(schedulableDates(at("2026-08-09T00:00:00.000Z"), "2026-08-08")).toEqual([]);
+  });
+});
+
+describe("firstOpenDay", () => {
+  // 19:11 IST — today is locked (past noon), and tomorrow's suggestion window
+  // (D-1 20:00) hasn't opened. The in-app card must still target tomorrow.
+  it("returns the earliest unlocked, untaken day regardless of suggestionVisible", () => {
+    const now = at("2026-07-11T13:41:00.000Z"); // 19:11 IST on the 11th
+    const days = schedulableDates(now, "2026-08-10");
+    // Sanity: reproduce the dead zone — nothing is suggestionVisible && !locked.
+    expect(days.filter((d) => d.suggestionVisible && !d.locked)).toHaveLength(0);
+
+    const target = firstOpenDay(days, []);
+    expect(target?.date).toBe("2026-07-12");
+    expect(target?.locked).toBe(false);
+  });
+
+  it("skips days already taken", () => {
+    const now = at("2026-07-11T00:00:00.000Z"); // 05:30 IST — nothing locked yet
+    const days = schedulableDates(now, "2026-08-10");
+    const target = firstOpenDay(days, ["2026-07-11", "2026-07-12"]);
+    expect(target?.date).toBe("2026-07-13");
+  });
+
+  it("skips locked days", () => {
+    const now = at("2026-07-11T13:41:00.000Z"); // today (11th) locked
+    const days = schedulableDates(now, "2026-08-10");
+    expect(firstOpenDay(days, [])?.date).toBe("2026-07-12");
+  });
+
+  it("returns null when every day is locked or taken", () => {
+    const now = at("2026-07-11T00:00:00.000Z");
+    const days = schedulableDates(now, "2026-07-11"); // only today
+    // today at 05:30 IST is not locked; take it → nothing left
+    expect(firstOpenDay(days, ["2026-07-11"])).toBeNull();
+  });
+
+  it("returns null for no days", () => {
+    expect(firstOpenDay([], [])).toBeNull();
   });
 });
 
