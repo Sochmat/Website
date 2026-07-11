@@ -10,7 +10,6 @@ import SelectAddressSheet from "@/components/SelectAddressSheet";
 import LocationSelector from "@/components/LocationSelector";
 import LocationPrompt from "@/components/LocationPrompt";
 import IngredientsSheet from "@/components/IngredientsSheet";
-import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
 import { GST_RATE } from "@/lib/subscription";
@@ -20,36 +19,15 @@ import type { ProteinBracketKey, SubscriptionDiet, UserAddress } from "@/lib/typ
 import BracketCard from "@/components/subscription/BracketCard";
 import DietCard from "@/components/subscription/DietCard";
 import SubscriptionItemCard from "@/components/subscription/SubscriptionItemCard";
-import { rupees, type BracketOption, type SubscriptionItem } from "@/components/subscription/types";
+import {
+  rupees,
+  toProduct,
+  type BracketOption,
+  type SubscriptionItem,
+} from "@/components/subscription/types";
 
 function priceForDiet(b: BracketOption, diet: SubscriptionDiet) {
   return diet === "veg-nonveg" ? b.nonVegPrice : b.vegPrice;
-}
-
-/**
- * Adapt a subscription item to the shape IngredientsSheet expects. The sheet is
- * read-only and only reads image/name/badge/isVeg/description/nutrition/ingredients,
- * so the cart/pricing fields are inert placeholders just to satisfy the type.
- */
-function toProduct(it: SubscriptionItem): Product {
-  return {
-    id: it.id,
-    name: it.name,
-    kcal: it.kcal,
-    protein: it.protein,
-    price: 0,
-    originalPrice: 0,
-    discount: "",
-    rating: 0,
-    reviews: "",
-    badge: null,
-    description: it.description,
-    fiber: it.fiber,
-    carbs: it.carbs,
-    ingredients: it.ingredients,
-    image: it.image,
-    isVeg: it.isVeg,
-  };
 }
 
 function PurchaseWizard() {
