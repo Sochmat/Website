@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 import { codeInspectorPlugin } from "code-inspector-plugin";
 
+// code-inspector-plugin runs a click-to-open-in-editor bridge on a fixed port
+// (5678). Under Turbopack every parallel loader worker tries to bind that port,
+// so all but the first throw `EADDRINUSE :::5678`. It's a dev-only convenience,
+// so it's off by default; set CODE_INSPECTOR=1 to opt in.
+const enableCodeInspector = process.env.CODE_INSPECTOR === "1";
+
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   images: {
@@ -12,11 +18,9 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  turbopack: {
-    rules: codeInspectorPlugin({
-      bundler: "turbopack",
-    }),
-  },
+  ...(enableCodeInspector
+    ? { turbopack: { rules: codeInspectorPlugin({ bundler: "turbopack" }) } }
+    : {}),
   // Force HTTPS (transport-layer encryption of every request/response payload)
   // and basic hardening headers on all responses.
   async headers() {
