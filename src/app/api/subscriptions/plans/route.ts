@@ -33,14 +33,8 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
 
-    const storeDoc = await db.collection("settings").findOne({ key: "store" });
-    if (storeDoc?.open === false) {
-      return NextResponse.json(
-        { success: false, message: "Store is currently closed" },
-        { status: 503 },
-      );
-    }
-
+    // Subscriptions are sold and scheduled independently of the à-la-carte
+    // store hours — a closed store must not block buying a plan.
     const body = await request.json();
     const { bracket, diet } = body;
 

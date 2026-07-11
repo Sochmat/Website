@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { message } from "antd";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
-import { useStoreStatus } from "@/context/StoreStatusContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import LocationSelector from "@/components/LocationSelector";
 import LocationPrompt from "@/components/LocationPrompt";
@@ -35,7 +34,6 @@ function PurchaseWizard() {
   const params = useSearchParams();
   const { user, isAuthenticated } = useUser();
   const { openLoginPopup } = useLoginPopup();
-  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
 
   // The wizard step lives in the URL, so browser Back works and — critically —
   // the login-popup round-trip can't wipe the customer's choices.
@@ -60,13 +58,6 @@ function PurchaseWizard() {
   const [placing, setPlacing] = useState(false);
   // The item whose description sheet is open (browse step).
   const [detailItem, setDetailItem] = useState<SubscriptionItem | null>(null);
-
-  useEffect(() => {
-    if (!storeLoading && !storeOpen) {
-      message.info("Store is currently closed");
-      router.replace("/");
-    }
-  }, [storeLoading, storeOpen, router]);
 
   useEffect(() => {
     fetch("/api/subscriptions/brackets")
