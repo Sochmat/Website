@@ -9,6 +9,8 @@ import { useStoreStatus } from "@/context/StoreStatusContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import LocationSelector from "@/components/LocationSelector";
 import LocationPrompt from "@/components/LocationPrompt";
+import IngredientsSheet from "@/components/IngredientsSheet";
+import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { distanceFromBusinessKm, isWithinServiceArea } from "@/helpers/distance";
 import { GST_RATE } from "@/lib/subscription";
@@ -22,6 +24,32 @@ import { rupees, type BracketOption, type SubscriptionItem } from "@/components/
 
 function priceForDiet(b: BracketOption, diet: SubscriptionDiet) {
   return diet === "veg-nonveg" ? b.nonVegPrice : b.vegPrice;
+}
+
+/**
+ * Adapt a subscription item to the shape IngredientsSheet expects. The sheet is
+ * read-only and only reads image/name/badge/isVeg/description/nutrition/ingredients,
+ * so the cart/pricing fields are inert placeholders just to satisfy the type.
+ */
+function toProduct(it: SubscriptionItem): Product {
+  return {
+    id: it.id,
+    name: it.name,
+    kcal: it.kcal,
+    protein: it.protein,
+    price: 0,
+    originalPrice: 0,
+    discount: "",
+    rating: 0,
+    reviews: "",
+    badge: null,
+    description: it.description,
+    fiber: it.fiber,
+    carbs: it.carbs,
+    ingredients: it.ingredients,
+    image: it.image,
+    isVeg: it.isVeg,
+  };
 }
 
 function PurchaseWizard() {
@@ -52,6 +80,8 @@ function PurchaseWizard() {
   const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
   const [placing, setPlacing] = useState(false);
+  // The item whose description sheet is open (browse step).
+  const [detailItem, setDetailItem] = useState<SubscriptionItem | null>(null);
 
   useEffect(() => {
     if (!storeLoading && !storeOpen) {
@@ -292,7 +322,11 @@ function PurchaseWizard() {
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {items.map((it) => (
-                    <SubscriptionItemCard key={it.id} item={it} />
+                    <SubscriptionItemCard
+                      key={it.id}
+                      item={it}
+                      onTap={() => setDetailItem(it)}
+                    />
                   ))}
                 </div>
               )}
@@ -392,6 +426,14 @@ function PurchaseWizard() {
         editAddress={editingAddress}
         onSaved={handleAddressSaved}
       />
+
+      {detailItem && (
+        <IngredientsSheet
+          open
+          onClose={() => setDetailItem(null)}
+          product={toProduct(detailItem)}
+        />
+      )}
     </main>
   );
 }
