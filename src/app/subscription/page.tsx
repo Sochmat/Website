@@ -208,34 +208,47 @@ function PurchaseWizard() {
     }
   };
 
+  // The bracket picker is the subscription home: three tiers that fill the
+  // screen. It gets its own bare shell — no sub-header, no padding — so the
+  // bands own the whole viewport below the account bar (56px / 3.5rem).
+  if (step === "bracket") {
+    return (
+      <main className="bg-[#f5f5f5] max-w-[430px] mx-auto">
+        <div className="flex min-h-[480px] h-[calc(100dvh-4rem)] flex-col divide-y divide-black/10">
+          {brackets.length === 0
+            ? [0, 1, 2].map((i) => (
+                <div key={i} className="flex-1 animate-pulse bg-gray-200/70" />
+              ))
+            : brackets.map((b, i) => (
+                <BracketCard
+                  key={b.key}
+                  bracket={b}
+                  index={i}
+                  onSelect={() => go({ bracket: b.key })}
+                />
+              ))}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-40">
-      <header className="sticky top-14 z-10 bg-white border-b border-gray-100 px-4 py-3">
-        {step !== "bracket" && (
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="text-sm text-[#f56215] font-semibold mb-1"
-          >
-            ← Back
-          </button>
-        )}
+      <header className="sticky top-16 z-10 bg-white border-b border-gray-100 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="text-sm text-[#f56215] font-semibold mb-1"
+        >
+          ← Back
+        </button>
         <h1 className="text-lg font-bold text-[#111]">
-          {step === "bracket"
-            ? "Choose your protein bracket"
-            : step === "diet"
-              ? "Veg or Veg + Non-veg?"
-              : "Your bracket menu"}
+          {step === "diet" ? "Veg or Veg + Non-veg?" : "Your bracket menu"}
         </h1>
         <p className="text-xs text-gray-500">7 meals · schedule any 7 days in the next 30</p>
       </header>
 
       <div className="p-4 space-y-3">
-        {step === "bracket" &&
-          brackets.map((b) => (
-            <BracketCard key={b.key} bracket={b} onSelect={() => go({ bracket: b.key })} />
-          ))}
-
         {step === "diet" && selectedBracket && (
           <>
             {(["veg", "veg-nonveg"] as SubscriptionDiet[]).map((d) => (

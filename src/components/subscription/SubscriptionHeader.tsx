@@ -69,11 +69,13 @@ export default function SubscriptionHeader() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 bg-white border-b border-gray-100 max-w-[430px] mx-auto h-14 px-4 flex items-center justify-between">
-        <Link href="/subscription" className="font-bold text-[#111] text-[15px]">
+      <header className="sticky top-0 z-30 bg-white border-b border-gray-100 max-w-[430px] mx-auto h-16 px-4 flex items-center justify-between">
+        <Link href="/subscription" className="font-bold text-[#111] text-[19px] tracking-tight">
           Sochmat
           <span className="text-[#f56215]">.</span>
-          <span className="ml-1 font-medium text-[#737373] text-xs">Subscriptions</span>
+          <span className="ml-1.5 font-medium text-[#737373] text-[13px] tracking-normal">
+            Subscriptions
+          </span>
         </Link>
 
         <button
@@ -81,9 +83,9 @@ export default function SubscriptionHeader() {
           onClick={() => setMenuOpen((v) => !v)}
           aria-label="Account"
           aria-expanded={menuOpen}
-          className="w-9 h-9 rounded-full bg-[#f5f5f5] flex items-center justify-center text-[#111] active:scale-95 transition-transform"
+          className="w-10 h-10 rounded-full bg-[#f5f5f5] flex items-center justify-center text-[#111] active:scale-95 transition-transform"
         >
-          <User className="w-5 h-5" />
+          <User className="w-[22px] h-[22px]" />
         </button>
 
         {menuOpen && (
