@@ -2,7 +2,14 @@
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, X } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  ChevronRight,
+  Info,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { message } from "antd";
 import {
   accountCredits,
@@ -10,41 +17,24 @@ import {
   suggestItemForDate,
   type ScheduleDay,
 } from "@/lib/subscriptionSchedule";
-import type { SubscriptionCredit, SubscriptionMealPlan } from "@/lib/types";
-import SubscriptionItemCard from "@/components/subscription/SubscriptionItemCard";
+import {
+  BRACKET_KEYS,
+  type SubscriptionCredit,
+  type SubscriptionMealPlan,
+} from "@/lib/types";
 import SuggestionCard from "@/components/subscription/SuggestionCard";
 import CreditsSummary from "@/components/subscription/CreditsSummary";
 import VegDot from "@/components/subscription/VegDot";
-import IngredientsSheet from "@/components/IngredientsSheet";
+import BatchPlanner from "@/components/subscription/BatchPlanner";
+import MealPickerSheet from "@/components/subscription/MealPickerSheet";
 import {
-  toProduct,
+  TIER_LABELS,
   type SubscriptionItem,
 } from "@/components/subscription/types";
 
 interface PlanResponse {
   plan: SubscriptionMealPlan;
   days: ScheduleDay[];
-}
-
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-/** "12 Jul" from a yyyy-mm-dd string. */
-function dayLabel(date: string): string {
-  const [, m, d] = date.split("-").map(Number);
-  return `${d} ${MONTHS[m - 1]}`;
 }
 
 export default function SchedulerPage({
@@ -60,12 +50,10 @@ export default function SchedulerPage({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notFound, setNotFound] = useState(false);
-
-  // The add-a-meal draft: a chosen meal + a chosen delivery date.
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [pickedDate, setPickedDate] = useState("");
-  // The item whose description sheet is open.
-  const [detailItem, setDetailItem] = useState<SubscriptionItem | null>(null);
+  // The batch date→meal planner overlay.
+  const [plannerOpen, setPlannerOpen] = useState(false);
+  // The scheduled credit currently being edited (meal swap).
+  const [editingCredit, setEditingCredit] = useState<SubscriptionCredit | null>(null);
 
   const loadPlan = useCallback(async () => {
     const res = await fetch(`/api/subscriptions/plans/${planId}`, {
@@ -186,9 +174,47 @@ export default function SchedulerPage({
       ),
     );
 
-  const clearDraft = () => {
-    setSelectedItemId(null);
-    setPickedDate("");
+  // Swap the meal on a scheduled credit, keeping its date.
+  const swapMeal = (creditId: string, productId: string) =>
+    mutate(() =>
+      fetch(`/api/subscriptions/plans/${planId}/schedule`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creditId, productId }),
+      }),
+    );
+
+  // Book a whole set of (date, meal) pairs in one go. The schedule endpoint is
+  // single-shot, so we fire them sequentially and reconcile with one refetch.
+  const scheduleBatch = async (
+    assignments: { date: string; productId: string }[],
+  ) => {
+    setBusy(true);
+    let failed = 0;
+    try {
+      for (const a of assignments) {
+        try {
+          const res = await fetch(`/api/subscriptions/plans/${planId}/schedule`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(a),
+          });
+          const d = await res.json();
+          if (!d.success) failed++;
+        } catch {
+          failed++;
+        }
+      }
+      await loadPlan();
+      const booked = assignments.length - failed;
+      if (failed === 0) {
+        message.success(`${booked} ${booked === 1 ? "meal" : "meals"} scheduled`);
+      } else {
+        message.warning(`${booked} scheduled · ${failed} couldn't be booked`);
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (loading) {
@@ -215,21 +241,15 @@ export default function SchedulerPage({
   const expired = plan.status === "expired" || accounting.daysLeft === 0;
   const canAdd = !expired && accounting.available > 0 && !!firstBookable;
 
-  const selectedItem = items.find((i) => i.id === selectedItemId) ?? null;
-  const draftDate = pickedDate || firstBookable || "";
-  const dateTaken = !!draftDate && takenDates.has(draftDate);
-  const canConfirm = !!selectedItem && !!draftDate && !dateTaken && !busy;
+  const history = plan.credits
+    .filter((c) => c.date && c.productId)
+    .map((c) => ({ date: c.date!, productId: c.productId! }));
 
-  const addMeal = async () => {
-    if (!selectedItem || !draftDate) return;
-    const ok = await schedule(draftDate, selectedItem.id);
-    if (ok) clearDraft();
-  };
+  const bracketIdx = (BRACKET_KEYS as readonly string[]).indexOf(plan.bracket);
+  const planName = bracketIdx >= 0 ? TIER_LABELS[bracketIdx] : "Your plan";
 
   return (
-    <main
-      className={`min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto ${selectedItem ? "pb-44" : "pb-10"}`}
-    >
+    <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto pb-10">
       <header className="sticky top-16 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-2">
         <Link href="/subscription/orders" className="p-2 -ml-2 text-[#111]">
           <ArrowLeft className="w-5 h-5" />
@@ -238,7 +258,9 @@ export default function SchedulerPage({
           <h1 className="text-lg font-bold text-[#111] leading-tight">
             Schedule meals
           </h1>
-          <p className="text-xs text-gray-500">{plan.planNumber}</p>
+          <p className="text-xs text-gray-500">
+            {planName} · {plan.bracket.replace("-", "–")}g protein
+          </p>
         </div>
       </header>
 
@@ -251,6 +273,15 @@ export default function SchedulerPage({
           </div>
         ) : (
           <>
+            {/* Cutoff notice */}
+            <div className="flex items-start gap-2 rounded-xl bg-[#fff4ec] px-3.5 py-3 ring-1 ring-[#f56215]/15">
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-[#f56215]" />
+              <p className="text-xs text-[#8a5a3c] leading-relaxed">
+                You can&rsquo;t change or cancel a meal within 3 hours of its
+                delivery time.
+              </p>
+            </div>
+
             {suggestion && (
               <SuggestionCard
                 date={suggestion.day.date}
@@ -260,13 +291,30 @@ export default function SchedulerPage({
                 onAccept={() =>
                   schedule(suggestion.day.date, suggestion.item.id)
                 }
-                onChooseDifferent={() => {
-                  clearDraft();
-                  document
-                    .getElementById("meal-picker")
-                    ?.scrollIntoView({ behavior: "smooth" });
-                }}
+                onChooseDifferent={() => setPlannerOpen(true)}
               />
+            )}
+
+            {/* Plan your meals — pick dates, then review a proposal */}
+            {canAdd && (
+              <button
+                type="button"
+                onClick={() => setPlannerOpen(true)}
+                className="w-full text-left bg-white rounded-2xl p-4 shadow-sm ring-1 ring-[#f56215]/25 flex items-center gap-3"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f56215]/15 text-[#f56215]">
+                  <CalendarDays className="h-5 w-5" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block font-semibold text-[#111]">
+                    Plan your meals
+                  </span>
+                  <span className="block text-xs text-[#737373]">
+                    Pick your days and plan future meals.
+                  </span>
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" />
+              </button>
             )}
 
             {/* Booked meals — a short list, not a month of cells */}
@@ -281,106 +329,48 @@ export default function SchedulerPage({
                       locked={lockedByDate.get(c.date!) ?? false}
                       busy={busy}
                       onRemove={() => unschedule(c.id)}
+                      onEdit={() => setEditingCredit(c)}
                     />
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Add a meal: pick a meal, then choose its day in the bottom bar */}
-            {canAdd ? (
-              <section id="meal-picker">
-                <h2 className="font-semibold text-[#111]">Add a meal</h2>
-                <p className="text-xs text-[#737373] mt-0.5 mb-2">
-                  Pick a meal, then choose the day you want it.
+            {!canAdd && accounting.available === 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
+                <p className="font-semibold text-[#111]">
+                  All {plan.mealCount} meals scheduled 🎉
                 </p>
-                {items.length === 0 ? (
-                  <p className="text-sm text-gray-500">No meals available.</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {items.map((it) => (
-                      <SubscriptionItemCard
-                        key={it.id}
-                        item={it}
-                        selected={selectedItemId === it.id}
-                        onTap={() =>
-                          setSelectedItemId((cur) =>
-                            cur === it.id ? null : it.id,
-                          )
-                        }
-                        onInfo={() => setDetailItem(it)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            ) : (
-              accounting.available === 0 && (
-                <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-                  <p className="font-semibold text-[#111]">
-                    All {plan.mealCount} meals scheduled 🎉
-                  </p>
-                </div>
-              )
+              </div>
             )}
           </>
         )}
       </div>
 
-      {/* Sticky action bar: confirm the chosen meal + date */}
-      {selectedItem && canAdd && (
-        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-100 px-4 pt-3 pb-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] space-y-3 z-10">
-          <div className="flex items-center gap-2">
-            <VegDot isVeg={selectedItem.isVeg} />
-            <span className="flex-1 font-semibold text-sm text-[#111] truncate">
-              {selectedItem.name.trim()}
-            </span>
-            <button
-              type="button"
-              onClick={clearDraft}
-              aria-label="Clear selection"
-              className="text-gray-400 p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+      <BatchPlanner
+        open={plannerOpen}
+        onClose={() => setPlannerOpen(false)}
+        planId={planId}
+        days={days}
+        takenDates={takenDates}
+        availableCredits={accounting.available}
+        items={items}
+        history={history}
+        busy={busy}
+        onConfirm={scheduleBatch}
+      />
 
-          <div className="flex items-center gap-2">
-            <label className="relative flex-1">
-              <CalendarDays className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737373]" />
-              <input
-                type="date"
-                value={draftDate}
-                min={firstBookable}
-                max={plan.expiresOn}
-                onChange={(e) => setPickedDate(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm text-[#111]"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addMeal}
-              disabled={!canConfirm}
-              className="shrink-0 bg-[#f56215] text-white font-semibold text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
-            >
-              {busy ? "Adding…" : "Add to plan"}
-            </button>
-          </div>
-
-          {dateTaken && (
-            <p className="text-xs text-red-500">
-              You already have a meal on {dayLabel(draftDate)} — pick another
-              day.
-            </p>
-          )}
-        </div>
-      )}
-
-      {detailItem && (
-        <IngredientsSheet
-          open
-          onClose={() => setDetailItem(null)}
-          product={toProduct(detailItem)}
+      {editingCredit && (
+        <MealPickerSheet
+          items={items}
+          activeId={editingCredit.productId}
+          title="Change this meal"
+          onClose={() => setEditingCredit(null)}
+          onPick={async (id) => {
+            const target = editingCredit;
+            setEditingCredit(null);
+            if (id !== target.productId) await swapMeal(target.id, id);
+          }}
         />
       )}
     </main>
@@ -392,22 +382,24 @@ function ScheduledRow({
   locked,
   busy,
   onRemove,
+  onEdit,
 }: {
   credit: SubscriptionCredit;
   locked: boolean;
   busy: boolean;
   onRemove: () => void;
+  onEdit: () => void;
 }) {
   const delivered = credit.status === "delivered";
   return (
     <div className="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3">
       {/* Date chip */}
-      <div className="w-12 shrink-0 text-center">
-        <p className="text-[11px] font-semibold text-[#737373] uppercase">
+      <div className="w-14 shrink-0 rounded-xl bg-[#fff4ec] py-2 text-center">
+        <p className="text-[10px] font-bold uppercase text-[#c2410c] leading-none">
           {credit.weekday?.slice(0, 3)}
         </p>
-        <p className="text-sm font-bold text-[#111] leading-tight">
-          {dayLabel(credit.date!)}
+        <p className="text-lg font-black text-[#111] leading-tight">
+          {Number(credit.date!.split("-")[2])}
         </p>
       </div>
 
@@ -431,14 +423,26 @@ function ScheduledRow({
           🔒 Locked
         </span>
       ) : (
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={busy}
-          className="text-xs text-[#f56215] font-semibold px-2 py-1 disabled:opacity-50"
-        >
-          Remove
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={busy}
+            aria-label="Change meal"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-[#111] hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={busy}
+            aria-label="Remove meal"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-300 text-red-500 hover:bg-red-50 disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );

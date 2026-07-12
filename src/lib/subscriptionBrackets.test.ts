@@ -159,10 +159,11 @@ describe("filterItemsForPlan", () => {
 });
 
 describe("toPublicSubscriptionItem", () => {
-  it("never leaks referencePrice or any other internal field", () => {
+  it("exposes only the whitelisted fields (incl. referencePrice) and no other internal field", () => {
     const pub = toPublicSubscriptionItem(item());
     // Asserting the exact key set — a future `...item` spread cannot silently
-    // start shipping margin data to customers without failing here.
+    // start shipping other internal data to customers without failing here.
+    // `referencePrice` is intentionally public (the Zomato comparison price).
     expect(Object.keys(pub).sort()).toEqual(
       [
         "id",
@@ -177,9 +178,10 @@ describe("toPublicSubscriptionItem", () => {
         "isVeg",
         "ingredients",
         "sortOrder",
+        "referencePrice",
       ].sort(),
     );
-    expect(pub).not.toHaveProperty("referencePrice");
+    expect(pub.referencePrice).toBe(300);
     expect(pub).not.toHaveProperty("nameKey");
     expect(pub).not.toHaveProperty("importKey");
     expect(pub).not.toHaveProperty("source");

@@ -112,14 +112,17 @@ export interface PublicSubscriptionItem {
   isVeg: boolean;
   ingredients?: string[];
   sortOrder?: number;
+  /** The meal's à la carte (Zomato) price, shown for savings comparison. */
+  referencePrice: number;
 }
 
 /**
  * Strip internal fields before any customer-facing response.
  *
- * Built by explicit assignment, never by spreading the Mongo doc — `referencePrice`
- * is our margin data and must not leave the server. The key-set assertion in
- * subscriptionBrackets.test.ts is what keeps this honest.
+ * Built by explicit assignment, never by spreading the Mongo doc, so no internal
+ * field is ever shipped by accident. `referencePrice` is deliberately included —
+ * it's the à la carte (Zomato) price we show for the savings comparison. The
+ * key-set assertion in subscriptionBrackets.test.ts is what keeps this honest.
  */
 export function toPublicSubscriptionItem(item: SubscriptionMenuItem): PublicSubscriptionItem {
   return {
@@ -135,5 +138,6 @@ export function toPublicSubscriptionItem(item: SubscriptionMenuItem): PublicSubs
     isVeg: item.isVeg,
     ingredients: item.ingredients,
     sortOrder: item.sortOrder,
+    referencePrice: item.referencePrice,
   };
 }

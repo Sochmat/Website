@@ -15,6 +15,8 @@ export interface SubscriptionItem {
   isVeg: boolean;
   ingredients?: string[];
   sortOrder?: number;
+  /** À la carte (Zomato) price, for the savings comparison. */
+  referencePrice?: number;
 }
 
 export interface BracketOption {
@@ -31,6 +33,13 @@ export const DIET_LABELS: Record<SubscriptionDiet, string> = {
   veg: "Veg only",
   "veg-nonveg": "Veg + Non-veg",
 };
+
+/**
+ * Plan names by position in the protein ladder (index 0..2 = ascending protein).
+ * The name is the bracket's rung, not a DB value — kept here so the bracket
+ * cards, the diet screen, and anywhere else stay in sync from one source.
+ */
+export const TIER_LABELS = ["Everyday", "Performance", "Peak"] as const;
 
 /** Most imported items have no image yet — an admin content pass is pending. */
 export const PLACEHOLDER_IMAGE = "";

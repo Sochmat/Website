@@ -2,6 +2,7 @@
 
 import { useRef, useEffect } from "react";
 import type { UserAddress } from "@/lib/types";
+import SheetCloseButton from "./subscription/SheetCloseButton";
 
 function sameAddress(a: UserAddress, b: UserAddress): boolean {
   if (a.id && b.id) return a.id === b.id;
@@ -16,6 +17,8 @@ interface SelectAddressSheetProps {
   onSelect: (addr: UserAddress) => void;
   onAddNew: () => void;
   onEdit?: (addr: UserAddress) => void;
+  /** Show the floating centered close button (subscription flow). */
+  floatingClose?: boolean;
 }
 
 export default function SelectAddressSheet({
@@ -26,6 +29,7 @@ export default function SelectAddressSheet({
   onSelect,
   onAddNew,
   onEdit,
+  floatingClose = false,
 }: SelectAddressSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -43,15 +47,16 @@ export default function SelectAddressSheet({
   if (!open) return null;
 
   return (
-    <>
+    <div className="fixed inset-0 z-[210] flex flex-col items-center justify-end">
       <div
-        className="fixed inset-0 z-[210] bg-black/40"
+        className="absolute inset-0 bg-black/40"
         onClick={onClose}
         aria-hidden
       />
+      {floatingClose && <SheetCloseButton onClose={onClose} />}
       <div
         ref={sheetRef}
-        className="fixed left-0 right-0 bottom-0 z-[211] max-w-[430px] mx-auto bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[85vh] flex flex-col"
+        className="relative w-full max-w-[430px] bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[85vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label="Select Address"
@@ -135,6 +140,6 @@ export default function SelectAddressSheet({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

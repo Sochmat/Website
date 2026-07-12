@@ -1,87 +1,79 @@
 "use client";
 
-import { Info } from "lucide-react";
 import VegDot from "./VegDot";
-import type { SubscriptionItem } from "./types";
+import { rupees, type SubscriptionItem } from "./types";
 
 /**
- * A meal in the bracket. No price badge: every meal in a plan costs the same,
- * and showing a per-item rupee figure would imply otherwise.
+ * A meal in the bracket, rendered as a full-width row (image left, details
+ * right) for one-column lists. When `subscriptionPrice` is given it shows the
+ * plan's per-meal price against the meal's à la carte (Zomato) price.
  *
- * - `onTap` — the card's primary action (open details in the wizard, select for
- *   scheduling in the plan view).
- * - `onInfo` — when set, a small info button opens the item's description sheet
- *   without triggering `onTap`. It's rendered as a sibling overlay button (not
- *   nested inside `onTap`'s button) to keep the markup valid.
+ * - `onTap` — the card's primary action (open details / select).
  */
 export default function SubscriptionItemCard({
   item,
   selected = false,
   onTap,
-  onInfo,
+  subscriptionPrice,
 }: {
   item: SubscriptionItem;
   selected?: boolean;
   onTap?: () => void;
-  onInfo?: () => void;
+  subscriptionPrice?: number;
 }) {
-  const base = `w-full text-left bg-white rounded-xl p-3 shadow-sm border-2 ${
+  const zomato = Math.round(item.referencePrice ?? 0);
+  const showPrice = subscriptionPrice != null && subscriptionPrice > 0;
+  const savings = showPrice && zomato > subscriptionPrice;
+
+  const base = `flex w-full gap-3 text-left bg-white rounded-xl p-2.5 shadow-sm border-2 ${
     selected ? "border-[#f56215]" : "border-transparent"
   }`;
 
   const content = (
     <>
-      <div className={`flex items-center gap-2 ${onInfo ? "pr-6" : ""}`}>
-        <VegDot isVeg={item.isVeg} />
-        <span className="font-medium text-sm text-[#111] truncate">
-          {item.name.trim()}
+      {/* Meal image with a veg/non-veg dot pinned in the corner */}
+      <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-[#f2f2f2]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.image || "/food.png"}
+          alt={item.name.trim()}
+          loading="lazy"
+          className="h-full w-full object-cover"
+        />
+        <span className="absolute left-1 top-1 rounded bg-white/90 p-0.5 shadow-sm">
+          <VegDot isVeg={item.isVeg} />
         </span>
       </div>
-      <div className="flex items-center justify-between mt-2">
-        <span className="bg-[rgba(0,153,64,0.1)] text-[#009940] text-[11px] font-semibold px-2 py-0.5 rounded-full">
-          {item.protein}g protein
-        </span>
-        {item.kcal > 0 && (
-          <span className="text-[11px] text-[#737373]">{item.kcal} kcal</span>
+
+      <div className="min-w-0 flex-1 py-0.5">
+        <p className="font-semibold text-sm text-[#111] leading-snug line-clamp-2">
+          {item.name.trim()}
+        </p>
+        <div className="mt-1.5 flex items-center gap-2">
+          <span className="bg-[rgba(0,153,64,0.1)] text-[#009940] text-[11px] font-semibold px-2 py-0.5 rounded-full">
+            {item.protein}g protein
+          </span>
+          {item.kcal > 0 && (
+            <span className="text-[11px] text-[#737373]">{item.kcal} kcal</span>
+          )}
+        </div>
+
+        {showPrice && (
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-base font-bold text-[#111]">
+              {rupees(subscriptionPrice)}
+            </span>
+            <span className="text-[10px] font-medium text-gray-400">/ meal</span>
+            {savings && (
+              <span className="text-xs text-gray-400">
+                <span className="line-through">{rupees(zomato)}</span> on Zomato
+              </span>
+            )}
+          </div>
         )}
       </div>
     </>
   );
-
-  const infoButton = onInfo && (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onInfo();
-      }}
-      aria-label={`View ${item.name.trim()} details`}
-      className="absolute top-2 right-2 z-5 text-[#b0b0b0] hover:text-[#f56215] p-0.5"
-    >
-      <Info className="w-4 h-4" />
-    </button>
-  );
-
-  // With an info button, the whole card stays a select target via an overlay
-  // button beneath the content, and the info button sits on top.
-  if (onInfo) {
-    return (
-      <div className={`relative ${base}`}>
-        {onTap && (
-          <button
-            type="button"
-            onClick={onTap}
-            aria-label={`Select ${item.name.trim()}`}
-            className="absolute inset-0 rounded-xl"
-          />
-        )}
-        <div className={`relative ${onTap ? "pointer-events-none" : ""}`}>
-          {content}
-        </div>
-        {infoButton}
-      </div>
-    );
-  }
 
   const Tag = onTap ? "button" : "div";
   return (

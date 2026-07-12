@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 
@@ -35,7 +35,13 @@ export default function LoginPopup() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+  const otpInputRef = useRef<HTMLInputElement>(null);
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  // Auto-focus the OTP field the moment the verify step appears.
+  useEffect(() => {
+    if (isOpen && step === "otp") otpInputRef.current?.focus();
+  }, [isOpen, step]);
 
   useEffect(() => {
     if (resendTimer > 0) {
@@ -303,6 +309,7 @@ export default function LoginPopup() {
                   OTP
                 </label>
                 <input
+                  ref={otpInputRef}
                   id="login-popup-otp"
                   type="text"
                   inputMode="numeric"
