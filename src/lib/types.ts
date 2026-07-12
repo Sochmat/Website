@@ -253,6 +253,15 @@ export interface SubscriptionCredit {
   protein?: number;
   kcal?: number;
   isVeg?: boolean;
+  /** Per-meal delivery address override (snapshot). Falls back to the plan's
+   *  `receiver` when unset, so most meals need no per-meal address at all. */
+  receiver?: {
+    name: string;
+    phone: string;
+    address: string;
+    lat?: number;
+    long?: number;
+  };
   scheduledAt?: Date;
   deliveredAt?: Date;
   expiredAt?: Date;

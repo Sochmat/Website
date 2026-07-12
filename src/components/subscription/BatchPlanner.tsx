@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Pencil, X } from "lucide-react";
 import type { ScheduleDay } from "@/lib/subscriptionSchedule";
 import { suggestItemForDate } from "@/lib/subscriptionSchedule";
+import type { UserAddress } from "@/lib/types";
 import VegDot from "./VegDot";
 import MealPickerSheet from "./MealPickerSheet";
+import MealAddressSheet from "./MealAddressSheet";
 import type { SubscriptionItem } from "./types";
 
 /**
@@ -47,6 +49,8 @@ export default function BatchPlanner({
   items,
   history,
   busy,
+  addresses,
+  defaultReceiver,
   onConfirm,
 }: {
   open: boolean;
@@ -58,12 +62,23 @@ export default function BatchPlanner({
   items: SubscriptionItem[];
   history: { date: string; productId: string }[];
   busy: boolean;
-  onConfirm: (assignments: { date: string; productId: string }[]) => Promise<void>;
+  addresses: UserAddress[];
+  defaultReceiver: { name: string; phone: string; address: string; lat?: number; long?: number };
+  onConfirm: (
+    assignments: {
+      date: string;
+      productId: string;
+      receiver?: { name: string; phone: string; address: string; lat?: number; long?: number };
+    }[],
+  ) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [proposal, setProposal] = useState<Record<string, string>>({});
   const [swapDate, setSwapDate] = useState<string | null>(null);
   const [monthIdx, setMonthIdx] = useState(0);
+  // Per-date delivery address override (the chosen saved address).
+  const [addrByDate, setAddrByDate] = useState<Record<string, UserAddress>>({});
+  const [addrDate, setAddrDate] = useState<string | null>(null);
 
   // Per-date lock/booked lookups from the window.
   const lockedByDate = useMemo(() => {
@@ -107,6 +122,8 @@ export default function BatchPlanner({
     setSelected([]);
     setProposal({});
     setSwapDate(null);
+    setAddrByDate({});
+    setAddrDate(null);
     setMonthIdx(0);
   };
 
@@ -124,6 +141,11 @@ export default function BatchPlanner({
       setSelected(selected.filter((d) => d !== ds));
       setProposal((p) => {
         const next = { ...p };
+        delete next[ds];
+        return next;
+      });
+      setAddrByDate((a) => {
+        const next = { ...a };
         delete next[ds];
         return next;
       });
@@ -145,10 +167,22 @@ export default function BatchPlanner({
   };
 
   const confirm = async () => {
-    const assignments = Object.entries(proposal).map(([date, productId]) => ({
-      date,
-      productId,
-    }));
+    const assignments = Object.entries(proposal).map(([date, productId]) => {
+      const addr = addrByDate[date];
+      return {
+        date,
+        productId,
+        receiver: addr
+          ? {
+              name: addr.receiverName || defaultReceiver.name,
+              phone: addr.receiverPhone || defaultReceiver.phone,
+              address: addr.address,
+              lat: addr.lat,
+              long: addr.long,
+            }
+          : undefined,
+      };
+    });
     if (assignments.length === 0) return;
     await onConfirm(assignments);
     close();
@@ -259,44 +293,71 @@ export default function BatchPlanner({
             <div className="space-y-2">
               {sortedSelected.map((date) => {
                 const item = proposal[date] ? itemById.get(proposal[date]) : undefined;
+                const deliveryLabel = (
+                  addrByDate[date]?.address ?? defaultReceiver.address
+                ).split(",")[0];
                 return (
-                  <div key={date} className="bg-white rounded-2xl p-3 shadow-sm flex items-center gap-3">
-                    {/* Date chip */}
-                    <div className="w-14 shrink-0 rounded-xl bg-[#fff4ec] py-2 text-center">
-                      <p className="text-[10px] font-bold uppercase text-[#c2410c] leading-none">
-                        {(weekdayByDate.get(date) ?? "").slice(0, 3)}
-                      </p>
-                      <p className="text-lg font-black text-[#111] leading-tight">
-                        {Number(date.split("-")[2])}
-                      </p>
+                  <div key={date} className="bg-white rounded-2xl p-3 shadow-sm">
+                    {/* Meal header */}
+                    <div className="flex items-center gap-3">
+                      {/* Date chip */}
+                      <div className="w-14 shrink-0 rounded-xl bg-[#fff4ec] py-2 text-center">
+                        <p className="text-[10px] font-bold uppercase text-[#c2410c] leading-none">
+                          {(weekdayByDate.get(date) ?? "").slice(0, 3)}
+                        </p>
+                        <p className="text-lg font-black text-[#111] leading-tight">
+                          {Number(date.split("-")[2])}
+                        </p>
+                      </div>
+
+                      {/* Proposed meal */}
+                      <div className="flex-1 min-w-0">
+                        {item ? (
+                          <>
+                            <div className="flex items-center gap-1.5">
+                              <VegDot isVeg={item.isVeg} />
+                              <span className="font-medium text-sm text-[#111] truncate">
+                                {item.name.trim()}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-semibold text-[#009940] mt-0.5">
+                              {item.protein}g protein
+                            </p>
+                          </>
+                        ) : (
+                          <span className="text-sm text-gray-400">No meal available</span>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Proposed meal */}
-                    <div className="flex-1 min-w-0">
-                      {item ? (
-                        <>
-                          <div className="flex items-center gap-1.5">
-                            <VegDot isVeg={item.isVeg} />
-                            <span className="font-medium text-sm text-[#111] truncate">
-                              {item.name.trim()}
-                            </span>
-                          </div>
-                          <p className="text-[11px] font-semibold text-[#009940] mt-0.5">
-                            {item.protein}g protein
-                          </p>
-                        </>
+                    {/* Action row — address + change meal, one line */}
+                    <div className="mt-3 flex items-center gap-2">
+                      {addresses.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => setAddrDate(date)}
+                          className="flex min-w-0 flex-1 items-center gap-1 rounded-lg border border-[#f56215]/40 px-2.5 py-1.5 text-xs font-semibold text-[#f56215]"
+                        >
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{deliveryLabel}</span>
+                          <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
+                        </button>
                       ) : (
-                        <span className="text-sm text-gray-400">No meal available</span>
+                        <span className="flex min-w-0 flex-1 items-center gap-1 text-xs text-[#737373]">
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{deliveryLabel}</span>
+                        </span>
                       )}
-                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setSwapDate(date)}
-                      className="shrink-0 rounded-lg border border-[#f56215]/40 px-3 py-1.5 text-[#f56215] font-semibold text-xs hover:bg-[#fff1e8]"
-                    >
-                      Change
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setSwapDate(date)}
+                        className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-[#111] font-semibold text-xs hover:bg-gray-50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Change meal
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -336,6 +397,20 @@ export default function BatchPlanner({
               ? longDayLabel(swapDate, weekdayByDate.get(swapDate)!)
               : "Choose a meal"
           }
+        />
+      )}
+
+      {/* Per-meal delivery address sheet */}
+      {addrDate && (
+        <MealAddressSheet
+          addresses={addresses}
+          current={addrByDate[addrDate]?.address ?? defaultReceiver.address}
+          fallbackName={defaultReceiver.name}
+          onClose={() => setAddrDate(null)}
+          onPick={(addr) => {
+            setAddrByDate((a) => ({ ...a, [addrDate]: addr }));
+            setAddrDate(null);
+          }}
         />
       )}
     </div>
