@@ -320,6 +320,14 @@ export default function AdminLayout({
               >
                 Users
               </Link>
+              <Link
+                href="/admin/payment-logs"
+                className={`font-medium ${
+                  pathname === "/admin/payment-logs" ? "underline" : "hover:underline"
+                }`}
+              >
+                Payment Logs
+              </Link>
               <button
                 type="button"
                 onClick={handleStoreToggle}

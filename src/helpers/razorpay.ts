@@ -52,6 +52,24 @@ async function createRazorpayOrder(amount: number, currency: string) {
   return res.json();
 }
 
+/** Report a client-side checkout event to the payment log (fire-and-forget). */
+function logClient(
+  stage: string,
+  options: RazorpayOptions,
+  extra: Record<string, unknown> = {},
+) {
+  try {
+    void fetch("/api/payment/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true, // still delivers if the page navigates away
+      body: JSON.stringify({ stage, orderId: options.orderId, ...extra }),
+    }).catch(() => {});
+  } catch {
+    // logging must never break checkout
+  }
+}
+
 /** Best-effort: mark a still-pending order as payment-failed. */
 async function markOrderFailed(orderId?: string) {
   if (!orderId) return;
@@ -96,7 +114,10 @@ const UPI_APP_TO_RAZORPAY: Record<UpiApp, string> = {
  */
 async function handleUpiIntent(options: RazorpayOptions, order: any) {
   const loaded = await loadScript(CUSTOM_SDK);
-  if (!loaded) throw new Error("Razorpay SDK failed to load.");
+  if (!loaded) {
+    logClient("sdk-load-failed", options, { razorpayOrderId: order?.id });
+    throw new Error("Razorpay SDK failed to load.");
+  }
 
   const rzp = new (window as any).Razorpay({
     key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -116,17 +137,27 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
     if (verifyData.success) {
       options.onSuccess?.(r);
     } else {
+      logClient("verify-failed", options, {
+        razorpayOrderId: r.razorpay_order_id,
+        razorpayPaymentId: r.razorpay_payment_id,
+        message: verifyData.message,
+      });
       await markOrderFailed(options.orderId);
       options.onError?.(new Error("Payment verification failed"));
     }
   });
 
   rzp.on("payment.error", async (resp: any) => {
-    await markOrderFailed(options.orderId);
     const desc =
       resp?.error?.description ??
       resp?.detail?.error?.description ??
       "Payment failed";
+    logClient("payment-failed", options, {
+      razorpayOrderId: order?.id,
+      error: desc,
+      errorCode: resp?.error?.code ?? resp?.detail?.error?.code,
+    });
+    await markOrderFailed(options.orderId);
     options.onError?.(desc);
   });
 
@@ -147,7 +178,10 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
  */
 async function handleStandardCheckout(options: RazorpayOptions, order: any) {
   const loaded = await loadScript(CHECKOUT_SDK);
-  if (!loaded) throw new Error("Razorpay SDK failed to load.");
+  if (!loaded) {
+    logClient("sdk-load-failed", options, { razorpayOrderId: order?.id });
+    throw new Error("Razorpay SDK failed to load.");
+  }
 
   const rzp = new (window as any).Razorpay({
     key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -168,12 +202,18 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
       if (verifyData.success) {
         options.onSuccess?.(response);
       } else {
+        logClient("verify-failed", options, {
+          razorpayOrderId: response.razorpay_order_id,
+          razorpayPaymentId: response.razorpay_payment_id,
+          message: verifyData.message,
+        });
         await markOrderFailed(options.orderId);
         options.onError?.(new Error("Payment verification failed"));
       }
     },
     modal: {
       ondismiss: () => {
+        logClient("cancelled", options, { razorpayOrderId: order?.id });
         options.onError?.(new Error("Payment cancelled"));
       },
     },
@@ -182,9 +222,14 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
   // Razorpay fires this when a payment attempt fails (declined, timeout, etc.).
   rzp.on(
     "payment.failed",
-    async (resp: { error?: { description?: string } }) => {
-      await markOrderFailed(options.orderId);
+    async (resp: { error?: { description?: string; code?: string } }) => {
       const desc = resp?.error?.description ?? "Payment failed";
+      logClient("payment-failed", options, {
+        razorpayOrderId: order?.id,
+        error: desc,
+        errorCode: resp?.error?.code,
+      });
+      await markOrderFailed(options.orderId);
       options.onError?.(new Error(desc));
     },
   );
@@ -197,6 +242,7 @@ export const handleRazorpayPayment = async (options: RazorpayOptions) => {
     options.amount,
     options.currency || "INR",
   );
+  logClient("checkout-opened", options, { razorpayOrderId: order?.id });
 
   const isSecureOrigin =
     typeof window !== "undefined" && window.location.protocol === "https:";
