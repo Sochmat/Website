@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { connectToDatabase } from "@/lib/mongodb";
@@ -41,9 +42,27 @@ export async function POST(request: NextRequest) {
       amount: amount * 100,
       currency,
       receipt: `receipt_${Date.now()}`,
+      // Carry the internal id on the Razorpay order so the webhook can map the
+      // captured payment back to our record even if the DB write below lagged.
+      notes: { orderId: orderId ?? "", flow },
     };
 
     const order = await razorpay.orders.create(options);
+
+    // Persist the Razorpay↔internal-order link NOW, at create time. This is what
+    // lets the webhook reconcile a payment when the client verify call never
+    // fires (UPI-intent redirect, tab eviction) — without it a captured payment
+    // has no way back to a still-pending order.
+    if (orderId && ObjectId.isValid(orderId)) {
+      const collection = flow === "subscription" ? "subscriptions" : "orders";
+      await db
+        .collection(collection)
+        .updateOne(
+          { _id: new ObjectId(orderId) },
+          { $set: { razorpayOrderId: order.id, updatedAt: new Date() } },
+        );
+    }
+
     await logPayment(db, {
       flow,
       route: ROUTE,

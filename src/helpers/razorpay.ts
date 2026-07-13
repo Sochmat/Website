@@ -33,6 +33,8 @@ interface RazorpayOptions {
   description?: string;
   image?: string;
   orderId?: string;
+  /** Which checkout this is — routes reconciliation to the right collection. */
+  flow?: "order" | "subscription";
   upiApp?: UpiApp;
   onSuccess?: (response: {
     razorpay_order_id: string;
@@ -42,11 +44,16 @@ interface RazorpayOptions {
   onError?: (error: any) => void;
 }
 
-async function createRazorpayOrder(amount: number, currency: string) {
+async function createRazorpayOrder(
+  amount: number,
+  currency: string,
+  orderId?: string,
+  flow?: "order" | "subscription",
+) {
   const res = await fetch("/api/payment/create-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ amount, currency }),
+    body: JSON.stringify({ amount, currency, orderId, flow }),
   });
   if (!res.ok) throw new Error("Failed to create payment order");
   return res.json();
@@ -241,6 +248,8 @@ export const handleRazorpayPayment = async (options: RazorpayOptions) => {
   const order = await createRazorpayOrder(
     options.amount,
     options.currency || "INR",
+    options.orderId,
+    options.flow ?? "order",
   );
   logClient("checkout-opened", options, { razorpayOrderId: order?.id });
 
