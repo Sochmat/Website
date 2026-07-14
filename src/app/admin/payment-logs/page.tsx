@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
 interface PaymentLog {
   _id: string;
@@ -34,6 +34,9 @@ function rupees(paise?: number): string {
   return `₹${(paise / 100).toLocaleString("en-IN")}`;
 }
 
+// Stages that mean the order ended up paid — used to badge a whole group "paid".
+const TERMINAL_SUCCESS = new Set(["verified", "already-paid", "subscription-paid"]);
+
 function when(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("en-IN", {
@@ -51,8 +54,16 @@ export default function PaymentLogsPage() {
   const [loading, setLoading] = useState(true);
   const [outcome, setOutcome] = useState<OutcomeFilter>("all");
   const [q, setQ] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [reloadKey, setReloadKey] = useState(0);
+
+  const toggleGroup = (key: string) =>
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -77,17 +88,48 @@ export default function PaymentLogsPage() {
     };
   }, [outcome, q, reloadKey]);
 
-  // A payment attempt is one razorpayOrderId; group rows so the failing step is
-  // obvious next to its create/success siblings.
-  const grouped = useMemo(() => {
+  // A payment attempt / order is one razorpayOrderId (falling back to the
+  // internal order id). Collapse all its steps into a single row so each order
+  // reads as one entry you expand to see the create → verify → … trail.
+  const groups = useMemo(() => {
     const byKey = new Map<string, PaymentLog[]>();
+    const order: string[] = []; // preserves API sort (newest activity first)
     for (const l of logs) {
       const key = l.razorpayOrderId || l.orderId || l._id;
-      const arr = byKey.get(key) ?? [];
-      arr.push(l);
-      byKey.set(key, arr);
+      if (!byKey.has(key)) {
+        byKey.set(key, []);
+        order.push(key);
+      }
+      byKey.get(key)!.push(l);
     }
-    return byKey;
+    return order.map((key) => {
+      // Steps oldest → newest so the group reads as the payment's timeline.
+      const steps = [...byKey.get(key)!].sort(
+        (a, b) => +new Date(a.createdAt) - +new Date(b.createdAt),
+      );
+      const latest = steps[steps.length - 1];
+      const anyFailure = steps.some((s) => s.outcome === "failure");
+      const resolved = steps.some((s) => TERMINAL_SUCCESS.has(s.stage));
+      // Final state of the attempt: paid wins, else any failure, else latest.
+      const outcome: PaymentLog["outcome"] = resolved
+        ? "success"
+        : anyFailure
+          ? "failure"
+          : latest.outcome;
+      const find = (f: (s: PaymentLog) => boolean) => steps.find(f);
+      return {
+        key,
+        steps,
+        latest,
+        outcome,
+        anyFailure,
+        resolved,
+        amountPaise: find((s) => s.amountPaise !== undefined)?.amountPaise,
+        orderId: find((s) => !!s.orderId)?.orderId,
+        razorpayOrderId: find((s) => !!s.razorpayOrderId)?.razorpayOrderId,
+        razorpayPaymentId: find((s) => !!s.razorpayPaymentId)?.razorpayPaymentId,
+      };
+    });
   }, [logs]);
 
   return (
@@ -137,7 +179,23 @@ export default function PaymentLogsPage() {
           placeholder="Search order / payment id, stage, error…"
           className="flex-1 min-w-[220px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
         />
-        <span className="text-sm text-gray-400">{logs.length} rows</span>
+        {groups.length > 0 && (
+          <button
+            onClick={() =>
+              setExpandedKeys((prev) =>
+                prev.size === groups.length
+                  ? new Set()
+                  : new Set(groups.map((g) => g.key)),
+              )
+            }
+            className="text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+          >
+            {expandedKeys.size === groups.length ? "Collapse all" : "Expand all"}
+          </button>
+        )}
+        <span className="text-sm text-gray-400">
+          {groups.length} order{groups.length === 1 ? "" : "s"} · {logs.length} rows
+        </span>
       </div>
 
       {loading ? (
@@ -149,6 +207,7 @@ export default function PaymentLogsPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="text-left text-gray-500 border-b border-gray-200">
+                <th className="py-2 pr-2 font-medium w-6"></th>
                 <th className="py-2 pr-3 font-medium">Time</th>
                 <th className="py-2 pr-3 font-medium">Outcome</th>
                 <th className="py-2 pr-3 font-medium">Route → stage</th>
@@ -158,70 +217,132 @@ export default function PaymentLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {logs.map((l) => {
-                const siblings = grouped.get(l.razorpayOrderId || l.orderId || l._id);
-                const isOpen = expanded === l._id;
+              {groups.map((g) => {
+                const isOpen = expandedKeys.has(g.key);
                 return (
-                  <tr
-                    key={l._id}
-                    onClick={() => setExpanded(isOpen ? null : l._id)}
-                    className={`border-b border-gray-100 align-top cursor-pointer hover:bg-gray-50 ${
-                      l.outcome === "failure" ? "bg-red-50/40" : ""
-                    }`}
-                  >
-                    <td className="py-2 pr-3 whitespace-nowrap text-gray-600">
-                      {when(l.createdAt)}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          OUTCOME_STYLE[l.outcome] ?? "bg-gray-100"
-                        }`}
-                      >
-                        {l.outcome}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3 whitespace-nowrap">
-                      <span className="text-gray-500">{l.route.replace("/api/payment/", "")}</span>
-                      <span className="text-gray-400"> → </span>
-                      <span className="font-medium text-[#111]">{l.stage}</span>
-                    </td>
-                    <td className="py-2 pr-3 max-w-[320px]">
-                      <p className="text-[#111]">{l.message ?? "—"}</p>
-                      {l.error && <p className="text-red-600 text-xs mt-0.5">{l.error}</p>}
-                      {l.paymentStatus && (
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          razorpay status: <b>{l.paymentStatus}</b>
+                  <Fragment key={g.key}>
+                    {/* Order header — one row per order, click to expand its steps. */}
+                    <tr
+                      onClick={() => toggleGroup(g.key)}
+                      className={`border-b border-gray-200 align-top cursor-pointer hover:bg-gray-50 ${
+                        g.outcome === "failure" ? "bg-red-50/60" : "bg-gray-50/40"
+                      }`}
+                    >
+                      <td className="py-2 pr-2 text-gray-400 select-none">
+                        {isOpen ? "▾" : "▸"}
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap text-gray-600">
+                        {when(g.latest.createdAt)}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            OUTCOME_STYLE[g.outcome] ?? "bg-gray-100"
+                          }`}
+                        >
+                          {g.resolved ? "paid" : g.outcome}
+                        </span>
+                        {g.anyFailure && g.resolved && (
+                          <span
+                            className="ml-1 text-[10px] text-amber-600"
+                            title="recovered after a failed step"
+                          >
+                            ⚑
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        <span className="text-gray-500">
+                          {g.latest.route.replace("/api/payment/", "")}
+                        </span>
+                        <span className="text-gray-400"> → </span>
+                        <span className="font-medium text-[#111]">{g.latest.stage}</span>
+                      </td>
+                      <td className="py-2 pr-3 max-w-[320px]">
+                        <p className="text-[#111]">{g.latest.message ?? "—"}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {g.steps.length} step{g.steps.length === 1 ? "" : "s"}
+                          {g.anyFailure && !g.resolved && (
+                            <span className="text-red-500"> · has a failure</span>
+                          )}
                         </p>
-                      )}
-                      {isOpen && (
-                        <div className="mt-2 space-y-1 text-xs text-gray-600">
-                          {l.expectedAmountPaise !== undefined && (
-                            <p>
-                              expected {rupees(l.expectedAmountPaise)} · got{" "}
-                              {rupees(l.amountPaise)}
-                            </p>
-                          )}
-                          {siblings && siblings.length > 1 && (
-                            <p className="text-gray-400">
-                              {siblings.length} steps for this attempt
-                            </p>
-                          )}
-                          {l.meta && Object.keys(l.meta).length > 0 && (
-                            <pre className="bg-gray-50 rounded p-2 overflow-x-auto">
-                              {JSON.stringify(l.meta, null, 1)}
-                            </pre>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 whitespace-nowrap">{rupees(l.amountPaise)}</td>
-                    <td className="py-2 pr-3 text-xs text-gray-500 font-mono">
-                      {l.orderId && <div title="internal order id">o:{l.orderId.slice(-6)}</div>}
-                      {l.razorpayOrderId && <div>rzp:{l.razorpayOrderId.slice(-6)}</div>}
-                      {l.razorpayPaymentId && <div>pay:{l.razorpayPaymentId.slice(-6)}</div>}
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-2 pr-3 whitespace-nowrap">
+                        {rupees(g.amountPaise)}
+                      </td>
+                      <td className="py-2 pr-3 text-xs text-gray-500 font-mono">
+                        {g.orderId && (
+                          <div title="internal order id">o:{g.orderId.slice(-6)}</div>
+                        )}
+                        {g.razorpayOrderId && <div>rzp:{g.razorpayOrderId.slice(-6)}</div>}
+                        {g.razorpayPaymentId && (
+                          <div>pay:{g.razorpayPaymentId.slice(-6)}</div>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Expanded: the individual steps for this order. */}
+                    {isOpen &&
+                      g.steps.map((l) => (
+                        <tr
+                          key={l._id}
+                          className={`border-b border-gray-100 align-top ${
+                            l.outcome === "failure" ? "bg-red-50/30" : ""
+                          }`}
+                        >
+                          <td className="py-2 pr-2"></td>
+                          <td className="py-2 pr-3 whitespace-nowrap text-gray-500 pl-2 border-l-2 border-gray-200">
+                            {when(l.createdAt)}
+                          </td>
+                          <td className="py-2 pr-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                OUTCOME_STYLE[l.outcome] ?? "bg-gray-100"
+                              }`}
+                            >
+                              {l.outcome}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            <span className="text-gray-500">
+                              {l.route.replace("/api/payment/", "")}
+                            </span>
+                            <span className="text-gray-400"> → </span>
+                            <span className="font-medium text-[#111]">{l.stage}</span>
+                          </td>
+                          <td className="py-2 pr-3 max-w-[320px]">
+                            <p className="text-[#111]">{l.message ?? "—"}</p>
+                            {l.error && (
+                              <p className="text-red-600 text-xs mt-0.5">{l.error}</p>
+                            )}
+                            {l.paymentStatus && (
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                razorpay status: <b>{l.paymentStatus}</b>
+                              </p>
+                            )}
+                            {l.expectedAmountPaise !== undefined && (
+                              <p className="text-xs text-gray-600 mt-0.5">
+                                expected {rupees(l.expectedAmountPaise)} · got{" "}
+                                {rupees(l.amountPaise)}
+                              </p>
+                            )}
+                            {l.meta && Object.keys(l.meta).length > 0 && (
+                              <pre className="bg-gray-50 rounded p-2 overflow-x-auto text-xs text-gray-600 mt-1">
+                                {JSON.stringify(l.meta, null, 1)}
+                              </pre>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap">
+                            {rupees(l.amountPaise)}
+                          </td>
+                          <td className="py-2 pr-3 text-xs text-gray-400 font-mono">
+                            {l.razorpayPaymentId && (
+                              <div>pay:{l.razorpayPaymentId.slice(-6)}</div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
                 );
               })}
             </tbody>
