@@ -15,12 +15,16 @@ interface StoreStatusContextType {
   open: boolean;
   deliveryOn: boolean;
   loading: boolean;
+  /** When closed by the schedule, a label like "11:00 AM" for the reopen time. */
+  opensAtLabel: string | null;
   refresh: () => Promise<void>;
   setOpen: (value: boolean) => Promise<boolean>;
   setDeliveryOn: (value: boolean) => Promise<boolean>;
 }
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Short so an automatic open/close from the schedule shows on open tabs quickly.
+// (The server-side 503 gate enforces immediately regardless of this cadence.)
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const StoreStatusContext = createContext<StoreStatusContextType | undefined>(
   undefined,
@@ -29,6 +33,7 @@ const StoreStatusContext = createContext<StoreStatusContextType | undefined>(
 export function StoreStatusProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(true);
   const [deliveryOn, setDeliveryOnState] = useState(true);
+  const [opensAtLabel, setOpensAtLabel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const cancelledRef = useRef(false);
   const openRef = useRef(true);
@@ -50,6 +55,9 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
       if (data?.success && typeof data.open === "boolean") {
         openRef.current = data.open;
         setOpenState(data.open);
+        setOpensAtLabel(
+          typeof data.opensAtLabel === "string" ? data.opensAtLabel : null,
+        );
       }
       if (data?.success && typeof data.delivery === "boolean") {
         deliveryRef.current = data.delivery;
@@ -123,8 +131,16 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ open, deliveryOn, loading, refresh, setOpen, setDeliveryOn }),
-    [open, deliveryOn, loading, refresh, setOpen, setDeliveryOn],
+    () => ({
+      open,
+      deliveryOn,
+      loading,
+      opensAtLabel,
+      refresh,
+      setOpen,
+      setDeliveryOn,
+    }),
+    [open, deliveryOn, loading, opensAtLabel, refresh, setOpen, setDeliveryOn],
   );
 
   return (

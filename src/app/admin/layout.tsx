@@ -328,6 +328,14 @@ export default function AdminLayout({
               >
                 Payment Logs
               </Link>
+              <Link
+                href="/admin/store-hours"
+                className={`font-medium ${
+                  pathname === "/admin/store-hours" ? "underline" : "hover:underline"
+                }`}
+              >
+                Store Hours
+              </Link>
               <button
                 type="button"
                 onClick={handleStoreToggle}
