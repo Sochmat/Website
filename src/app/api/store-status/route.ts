@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
+import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
 
 export const dynamic = "force-dynamic";
 
@@ -10,10 +11,19 @@ export async function GET() {
       db.collection("settings").findOne({ key: "store" }),
       db.collection("settings").findOne({ key: "delivery" }),
     ]);
-    const open = storeDoc?.open ?? true;
+    const eff = getEffectiveStoreOpen(
+      storeDoc as StoreSettingsDoc | null,
+      new Date(),
+    );
     const delivery = deliveryDoc?.on ?? true;
     return NextResponse.json(
-      { success: true, open, delivery },
+      {
+        success: true,
+        open: eff.open,
+        delivery,
+        scheduleEnabled: eff.scheduleEnabled,
+        opensAtLabel: eff.opensAtLabel,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

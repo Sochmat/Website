@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { User } from "@/lib/types";
+import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
 
 function generateSubscriptionNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -13,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     const { db: settingsDb } = await connectToDatabase();
     const storeDoc = await settingsDb.collection("settings").findOne({ key: "store" });
-    if (storeDoc?.open === false) {
+    if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
         { status: 503 },

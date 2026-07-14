@@ -4,6 +4,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Order, User } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
       settingsDb.collection("settings").findOne({ key: "store" }),
       settingsDb.collection("settings").findOne({ key: "delivery" }),
     ]);
-    if (storeDoc?.open === false) {
+    if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
         { status: 503 },
