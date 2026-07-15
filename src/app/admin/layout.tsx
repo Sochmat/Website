@@ -5,9 +5,69 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import { message } from "antd";
+import { LogoutOutlined } from "@ant-design/icons";
 import type { AdminRole } from "@/lib/useAdminRole";
 
 const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
+
+// Admin navigation, in display order. `adminOnly` items are hidden for the
+// shop role (which only ever reaches Menu and Orders — see SHOP_ALLOWED_PATHS).
+const NAV_ITEMS: { href: string; label: string; adminOnly: boolean }[] = [
+  { href: "/admin/dashboard", label: "Dashboard", adminOnly: true },
+  { href: "/admin/menu", label: "Menu", adminOnly: false },
+  { href: "/admin/banner", label: "Banner", adminOnly: true },
+  { href: "/admin/tiles", label: "Tiles", adminOnly: true },
+  { href: "/admin/meal-cards", label: "Meals", adminOnly: true },
+  { href: "/admin/coupons", label: "Coupons", adminOnly: true },
+  { href: "/admin/orders", label: "Orders", adminOnly: false },
+  { href: "/admin/subscriptions", label: "Subscriptions", adminOnly: true },
+  { href: "/admin/users", label: "Users", adminOnly: true },
+  { href: "/admin/payment-logs", label: "Payment Logs", adminOnly: true },
+  { href: "/admin/store-hours", label: "Store Hours", adminOnly: true },
+];
+
+/**
+ * A live operational-status pill (Store / Delivery). The colored dot and tint
+ * read the current state at a glance; clicking flips it. Disabled while a
+ * toggle is in flight.
+ */
+function StatusToggle({
+  label,
+  on,
+  busy,
+  onClick,
+}: {
+  label: string;
+  on: boolean;
+  busy: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      title={`${label} is ${on ? "on" : "off"} — click to turn ${on ? "off" : "on"}`}
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+        on
+          ? "border-[#024731] bg-[#024731]/25 text-green-300 hover:bg-[#024731]/40"
+          : "border-red-500/40 bg-red-500/15 text-red-300 hover:bg-red-500/25"
+      } ${busy ? "opacity-60 cursor-not-allowed" : ""}`}
+    >
+      <span
+        className={`w-2 h-2 rounded-full ${on ? "bg-green-400" : "bg-red-400"}`}
+        aria-hidden="true"
+      />
+      <span>
+        {label}
+        <span className="hidden md:inline">
+          {" · "}
+          {on ? "On" : "Off"}
+        </span>
+      </span>
+    </button>
+  );
+}
 
 const PAID_NOTIFIED_KEY = "admin_orders_paid_notified";
 const SOUND_ENABLED_KEY = "admin_sound_enabled";
@@ -241,143 +301,70 @@ export default function AdminLayout({
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="bg-[#1c1c1c] text-white px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Sochmat Admin</h1>
-        <nav className="flex items-center gap-4">
-          {!isShop && (
-            <Link
-              href="/admin/dashboard"
-              className={`font-medium ${
-                pathname === "/admin/dashboard" ? "underline" : "hover:underline"
-              }`}
+      <header className="sticky top-0 z-30 bg-[#1c1c1c] text-white shadow-sm">
+        {/* Top row: brand · operational status · account */}
+        <div className="px-6 h-16 flex items-center justify-between gap-4">
+          <Link href="/admin" className="flex items-center gap-2.5 shrink-0">
+            <span className="w-8 h-8 rounded-lg bg-[#024731] flex items-center justify-center font-bold text-sm text-white">
+              S
+            </span>
+            <span className="leading-tight">
+              <span className="block font-bold tracking-tight">Sochmat</span>
+              <span className="block text-[11px] text-gray-400 -mt-0.5">
+                Admin console
+              </span>
+            </span>
+          </Link>
+
+          <div className="flex items-center gap-2">
+            {!isShop && (
+              <>
+                <StatusToggle
+                  label="Store"
+                  on={storeOpen}
+                  busy={storeToggleBusy || storeLoading}
+                  onClick={handleStoreToggle}
+                />
+                <StatusToggle
+                  label="Delivery"
+                  on={deliveryOn}
+                  busy={deliveryToggleBusy || storeLoading}
+                  onClick={handleDeliveryToggle}
+                />
+                <span className="mx-1 h-6 w-px bg-white/15" aria-hidden="true" />
+              </>
+            )}
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-white/10 hover:text-white transition-colors"
             >
-              Dashboard
-            </Link>
-          )}
-          <Link
-            href="/admin/menu"
-            className={`font-medium ${
-              pathname === "/admin/menu" ? "underline" : "hover:underline"
-            }`}
-          >
-            Menu
-          </Link>
-          {!isShop && (
-            <>
-              <Link
-                href="/admin/banner"
-                className={`font-medium ${
-                  pathname === "/admin/banner" ? "underline" : "hover:underline"
-                }`}
-              >
-                Banner
-              </Link>
-              <Link
-                href="/admin/tiles"
-                className={`font-medium ${
-                  pathname === "/admin/tiles" ? "underline" : "hover:underline"
-                }`}
-              >
-                Tiles
-              </Link>
-              <Link
-                href="/admin/meal-cards"
-                className={`font-medium ${
-                  pathname === "/admin/meal-cards"
-                    ? "underline"
-                    : "hover:underline"
-                }`}
-              >
-                Meals
-              </Link>
-              <Link
-                href="/admin/coupons"
-                className={`font-medium ${
-                  pathname === "/admin/coupons"
-                    ? "underline"
-                    : "hover:underline"
-                }`}
-              >
-                Coupons
-              </Link>
-            </>
-          )}
-          <Link
-            href="/admin/orders"
-            className={`font-medium ${
-              pathname === "/admin/orders" ? "underline" : "hover:underline"
-            }`}
-          >
-            Orders
-          </Link>
-          {!isShop && (
-            <>
-              <Link
-                href="/admin/subscriptions"
-                className={`font-medium ${
-                  pathname === "/admin/subscriptions"
-                    ? "underline"
-                    : "hover:underline"
-                }`}
-              >
-                Subscriptions
-              </Link>
-              <Link
-                href="/admin/users"
-                className={`font-medium ${
-                  pathname === "/admin/users" ? "underline" : "hover:underline"
-                }`}
-              >
-                Users
-              </Link>
-              <Link
-                href="/admin/payment-logs"
-                className={`font-medium ${
-                  pathname === "/admin/payment-logs" ? "underline" : "hover:underline"
-                }`}
-              >
-                Payment Logs
-              </Link>
-              <Link
-                href="/admin/store-hours"
-                className={`font-medium ${
-                  pathname === "/admin/store-hours" ? "underline" : "hover:underline"
-                }`}
-              >
-                Store Hours
-              </Link>
-              <button
-                type="button"
-                onClick={handleStoreToggle}
-                disabled={storeToggleBusy || storeLoading}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
-                  storeOpen
-                    ? "bg-[#024731] hover:bg-[#013a28]"
-                    : "bg-red-600 hover:bg-red-700"
-                } ${storeToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                Store: {storeOpen ? "ON" : "OFF"}
-              </button>
-              <button
-                type="button"
-                onClick={handleDeliveryToggle}
-                disabled={deliveryToggleBusy || storeLoading}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors text-white ${
-                  deliveryOn
-                    ? "bg-[#024731] hover:bg-[#013a28]"
-                    : "bg-red-600 hover:bg-red-700"
-                } ${deliveryToggleBusy || storeLoading ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                Delivery: {deliveryOn ? "ON" : "OFF"}
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleLogout}
-            className="bg-white text-[#1c1c1c] px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-          >
-            Logout
-          </button>
+              <LogoutOutlined />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Nav row: pill tabs, horizontally scrollable on narrow screens */}
+        <nav className="border-t border-white/10 px-6">
+          <div className="flex items-center gap-1 overflow-x-auto py-2 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {NAV_ITEMS.filter((item) => !item.adminOnly || !isShop).map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-white text-[#111] shadow-sm"
+                      : "text-gray-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
         </nav>
       </header>
       {!soundEnabled && (
