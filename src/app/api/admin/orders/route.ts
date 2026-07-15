@@ -90,12 +90,39 @@ const PAYMENT_STATUSES = ["pending", "paid", "failed", "refunded"];
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { id, status, paymentStatus, printBill, reject } = await req.json();
+    const { id, status, paymentStatus, printBill, reject, markKotPrinted, markBillPrinted } =
+      await req.json();
     if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, message: "Valid order id is required" },
         { status: 400 }
       );
+    }
+
+    // Browser print station acks: mark a KOT or bill as printed. Mirrors the
+    // retired POST /api/print/* endpoints, but authenticated by the admin
+    // session cookie (enforced in middleware).
+    if (markKotPrinted || markBillPrinted) {
+      const { db } = await connectToDatabase();
+      const _id = new ObjectId(id);
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      if (markKotPrinted) {
+        set.kotPrinted = true;
+        set.kotPrintedAt = new Date();
+      }
+      if (markBillPrinted) {
+        set.billPrinted = true;
+        set.billRequested = false;
+        set.billPrintedAt = new Date();
+      }
+      const result = await db.collection("orders").updateOne({ _id }, { $set: set });
+      if (result.matchedCount === 0) {
+        return NextResponse.json(
+          { success: false, message: "Order not found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true });
     }
     // Reject unknown status values before they can be written to the DB.
     if (status !== undefined && !ORDER_STATUSES.includes(status)) {
