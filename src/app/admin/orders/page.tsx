@@ -3,6 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Table, Select, Button, Popconfirm, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { enqueuePrint } from "@/lib/print/printStation";
+import { renderKot } from "@/lib/print/renderKot";
+import { renderBill } from "@/lib/print/renderBill";
+import { SAMPLE_BILL, SAMPLE_TICKET } from "@/lib/print/samples";
+import type { ReceiptOrder, ShopConfig } from "@/lib/print/types";
+
+const PRINT_STATION_KEY = "sochmat.printStation";
 
 // Shop delay reminders: replay the alert sound at these minute marks after
 // confirmation, while the order is still "confirmed" (not yet out for delivery).
@@ -22,6 +29,35 @@ function formatElapsed(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function receiptOrderFromRow(o: OrderRow): ReceiptOrder {
+  return {
+    id: o.key,
+    orderNumber: o.orderNumber,
+    kotNumber: o.kotNumber,
+    billNumber: o.billNumber,
+    createdAt: o.createdAtIso,
+    method: o.method,
+    paymentMethod: o.paymentMethod,
+    paymentStatus: o.paymentStatus,
+    totalAmount: o.totalAmount,
+    discountAmount: o.discountAmount,
+    deliveryFee: o.deliveryFee,
+    tax: o.tax,
+    receiver: {
+      name: o.receiverName === "-" ? "" : o.receiverName,
+      phone: o.receiverPhone === "-" ? "" : o.receiverPhone,
+      address: o.receiverAddress === "-" ? "" : o.receiverAddress,
+    },
+    items: o.items.map((it) => ({
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+      variantName: it.variantName,
+      addOns: it.addOns ?? [],
+    })),
+  };
 }
 
 const ORDER_STATUSES = [
@@ -80,6 +116,16 @@ interface OrderRow {
   /** Confirmation time in ms (null until accepted); drives the shop timer. */
   confirmedAt: number | null;
   items: OrderItemRow[];
+  method: string;
+  paymentMethod: string;
+  tax: number;
+  discountAmount: number;
+  deliveryFee: number;
+  /** ISO timestamp used by the printed receipts (createdAt is display-only). */
+  createdAtIso: string | null;
+  kotPrinted: boolean;
+  billRequested: boolean;
+  billPrinted: boolean;
 }
 
 export default function AdminOrdersPage() {
@@ -90,6 +136,9 @@ export default function AdminOrdersPage() {
   const [now, setNow] = useState(() => Date.now());
   const reminderAudioRef = useRef<HTMLAudioElement | null>(null);
   const firedRemindersRef = useRef<Set<string>>(new Set());
+  const [isPrintStation, setIsPrintStation] = useState(false);
+  const [shopConfig, setShopConfig] = useState<ShopConfig | null>(null);
+  const inFlightRef = useRef<Set<string>>(new Set());
 
   // Shop-only setup: role flag, reminder audio, and the already-fired marks
   // (persisted so a reload doesn't replay reminders for the same order).
@@ -105,6 +154,23 @@ export default function AdminOrdersPage() {
       // ignore malformed data
     }
   }, []);
+
+  // Read the per-browser print-station toggle on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsPrintStation(localStorage.getItem(PRINT_STATION_KEY) === "1");
+  }, []);
+
+  // Load the shop config once the station is enabled.
+  useEffect(() => {
+    if (!isPrintStation || shopConfig) return;
+    fetch("/api/admin/print-config")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setShopConfig(data.config as ShopConfig);
+      })
+      .catch(() => {});
+  }, [isPrintStation, shopConfig]);
 
   // Tick once a second so the per-order timer counts up (shop panel only).
   useEffect(() => {
@@ -190,6 +256,15 @@ export default function AdminOrdersPage() {
               confirmedAt: o.confirmedAt
                 ? new Date(o.confirmedAt as string).getTime()
                 : null,
+              method: String(o.method ?? "Delivery"),
+              paymentMethod: String(o.paymentMethod ?? ""),
+              tax: Number(o.tax ?? 0),
+              discountAmount: Number(o.discountAmount ?? 0),
+              deliveryFee: Number(o.deliveryFee ?? 0),
+              createdAtIso: o.createdAt ? String(o.createdAt) : null,
+              kotPrinted: o.kotPrinted === true,
+              billRequested: o.billRequested === true,
+              billPrinted: o.billPrinted === true,
               items: Array.isArray(o.orderItems)
                 ? (o.orderItems as Array<Record<string, unknown>>).map(
                     (it) => ({
@@ -254,6 +329,7 @@ export default function AdminOrdersPage() {
       if (data.success) {
         // Accepting/rejecting an order stops the new-order ring.
         if (field === "status") notifyOrderHandled();
+        const confirming = field === "status" && value === "confirmed";
         setOrders((prev) =>
           prev.map((o) =>
             o.key === id
@@ -268,6 +344,17 @@ export default function AdminOrdersPage() {
                     data.confirmedAt != null
                       ? new Date(data.confirmedAt).getTime()
                       : o.confirmedAt,
+                  ...(confirming
+                    ? {
+                        kotPrinted: false,
+                        billNumber:
+                          data.billNumber != null
+                            ? Number(data.billNumber)
+                            : o.billNumber,
+                        billRequested: true,
+                        billPrinted: false,
+                      }
+                    : {}),
                 }
               : o,
           ),
@@ -327,6 +414,67 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function ackPrint(id: string, which: "kot" | "bill") {
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          [which === "kot" ? "markKotPrinted" : "markBillPrinted"]: true,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.key === id
+              ? which === "kot"
+                ? { ...o, kotPrinted: true }
+                : { ...o, billPrinted: true, billRequested: false }
+              : o,
+          ),
+        );
+      }
+    } catch {
+      // Ack failed -> leave flag unset so it retries on the next poll.
+    } finally {
+      // Clearing the guard lets a failed ack re-enqueue next poll.
+      inFlightRef.current.delete(`${id}:${which}`);
+    }
+  }
+
+  // Print station: auto-print KOTs (on accept) and bills (on request). Only the
+  // browser flagged as the station prints. An in-flight guard prevents the same
+  // ticket being queued twice across polls; a failed ack clears it so the ticket
+  // reprints next poll (matches the old Python agent's print-then-ack behaviour).
+  useEffect(() => {
+    if (!isPrintStation || !shopConfig) return;
+    for (const rowOrder of orders) {
+      if (rowOrder.status === "confirmed" && !rowOrder.kotPrinted) {
+        const tag = `${rowOrder.key}:kot`;
+        if (!inFlightRef.current.has(tag)) {
+          inFlightRef.current.add(tag);
+          const receipt = receiptOrderFromRow(rowOrder);
+          enqueuePrint(renderKot(receipt, shopConfig), () =>
+            ackPrint(rowOrder.key, "kot"),
+          );
+        }
+      }
+      if (rowOrder.billRequested && !rowOrder.billPrinted) {
+        const tag = `${rowOrder.key}:bill`;
+        if (!inFlightRef.current.has(tag)) {
+          inFlightRef.current.add(tag);
+          const receipt = receiptOrderFromRow(rowOrder);
+          enqueuePrint(renderBill(receipt, shopConfig), () =>
+            ackPrint(rowOrder.key, "bill"),
+          );
+        }
+      }
+    }
+    // ackPrint is stable enough for this effect; orders/config/flag drive it.
+  }, [orders, isPrintStation, shopConfig]);
+
   async function handlePrintBill(id: string) {
     setUpdatingIds((prev) => new Set(prev).add(id));
     try {
@@ -346,6 +494,8 @@ export default function AdminOrdersPage() {
                     data.billNumber != null
                       ? Number(data.billNumber)
                       : o.billNumber,
+                  billRequested: true,
+                  billPrinted: false,
                 }
               : o,
           ),
@@ -709,6 +859,46 @@ export default function AdminOrdersPage() {
       <h2 className="text-lg font-bold text-gray-800 mb-4">
         Orders ({orders.length})
       </h2>
+      <div
+        style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
+      >
+        <Button
+          type={isPrintStation ? "primary" : "default"}
+          onClick={() => {
+            const next = !isPrintStation;
+            setIsPrintStation(next);
+            localStorage.setItem(PRINT_STATION_KEY, next ? "1" : "0");
+            message.info(
+              next
+                ? "This browser is now the print station"
+                : "Print station disabled on this browser",
+            );
+          }}
+        >
+          {isPrintStation ? "Print Station: ON" : "Print Station: OFF"}
+        </Button>
+        {isPrintStation && (
+          <Button
+            onClick={() => {
+              const cfg =
+                shopConfig ?? {
+                  shopName: "SOCHMAT",
+                  orderSource: "Website",
+                  legalName: "",
+                  gstNo: "",
+                  fssaiNo: "",
+                  contact: "",
+                  address: "",
+                  cashier: "biller",
+                };
+              enqueuePrint(renderKot(SAMPLE_TICKET, cfg), () => {});
+              enqueuePrint(renderBill(SAMPLE_BILL, cfg), () => {});
+            }}
+          >
+            Test print
+          </Button>
+        )}
+      </div>
       <Table
         columns={columns}
         dataSource={orders}
