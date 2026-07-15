@@ -167,3 +167,30 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+/** Hard-delete a plan. `?id=<planId>`. Admin-only (middleware-guarded). */
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id || !ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { success: false, message: "Valid plan ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const { db } = await connectToDatabase();
+    const result = await db.collection(PLANS).deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ success: false, message: "Plan not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting subscription plan:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to delete plan" },
+      { status: 500 },
+    );
+  }
+}
