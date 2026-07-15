@@ -244,6 +244,16 @@ export default function AdminLayout({
       <header className="bg-[#1c1c1c] text-white px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-bold">Sochmat Admin</h1>
         <nav className="flex items-center gap-4">
+          {!isShop && (
+            <Link
+              href="/admin/dashboard"
+              className={`font-medium ${
+                pathname === "/admin/dashboard" ? "underline" : "hover:underline"
+              }`}
+            >
+              Dashboard
+            </Link>
+          )}
           <Link
             href="/admin/menu"
             className={`font-medium ${
