@@ -42,8 +42,7 @@ export async function middleware(request: NextRequest) {
 
   // Lenient blanket per-IP limit on every API request. Sensitive routes apply
   // their own stricter limits inside the handler. Fails open if Redis is down.
-  // Internal print endpoints (polled by the in-store print agent) are exempt.
-  if (pathname.startsWith("/api/") && !pathname.startsWith("/api/print/")) {
+  if (pathname.startsWith("/api/")) {
     const limited = await rateLimit(request, limiters.global);
     if (limited) return limited;
   }

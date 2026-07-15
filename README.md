@@ -33,7 +33,7 @@ Create a Redis database in the Upstash console and copy the REST URL + token. If
 
 Limits are defined in `src/lib/rateLimit.ts`:
 
-- A lenient blanket per-IP limit on all `/api/*` (applied in `middleware.ts`; internal `/api/print/*` is exempt).
+- A lenient blanket per-IP limit on all `/api/*` (applied in `middleware.ts`).
 - Stricter limits on sensitive endpoints: OTP send (per IP **and** per phone/email), OTP verify / logins, order + payment, and geocode lookups.
 
 ## Learn More
