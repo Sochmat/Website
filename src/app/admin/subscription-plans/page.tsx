@@ -160,14 +160,19 @@ interface Delivery {
   itemName?: string;
   protein?: number;
   isVeg?: boolean;
+  image?: string;
   status: string;
   locked: boolean;
 }
 
-// Builds a wa.me click-to-chat link with a friendly "your meal is on its way"
-// message pre-filled. Returns null when the phone isn't a valid 10-digit number
-// (stored numbers are bare 10 digits, no country code), so the button can render
-// disabled instead of producing a broken link.
+// Builds a wa.me click-to-chat link with an appetite-whetting "your meal is on
+// its way" message pre-filled. Returns null when the phone isn't a valid
+// 10-digit number (stored numbers are bare 10 digits, no country code), so the
+// button can render disabled instead of producing a broken link.
+//
+// Intentionally emoji-free: the delivery pipeline mangles astral-plane
+// characters into replacement boxes on the recipient's phone, so the copy leans
+// on wording (and *bold*) to stay lively instead.
 function buildWhatsAppLink(d: Delivery): string | null {
   const phone = (d.receiver?.phone || "").replace(/\D/g, "");
   if (phone.length !== 10) return null;
@@ -175,12 +180,25 @@ function buildWhatsAppLink(d: Delivery): string | null {
   const name = d.receiver?.name?.trim();
   const item = d.itemName?.trim();
   const time = d.deliveryTime?.trim();
+  const image = d.image?.trim();
 
-  const greeting = name ? `Hi ${name}!` : "Hi!";
-  const meal = item ? `*${item}*` : "your meal";
-  const arrival = time ? `around ${time}` : "soon";
-  const text = `${greeting} 😊 Your Sochmat meal for today — ${meal} — is being prepared and will reach you ${arrival}. Thank you!`;
+  const greeting = name ? `Hey ${name}!` : "Hey there!";
+  const meal = item ? `*${item}*` : "your Sochmat meal";
+  const arrival = time ? `by *${formatTime(time)}*` : "soon";
+  const proteinPunch =
+    typeof d.protein === "number" && d.protein > 0
+      ? ` — a ${d.protein}g-protein punch to fuel your day`
+      : "";
 
+  const lines = [
+    `${greeting} Hot, fresh & made-to-order: ${meal} is sizzling in our kitchen right now${proteinPunch}.`,
+    `It'll be at your door ${arrival}. Keep your appetite ready!`,
+  ];
+  // A raw image URL on its own line lets WhatsApp render an inline preview.
+  if (image) lines.push(`Here's a peek:\n${image}`);
+  lines.push("— Team Sochmat");
+
+  const text = lines.join("\n\n");
   return `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
 }
 

@@ -35,27 +35,53 @@ export async function GET(request: NextRequest) {
         })
         .toArray()) as unknown as SubscriptionMealPlan[];
 
+      const isDeliveryOnDate = (c: SubscriptionMealPlan["credits"][number]) =>
+        c.date === date && (c.status === "scheduled" || c.status === "delivered");
+
+      // Item images aren't snapshotted onto the credit, so resolve them by
+      // productId for the WhatsApp message. Missing/invalid ids yield no image.
+      const productIds = [
+        ...new Set(
+          plans.flatMap((plan) =>
+            plan.credits
+              .filter(isDeliveryOnDate)
+              .map((c) => c.productId)
+              .filter((id): id is string => !!id && ObjectId.isValid(id)),
+          ),
+        ),
+      ];
+      const imageById = new Map<string, string>();
+      if (productIds.length) {
+        const items = (await db
+          .collection("subscriptionMenuItems")
+          .find(
+            { _id: { $in: productIds.map((id) => new ObjectId(id)) } },
+            { projection: { image: 1 } },
+          )
+          .toArray()) as { _id: ObjectId; image?: string }[];
+        for (const it of items) {
+          if (it.image) imageById.set(String(it._id), it.image);
+        }
+      }
+
       // Each plan freezes at its own delivery-time cutoff, so `locked` is
       // computed per delivery rather than once for the whole date.
       const deliveries = plans.flatMap((plan) =>
-        plan.credits
-          .filter(
-            (c) => c.date === date && (c.status === "scheduled" || c.status === "delivered"),
-          )
-          .map((c) => ({
-            planId: String(plan._id),
-            creditId: c.id,
-            planNumber: plan.planNumber,
-            bracket: plan.bracket,
-            diet: plan.diet,
-            receiver: plan.receiver,
-            deliveryTime: plan.deliveryTime,
-            itemName: c.itemName,
-            protein: c.protein,
-            isVeg: c.isVeg,
-            status: c.status,
-            locked: isDateLocked(date, now, plan.deliveryTime),
-          })),
+        plan.credits.filter(isDeliveryOnDate).map((c) => ({
+          planId: String(plan._id),
+          creditId: c.id,
+          planNumber: plan.planNumber,
+          bracket: plan.bracket,
+          diet: plan.diet,
+          receiver: plan.receiver,
+          deliveryTime: plan.deliveryTime,
+          itemName: c.itemName,
+          protein: c.protein,
+          isVeg: c.isVeg,
+          image: c.productId ? imageById.get(c.productId) : undefined,
+          status: c.status,
+          locked: isDateLocked(date, now, plan.deliveryTime),
+        })),
       );
 
       // Day-level flag = "every delivery is frozen" — drives the admin's
