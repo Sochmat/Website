@@ -565,7 +565,8 @@ function PurchaseWizard() {
                           key={it.id}
                           item={it}
                           subscriptionPrice={totals.per}
-                          onTap={() => setDetailItem(it)}
+                          // Item detail sheet disabled for now — no onTap so the
+                          // card renders as a plain (non-clickable) card.
                         />
                       ))}
                     </div>

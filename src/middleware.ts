@@ -21,6 +21,12 @@ function isPublicAdminPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Temporarily blocked: the /subscribe flow is disabled for now. Send any
+  // visitor (on any host) back to the home page. Remove this to re-enable.
+  if (pathname === "/subscribe" || pathname.startsWith("/subscribe/")) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   // Subscription subdomain: render the /subscription route group for this host.
   // API routes and Next internals are shared and must NOT be rewritten.
   const host = request.headers.get("host") ?? request.nextUrl.host;
