@@ -51,6 +51,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null);
+    // Drop the httpOnly session too — clearing localStorage alone would leave the
+    // server still treating this browser as signed in.
+    void fetch("/api/users/logout", { method: "POST" }).catch(() => {});
   };
 
   const value = useMemo(

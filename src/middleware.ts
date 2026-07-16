@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
+import { isSubscriptionHost } from "@/lib/subscription";
 
 // Public admin paths that must NOT require a session (otherwise you could never
 // log in). Everything else under /admin and /api/admin requires a valid cookie.
@@ -19,6 +20,31 @@ function isPublicAdminPath(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Temporarily blocked: the /subscribe flow is disabled for now. Send any
+  // visitor (on any host) back to the home page. Remove this to re-enable.
+  if (pathname === "/subscribe" || pathname.startsWith("/subscribe/")) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // Subscription subdomain: render the /subscription route group for this host.
+  // API routes and Next internals are shared and must NOT be rewritten.
+  const host = request.headers.get("host") ?? request.nextUrl.host;
+  if (isSubscriptionHost(host)) {
+    // The admin surface is never available on the subscription host.
+    if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    if (
+      !pathname.startsWith("/api/") &&
+      !pathname.startsWith("/subscription") &&
+      !pathname.startsWith("/_next")
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/subscription${pathname === "/" ? "" : pathname}`;
+      return NextResponse.rewrite(url);
+    }
+  }
 
   // Lenient blanket per-IP limit on every API request. Sensitive routes apply
   // their own stricter limits inside the handler. Fails open if Redis is down.

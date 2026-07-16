@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BUSINESS_LAT, BUSINESS_LNG } from "@/helpers/distance";
 import { useUser } from "@/context/UserContext";
 import type { UserAddress } from "@/lib/types";
 import { Divider } from "antd";
 import { message } from "antd";
+import SheetCloseButton from "./subscription/SheetCloseButton";
 
 interface AddAddressSheetProps {
   open: boolean;
@@ -14,6 +15,13 @@ interface AddAddressSheetProps {
   editAddress?: UserAddress | null;
   /** Legacy prop — if provided, skip internal save logic */
   onSave?: (addr: UserAddress) => void;
+  /** Show the floating centered close button (subscription flow). */
+  floatingClose?: boolean;
+  /**
+   * When set, the receiver name/phone inputs are hidden and these values are
+   * used instead — e.g. adding a 2nd address reuses the first one's receiver.
+   */
+  receiverOverride?: { name: string; phone: string } | null;
 }
 
 export default function AddAddressSheet({
@@ -22,6 +30,8 @@ export default function AddAddressSheet({
   onSaved,
   editAddress,
   onSave,
+  receiverOverride = null,
+  floatingClose = false,
 }: AddAddressSheetProps) {
   const { user, isAuthenticated, setUser } = useUser();
 
@@ -39,11 +49,13 @@ export default function AddAddressSheet({
   const [locality, setLocality] = useState(() =>
     editAddress ? parseAddress(editAddress.address).locality : "",
   );
+  // For a brand-new address, seed the receiver from the signed-in profile so
+  // returning customers don't retype their own name and number.
   const [receiverName, setReceiverName] = useState(
-    () => editAddress?.receiverName ?? "",
+    () => editAddress?.receiverName ?? user?.name ?? "",
   );
   const [receiverPhone, setReceiverPhone] = useState(
-    () => editAddress?.receiverPhone ?? "",
+    () => editAddress?.receiverPhone ?? user?.phone ?? "",
   );
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,12 +90,22 @@ export default function AddAddressSheet({
     } else if (open && !editAddress) {
       setFlat("");
       setLocality("");
-      setReceiverName("");
-      setReceiverPhone("");
+      // Prefill receiver from the profile for a new address.
+      setReceiverName(user?.name ?? "");
+      setReceiverPhone(user?.phone ?? "");
       setLocationData(null);
       setPickupAtStore(false);
     }
-  }, [open, editAddress]);
+  }, [open, editAddress, user?.name, user?.phone]);
+
+  // Auto-focus the receiver name when the sheet opens (only when the field is
+  // shown — it's hidden when a shared receiver is reused).
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!open || receiverOverride) return;
+    const id = setTimeout(() => nameInputRef.current?.focus(), 100);
+    return () => clearTimeout(id);
+  }, [open, receiverOverride]);
 
   const handleUseStoreLocation = () => {
     setLocationData({
@@ -110,9 +132,12 @@ export default function AddAddressSheet({
 
   const handleSave = async () => {
     const addressStr = [flat, locality].filter(Boolean).join(", ");
+    // Reuse the shared receiver when adding a subsequent address.
+    const effReceiverName = (receiverOverride?.name ?? receiverName).trim();
+    const effReceiverPhone = (receiverOverride?.phone ?? receiverPhone).trim();
     if (!addressStr.trim()) return;
-    if (!receiverName.trim()) return;
-    if (!receiverPhone.trim()) return;
+    if (!effReceiverName) return;
+    if (!effReceiverPhone) return;
     const lat = locationData?.lat ?? 0;
     const long = locationData?.lng ?? 0;
     const pincode = locationData?.pincode ?? "";
@@ -128,8 +153,8 @@ export default function AddAddressSheet({
       lat,
       long,
       pincode: pincode.trim() || "—",
-      receiverName: receiverName.trim(),
-      receiverPhone: receiverPhone.trim(),
+      receiverName: effReceiverName,
+      receiverPhone: effReceiverPhone,
       pickupAtStore,
     };
 
@@ -219,20 +244,21 @@ export default function AddAddressSheet({
   const addressStr = [flat, locality].filter(Boolean).join(", ");
   const phoneDigits = receiverPhone.replace(/\D/g, "");
   const validPhone = phoneDigits.length === 10;
-  const canSave =
-    addressStr.trim().length > 0 &&
-    receiverName.trim().length > 0 &&
-    validPhone;
+  // With a shared receiver, the hidden name/phone don't gate saving.
+  const canSave = receiverOverride
+    ? addressStr.trim().length > 0
+    : addressStr.trim().length > 0 && receiverName.trim().length > 0 && validPhone;
 
   return (
-    <>
+    <div className="fixed inset-0 z-[220] flex flex-col items-center justify-end">
       <div
-        className="fixed inset-0 z-[220] bg-black/40"
+        className="absolute inset-0 bg-black/40"
         onClick={onClose}
         aria-hidden
       />
+      {floatingClose && <SheetCloseButton onClose={onClose} />}
       <div
-        className="fixed left-0 right-0 bottom-0 z-[221] max-w-[430px] mx-auto bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[90vh] overflow-y-auto"
+        className="relative w-full max-w-[430px] bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[90vh] overflow-y-auto"
         role="dialog"
         aria-modal="true"
         aria-label="Add New Address"
@@ -315,31 +341,43 @@ export default function AddAddressSheet({
 
           <Divider style={{ margin: "8px 0px" }} />
 
-          <input
-            type="text"
-            placeholder="Receiver's Name *"
-            value={receiverName}
-            onChange={(e) => setReceiverName(e.target.value)}
-            required
-            className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
-          />
-          <input
-            type="tel"
-            inputMode="numeric"
-            maxLength={10}
-            placeholder="Enter 10-digit Phone Number *"
-            value={receiverPhone}
-            onChange={(e) => {
-              const val = e.target.value.replace(/\D/g, "").slice(0, 10);
-              setReceiverPhone(val);
-            }}
-            required
-            className={`w-full border rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent ${receiverPhone.length > 0 && !validPhone ? "border-red-400 mb-1" : "border-[#e5e5e5] mb-6"}`}
-          />
-          {receiverPhone.length > 0 && !validPhone && (
-            <p className="text-red-500 text-xs mb-4">
-              Phone number must be exactly 10 digits
-            </p>
+          {receiverOverride ? (
+            <div className="mb-6 rounded-xl bg-[#f6f7f8] px-4 py-3">
+              <p className="text-xs text-[#737373]">Delivering to</p>
+              <p className="text-sm font-semibold text-[#111]">
+                {receiverOverride.name} · {receiverOverride.phone}
+              </p>
+            </div>
+          ) : (
+            <>
+              <input
+                ref={nameInputRef}
+                type="text"
+                placeholder="Receiver's Name *"
+                value={receiverName}
+                onChange={(e) => setReceiverName(e.target.value)}
+                required
+                className="w-full border border-[#e5e5e5] rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent mb-3"
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                placeholder="Enter 10-digit Phone Number *"
+                value={receiverPhone}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  setReceiverPhone(val);
+                }}
+                required
+                className={`w-full border rounded-xl px-4 py-3 text-[#111] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[#f56215] focus:border-transparent ${receiverPhone.length > 0 && !validPhone ? "border-red-400 mb-1" : "border-[#e5e5e5] mb-6"}`}
+              />
+              {receiverPhone.length > 0 && !validPhone && (
+                <p className="text-red-500 text-xs mb-4">
+                  Phone number must be exactly 10 digits
+                </p>
+              )}
+            </>
           )}
 
           <button
@@ -356,6 +394,6 @@ export default function AddAddressSheet({
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
