@@ -699,11 +699,11 @@ function PurchaseWizard() {
             Questions or need help before subscribing?
           </p>
           <a
-            href="tel:+917303210961"
+            href="tel:+919759399537"
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#f56215] py-4 text-base font-semibold text-white active:bg-[#e05610]"
           >
             <Phone className="h-5 w-5" />
-            Call us · 7303210961
+            Call us · 9759399537
           </a>
         </div>
       )}
