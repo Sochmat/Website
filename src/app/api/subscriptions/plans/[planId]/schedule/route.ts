@@ -107,6 +107,7 @@ export async function POST(
       takenDates: takenDates(plan),
       availableCredits: accounting.available,
       itemAllowed: !!item && isItemAllowed(item, plan.bracket, plan.diet),
+      deliveryTime: plan.deliveryTime,
     });
     if (rejection) return reject(rejection);
 
@@ -187,6 +188,7 @@ export async function PATCH(
       planStatus: plan.status,
       takenDates: takenDates(plan),
       itemAllowed: !!item && isItemAllowed(item, plan.bracket, plan.diet),
+      deliveryTime: plan.deliveryTime,
     });
     if (rejection) return reject(rejection);
 
@@ -248,7 +250,12 @@ export async function DELETE(
       );
     }
 
-    const rejection = validateUnschedule({ now, date: credit.date, planStatus: plan.status });
+    const rejection = validateUnschedule({
+      now,
+      date: credit.date,
+      planStatus: plan.status,
+      deliveryTime: plan.deliveryTime,
+    });
     if (rejection) return reject(rejection);
 
     const result = await db.collection(PLANS).updateOne(

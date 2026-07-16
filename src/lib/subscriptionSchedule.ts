@@ -2,27 +2,73 @@ import { addIstDays, istDaysBetween, istInstant, istToday, istWeekday } from "./
 import { CREDIT_VALIDITY_DAYS } from "./subscriptionBrackets";
 import type { SubscriptionCredit, SubscriptionMealPlan } from "./types";
 
-/** A delivery day freezes at noon IST on the day itself. */
+/**
+ * Fallback freeze hour for a delivery whose `deliveryTime` is missing or
+ * unparseable (legacy plans, blank payloads). Live plans lock relative to their
+ * own delivery time — see {@link deliveryCutoffAt}.
+ */
 export const DELIVERY_CUTOFF_HOUR_IST = 12;
+/**
+ * The kitchen needs this many hours of prep before a delivery, so a day's
+ * credit freezes `KITCHEN_LEAD_HOURS` before the customer's chosen delivery
+ * time (e.g. a 12:00 slot locks at 09:00 IST, a 21:00 slot at 18:00).
+ */
+export const KITCHEN_LEAD_HOURS = 3;
 /** The next day's suggestion appears at 20:00 IST the evening before. */
 export const SUGGESTION_HOUR_IST = 20;
 /**
- * Hours of notice the kitchen needs before the cutoff. 0 means a customer may
- * book today right up until noon. Raise this (e.g. to 12, pushing the last
- * bookable moment back to midnight IST of D-1) without touching any logic.
+ * Extra hours of notice on top of the kitchen lead. 0 means a customer may edit
+ * right up until the `KITCHEN_LEAD_HOURS` cutoff. Raise this to push the last
+ * bookable moment earlier without touching any logic.
  */
 export const MIN_LEAD_HOURS = 0;
 
 const MS_PER_HOUR = 3_600_000;
 
-/** The instant after which delivery day `date` is frozen and belongs to the kitchen. */
-export function deliveryCutoffAt(date: string): Date {
-  return istInstant(date, DELIVERY_CUTOFF_HOUR_IST, 0);
+/** Parse an "HH:mm" IST delivery slot. Returns null when absent or malformed. */
+function parseHhMm(deliveryTime?: string): { hour: number; minute: number } | null {
+  if (!deliveryTime) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(deliveryTime.trim());
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
+/**
+ * The instant after which delivery day `date` is frozen and belongs to the
+ * kitchen: `KITCHEN_LEAD_HOURS` before the plan's `deliveryTime`. Falls back to
+ * noon IST when the delivery time is missing or unparseable.
+ */
+export function deliveryCutoffAt(date: string, deliveryTime?: string): Date {
+  const slot = parseHhMm(deliveryTime);
+  if (!slot) return istInstant(date, DELIVERY_CUTOFF_HOUR_IST, 0);
+  const delivery = istInstant(date, slot.hour, slot.minute);
+  return new Date(delivery.getTime() - KITCHEN_LEAD_HOURS * MS_PER_HOUR);
 }
 
 /** The last instant at which `date` may still be booked. */
-export function bookingDeadlineAt(date: string): Date {
-  return new Date(deliveryCutoffAt(date).getTime() - MIN_LEAD_HOURS * MS_PER_HOUR);
+export function bookingDeadlineAt(date: string, deliveryTime?: string): Date {
+  return new Date(deliveryCutoffAt(date, deliveryTime).getTime() - MIN_LEAD_HOURS * MS_PER_HOUR);
+}
+
+/**
+ * The kitchen cutoff as a human "9:00 AM" label, for surfacing the real
+ * per-delivery freeze time in the UI. Uses the same missing/invalid fallback as
+ * {@link deliveryCutoffAt} (noon).
+ */
+export function deliveryCutoffLabel(deliveryTime?: string): string {
+  const slot = parseHhMm(deliveryTime);
+  const totalMinutes = slot
+    ? slot.hour * 60 + slot.minute - KITCHEN_LEAD_HOURS * 60
+    : DELIVERY_CUTOFF_HOUR_IST * 60;
+  const norm = ((totalMinutes % 1440) + 1440) % 1440;
+  const h = Math.floor(norm / 60);
+  const m = norm % 60;
+  const period = h < 12 ? "AM" : "PM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
 /** The instant the suggestion for `date` becomes visible: 20:00 IST on D-1. */
@@ -34,12 +80,12 @@ export function suggestionVisibleFrom(date: string): Date {
  * Locked days reject schedule / reschedule / unschedule. Always derived, never
  * stored — a clock skew or a redeploy can't leave a stale lock flag in Mongo.
  */
-export function isDateLocked(date: string, now: Date): boolean {
-  return now.getTime() >= deliveryCutoffAt(date).getTime();
+export function isDateLocked(date: string, now: Date, deliveryTime?: string): boolean {
+  return now.getTime() >= deliveryCutoffAt(date, deliveryTime).getTime();
 }
 
-export function isDateBookable(date: string, now: Date): boolean {
-  return now.getTime() < bookingDeadlineAt(date).getTime();
+export function isDateBookable(date: string, now: Date, deliveryTime?: string): boolean {
+  return now.getTime() < bookingDeadlineAt(date, deliveryTime).getTime();
 }
 
 export function isSuggestionVisible(date: string, now: Date): boolean {
@@ -53,11 +99,15 @@ export interface ScheduleWindow {
   to: string;
 }
 
-export function schedulableWindow(now: Date, expiresOn: string): ScheduleWindow {
+export function schedulableWindow(
+  now: Date,
+  expiresOn: string,
+  deliveryTime?: string,
+): ScheduleWindow {
   let from = istToday(now);
-  // Walk forward off any already-locked day. Bounded by MIN_LEAD_HOURS, so this
-  // runs at most a day or two; the cap is a guard against a pathological config.
-  for (let i = 0; i < 3 && !isDateBookable(from, now); i++) {
+  // Walk forward off any already-locked day. Bounded so this runs at most a day
+  // or two; the cap is a guard against a pathological config.
+  for (let i = 0; i < 3 && !isDateBookable(from, now, deliveryTime); i++) {
     from = addIstDays(from, 1);
   }
   return { from, to: expiresOn };
@@ -78,6 +128,7 @@ export interface ScheduleDay {
 export function schedulableDates(
   now: Date,
   expiresOn: string,
+  deliveryTime?: string,
   maxDays: number = CREDIT_VALIDITY_DAYS,
 ): ScheduleDay[] {
   const start = istToday(now);
@@ -90,7 +141,7 @@ export function schedulableDates(
     out.push({
       date,
       weekday: istWeekday(date),
-      locked: isDateLocked(date, now),
+      locked: isDateLocked(date, now, deliveryTime),
       suggestionVisible: isSuggestionVisible(date, now),
     });
   }
@@ -128,9 +179,10 @@ function checkTargetDate(
   now: Date,
   date: string,
   expiresOn: string,
+  deliveryTime?: string,
 ): ScheduleRejection | null {
   if (date < istToday(now)) return "date-in-past";
-  if (!isDateBookable(date, now)) return "date-locked";
+  if (!isDateBookable(date, now, deliveryTime)) return "date-locked";
   if (date > expiresOn) return "date-after-expiry";
   return null;
 }
@@ -145,10 +197,17 @@ export function validateSchedule(input: {
   takenDates: string[];
   availableCredits: number;
   itemAllowed: boolean;
+  /** Plan's "HH:mm" IST slot; drives the per-plan kitchen cutoff. */
+  deliveryTime?: string;
 }): ScheduleRejection | null {
   if (input.planStatus !== "active") return "plan-not-active";
 
-  const dateProblem = checkTargetDate(input.now, input.date, input.expiresOn);
+  const dateProblem = checkTargetDate(
+    input.now,
+    input.date,
+    input.expiresOn,
+    input.deliveryTime,
+  );
   if (dateProblem) return dateProblem;
 
   if (input.takenDates.includes(input.date)) return "date-taken";
@@ -169,11 +228,18 @@ export function validateReschedule(input: {
   planStatus: PlanStatus;
   takenDates: string[];
   itemAllowed: boolean;
+  /** Plan's "HH:mm" IST slot; drives the per-plan kitchen cutoff. */
+  deliveryTime?: string;
 }): ScheduleRejection | null {
   if (input.planStatus !== "active") return "plan-not-active";
-  if (isDateLocked(input.fromDate, input.now)) return "date-locked";
+  if (isDateLocked(input.fromDate, input.now, input.deliveryTime)) return "date-locked";
 
-  const dateProblem = checkTargetDate(input.now, input.toDate, input.expiresOn);
+  const dateProblem = checkTargetDate(
+    input.now,
+    input.toDate,
+    input.expiresOn,
+    input.deliveryTime,
+  );
   if (dateProblem) return dateProblem;
 
   const taken = input.takenDates.filter((d) => d !== input.fromDate);
@@ -186,9 +252,11 @@ export function validateUnschedule(input: {
   now: Date;
   date: string;
   planStatus: PlanStatus;
+  /** Plan's "HH:mm" IST slot; drives the per-plan kitchen cutoff. */
+  deliveryTime?: string;
 }): ScheduleRejection | null {
   if (input.planStatus !== "active") return "plan-not-active";
-  if (isDateLocked(input.date, input.now)) return "date-locked";
+  if (isDateLocked(input.date, input.now, input.deliveryTime)) return "date-locked";
   return null;
 }
 

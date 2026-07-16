@@ -35,7 +35,8 @@ export async function GET(request: NextRequest) {
         })
         .toArray()) as unknown as SubscriptionMealPlan[];
 
-      const locked = isDateLocked(date, now);
+      // Each plan freezes at its own delivery-time cutoff, so `locked` is
+      // computed per delivery rather than once for the whole date.
       const deliveries = plans.flatMap((plan) =>
         plan.credits
           .filter(
@@ -53,15 +54,19 @@ export async function GET(request: NextRequest) {
             protein: c.protein,
             isVeg: c.isVeg,
             status: c.status,
-            locked,
+            locked: isDateLocked(date, now, plan.deliveryTime),
           })),
       );
+
+      // Day-level flag = "every delivery is frozen" — drives the admin's
+      // "still editable" empty state and the 10 AM auto-reveal.
+      const locked = deliveries.length > 0 && deliveries.every((d) => d.locked);
 
       return NextResponse.json({
         success: true,
         date,
         locked,
-        deliveries: lockedOnly && !locked ? [] : deliveries,
+        deliveries: lockedOnly ? deliveries.filter((d) => d.locked) : deliveries,
       });
     }
 

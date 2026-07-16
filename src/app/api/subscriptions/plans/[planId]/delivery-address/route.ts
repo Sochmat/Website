@@ -54,7 +54,12 @@ export async function PATCH(
       );
     }
 
-    const rejection = validateUnschedule({ now, date: credit.date, planStatus: plan.status });
+    const rejection = validateUnschedule({
+      now,
+      date: credit.date,
+      planStatus: plan.status,
+      deliveryTime: plan.deliveryTime,
+    });
     if (rejection) {
       return NextResponse.json(
         { success: false, reason: rejection, message: "That day is locked" },

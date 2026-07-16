@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import type { SubscriptionCredit } from "./types";
 import {
   DELIVERY_CUTOFF_HOUR_IST,
+  KITCHEN_LEAD_HOURS,
   SUGGESTION_HOUR_IST,
   MIN_LEAD_HOURS,
   deliveryCutoffAt,
+  deliveryCutoffLabel,
   suggestionVisibleFrom,
   isDateLocked,
   isDateBookable,
@@ -26,16 +28,56 @@ const D = "2026-07-09"; // a Thursday
 const at = (iso: string) => new Date(iso);
 
 describe("constants", () => {
-  it("locks at noon IST and reveals suggestions at 20:00 IST the day before", () => {
+  it("keeps a 3h kitchen lead, a noon fallback, and a 20:00 suggestion reveal", () => {
     expect(DELIVERY_CUTOFF_HOUR_IST).toBe(12);
+    expect(KITCHEN_LEAD_HOURS).toBe(3);
     expect(SUGGESTION_HOUR_IST).toBe(20);
     expect(MIN_LEAD_HOURS).toBe(0);
   });
 });
 
 describe("deliveryCutoffAt", () => {
-  it("is noon IST on the delivery day, i.e. 06:30 UTC", () => {
+  it("falls back to noon IST (06:30 UTC) when no delivery time is given", () => {
     expect(deliveryCutoffAt(D).toISOString()).toBe("2026-07-09T06:30:00.000Z");
+  });
+
+  it("falls back to noon IST when the delivery time is malformed", () => {
+    expect(deliveryCutoffAt(D, "not-a-time").toISOString()).toBe("2026-07-09T06:30:00.000Z");
+  });
+
+  it("is 3h before a 12:00 slot → 09:00 IST (03:30 UTC)", () => {
+    expect(deliveryCutoffAt(D, "12:00").toISOString()).toBe("2026-07-09T03:30:00.000Z");
+  });
+
+  it("is 3h before a 21:00 slot → 18:00 IST (12:30 UTC)", () => {
+    expect(deliveryCutoffAt(D, "21:00").toISOString()).toBe("2026-07-09T12:30:00.000Z");
+  });
+
+  it("crosses midnight for an early slot: 3h before 08:00 → 05:00 IST on D-1 UTC", () => {
+    expect(deliveryCutoffAt(D, "08:00").toISOString()).toBe("2026-07-08T23:30:00.000Z");
+  });
+});
+
+describe("deliveryCutoffLabel", () => {
+  it("shows the 3h-before-delivery clock time", () => {
+    expect(deliveryCutoffLabel("12:00")).toBe("9:00 AM");
+    expect(deliveryCutoffLabel("21:00")).toBe("6:00 PM");
+    expect(deliveryCutoffLabel("08:00")).toBe("5:00 AM");
+  });
+
+  it("falls back to noon for a missing or malformed slot", () => {
+    expect(deliveryCutoffLabel(undefined)).toBe("12:00 PM");
+    expect(deliveryCutoffLabel("garbage")).toBe("12:00 PM");
+  });
+});
+
+describe("isDateLocked with a delivery time", () => {
+  it("locks 3h before the chosen slot, not at noon", () => {
+    // 12:00 slot → 09:00 IST cutoff (03:30 UTC). Still noon-open, already slot-locked.
+    expect(isDateLocked(D, at("2026-07-09T03:29:59.999Z"), "12:00")).toBe(false);
+    expect(isDateLocked(D, at("2026-07-09T03:30:00.000Z"), "12:00")).toBe(true);
+    // A 21:00 slot is still open at noon, when the fallback would already lock.
+    expect(isDateLocked(D, at("2026-07-09T06:30:00.000Z"), "21:00")).toBe(false);
   });
 });
 
@@ -133,7 +175,7 @@ describe("schedulableDates", () => {
   });
 
   it("caps at maxDays", () => {
-    const days = schedulableDates(at("2026-07-09T00:00:00.000Z"), "2026-12-31", 5);
+    const days = schedulableDates(at("2026-07-09T00:00:00.000Z"), "2026-12-31", undefined, 5);
     expect(days).toHaveLength(5);
   });
 
@@ -250,6 +292,18 @@ describe("validateSchedule", () => {
       "item-not-allowed",
     );
   });
+
+  it("locks same-day booking 3h before the plan's delivery time", () => {
+    const now = at("2026-07-09T04:00:00.000Z"); // 09:30 IST
+    // A 12:00 slot froze at 09:00 IST — booking today is now too late...
+    expect(
+      validateSchedule({ ...baseSchedule, date: "2026-07-09", now, deliveryTime: "12:00" }),
+    ).toBe("date-locked");
+    // ...but a 21:00 slot (18:00 cutoff) is still bookable.
+    expect(
+      validateSchedule({ ...baseSchedule, date: "2026-07-09", now, deliveryTime: "21:00" }),
+    ).toBeNull();
+  });
 });
 
 describe("validateReschedule", () => {
@@ -331,6 +385,18 @@ describe("validateUnschedule", () => {
         planStatus: "cancelled",
       }),
     ).toBe("plan-not-active");
+  });
+
+  it("locks unschedule 3h before the plan's delivery time", () => {
+    // 09:30 IST on the delivery day: a 12:00 slot (09:00 cutoff) is frozen.
+    expect(
+      validateUnschedule({
+        now: at("2026-07-09T04:00:00.000Z"),
+        date: "2026-07-09",
+        planStatus: "active",
+        deliveryTime: "12:00",
+      }),
+    ).toBe("date-locked");
   });
 });
 

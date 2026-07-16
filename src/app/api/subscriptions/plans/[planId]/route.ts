@@ -33,7 +33,9 @@ export async function GET(
       success: true,
       plan: owned.plan,
       accounting: owned.accounting,
-      days: owned.plan.expiresOn ? schedulableDates(now, owned.plan.expiresOn) : [],
+      days: owned.plan.expiresOn
+        ? schedulableDates(now, owned.plan.expiresOn, owned.plan.deliveryTime)
+        : [],
     });
   } catch (error) {
     console.error("Error fetching subscription plan:", error);

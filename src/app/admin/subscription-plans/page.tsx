@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Popconfirm, Select, message } from "antd";
 import { ClockCircleOutlined, DeleteOutlined } from "@ant-design/icons";
-import type { CreditAccounting } from "@/lib/subscriptionSchedule";
+import { deliveryCutoffLabel, type CreditAccounting } from "@/lib/subscriptionSchedule";
 import type { SubscriptionCredit, SubscriptionMealPlan } from "@/lib/types";
 
 type Tab = "plans" | "daily";
@@ -39,6 +39,30 @@ function formatDate(date?: string): { day: string; weekday: string } | null {
     day: d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }),
     weekday: d.toLocaleDateString("en-IN", { weekday: "short", timeZone: "UTC" }),
   };
+}
+
+// Ordered-on date (from the stored `createdAt`, an ISO string over JSON) as a
+// readable IST calendar date. Anchored to Asia/Kolkata so it never drifts a day.
+function formatOrdered(value?: Date | string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+// The plan's "HH:mm" IST delivery time, shown 12-hour for readability.
+function formatTime(hhmm?: string): string {
+  if (!hhmm) return "—";
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const period = h < 12 ? "AM" : "PM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
 // Ordering for the schedule dropdown: dated credits first (soonest → latest),
@@ -395,6 +419,12 @@ export default function AdminSubscriptionPlansPage() {
                           <span className="text-gray-400"> · expires {p.expiresOn}</span>
                         )}
                       </p>
+                      <p className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
+                        <ClockCircleOutlined />
+                        Delivery {formatTime(p.deliveryTime)}
+                        <span className="text-gray-300">·</span>
+                        Ordered {formatOrdered(p.createdAt)}
+                      </p>
                     </div>
                     <svg
                       viewBox="0 0 20 20"
@@ -512,7 +542,7 @@ export default function AdminSubscriptionPlansPage() {
           {deliveries.length === 0 && (
             <p className="text-gray-500">
               {lockedOnly && !dayLocked
-                ? `Deliveries for ${date} are still editable by customers until 12:00 PM.`
+                ? `Deliveries for ${date} are still editable by customers until 3 hours before each delivery time.`
                 : `No deliveries on ${date}.`}
             </p>
           )}
@@ -546,7 +576,9 @@ export default function AdminSubscriptionPlansPage() {
                     Mark delivered
                   </button>
                 ) : (
-                  <span className="text-xs text-amber-600">Editable until 12:00</span>
+                  <span className="text-xs text-amber-600">
+                    Editable until {deliveryCutoffLabel(d.deliveryTime)}
+                  </span>
                 )}
                 <div className="mt-1">
                   {waLink ? (
