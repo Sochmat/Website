@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { logPayment } from "@/lib/paymentLog";
 
 /**
  * Marks an order's payment as failed after a Razorpay failure. Only a
@@ -25,6 +26,16 @@ export async function POST(request: NextRequest) {
       { _id: new ObjectId(orderId), paymentStatus: "pending" },
       { $set: { paymentStatus: "failed", updatedAt: new Date() } },
     );
+
+    await logPayment(db, {
+      flow: "order",
+      route: "/api/payment/fail-order",
+      stage: "marked-failed",
+      outcome: "failure",
+      message: "Order payment marked failed",
+      orderId: String(orderId),
+      meta: { updated: result.modifiedCount },
+    });
 
     return NextResponse.json({ success: true, updated: result.modifiedCount });
   } catch (error) {
