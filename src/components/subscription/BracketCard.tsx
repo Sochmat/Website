@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, Truck, UtensilsCrossed } from "lucide-react";
 import { rupees, TIER_LABELS, type BracketOption } from "./types";
 
 /**
@@ -104,7 +104,7 @@ export default function BracketCard({
 
       {/* "Most Selected" tag — Performance tier only */}
       {isMostSelected && (
-        <span className="pointer-events-none absolute left-4 top-4 z-20 inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#c2410c] shadow-sm">
+        <span className="pointer-events-none absolute left-4 top-3 z-20 inline-flex items-center rounded-full bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-[#c2410c] shadow-sm">
           Most Selected
         </span>
       )}
@@ -119,7 +119,7 @@ export default function BracketCard({
           except the explicit "View options" button below. */}
       <span
         className={`pointer-events-none relative z-10 flex h-full flex-col justify-center gap-1 px-6 py-5 ${
-          isMostSelected ? "pt-16" : ""
+          isMostSelected ? "pt-12" : ""
         }`}
       >
         <span
@@ -163,6 +163,14 @@ export default function BracketCard({
             <UtensilsCrossed className="h-3.5 w-3.5" strokeWidth={2} />
             View Meal options
           </button>
+        </span>
+
+        {/* Reassurance: every plan ships free — no per-delivery charge on top. */}
+        <span
+          className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold ${t.sub}`}
+        >
+          <Truck className="h-3.5 w-3.5" strokeWidth={2} />
+          Free delivery on every meal
         </span>
       </span>
     </div>
