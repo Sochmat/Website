@@ -189,10 +189,14 @@ export interface SubscriptionBracket {
   label: string; // "25-30g protein"
   proteinMin: number;
   proteinMax: number;
-  /** Pre-GST price of ONE meal on a veg-only plan. */
+  /** Pre-GST list price of ONE meal on a veg-only plan (before discount). */
   vegPrice: number;
-  /** Pre-GST price of ONE meal on a veg+non-veg plan (charged even for veg meals). */
+  /** Pre-GST list price of ONE meal on a veg+non-veg plan (charged even for veg meals). */
   nonVegPrice: number;
+  /** Percent (0–100) knocked off `vegPrice`. Absent/0 = no discount. */
+  vegDiscount?: number;
+  /** Percent (0–100) knocked off `nonVegPrice`. Absent/0 = no discount. */
+  nonVegDiscount?: number;
   sortOrder: number;
   active: boolean;
   createdAt?: Date;

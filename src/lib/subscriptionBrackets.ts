@@ -22,15 +22,39 @@ export function isDiet(v: unknown): v is SubscriptionDiet {
   return typeof v === "string" && (DIETS as readonly string[]).includes(v);
 }
 
-type PriceFields = Pick<SubscriptionBracket, "vegPrice" | "nonVegPrice">;
+type PriceFields = Pick<
+  SubscriptionBracket,
+  "vegPrice" | "nonVegPrice" | "vegDiscount" | "nonVegDiscount"
+>;
 
 /**
- * Pre-GST price of one meal. A "veg-nonveg" plan always pays `nonVegPrice`,
- * even on the days the customer schedules a veg item — that is what unlocks
- * the non-veg list for the whole plan.
+ * Pre-GST *list* price of one meal (before discount). A "veg-nonveg" plan always
+ * pays `nonVegPrice`, even on the days the customer schedules a veg item — that
+ * is what unlocks the non-veg list for the whole plan.
  */
 export function pricePerMeal(bracket: PriceFields, diet: SubscriptionDiet): number {
   return diet === "veg-nonveg" ? bracket.nonVegPrice : bracket.vegPrice;
+}
+
+/** The discount percent (0–100) that applies to the given diet's list price. */
+export function discountPercent(bracket: PriceFields, diet: SubscriptionDiet): number {
+  const raw = diet === "veg-nonveg" ? bracket.nonVegDiscount : bracket.vegDiscount;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 0;
+  return Math.min(100, Math.max(0, raw));
+}
+
+/** Apply a percentage discount to a whole-rupee price, rounded to whole rupees. */
+export function applyDiscount(price: number, percent: number): number {
+  const pct = Math.min(100, Math.max(0, percent));
+  return Math.round(price * (1 - pct / 100));
+}
+
+/**
+ * The price we actually charge for one meal — list price with the bracket's
+ * discount applied. This is authoritative; the customer UI mirrors it.
+ */
+export function effectivePricePerMeal(bracket: PriceFields, diet: SubscriptionDiet): number {
+  return applyDiscount(pricePerMeal(bracket, diet), discountPercent(bracket, diet));
 }
 
 export interface BracketPlanTotals {
@@ -57,7 +81,7 @@ export function computeBracketPlanTotals(
     throw new Error(`Invalid mealCount: ${mealCount}`);
   }
 
-  const price = pricePerMeal(bracket, diet);
+  const price = effectivePricePerMeal(bracket, diet);
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error(`Invalid price for diet "${diet}": ${price}`);
   }

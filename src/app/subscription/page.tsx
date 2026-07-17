@@ -8,7 +8,9 @@ import {
   ChevronDown,
   Clock,
   MapPin,
+  Pencil,
   Phone,
+  PlayCircle,
   Plus,
   ReceiptText,
   UtensilsCrossed,
@@ -18,13 +20,18 @@ import { useLoginPopup } from "@/context/LoginPopupContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
 import LocationSelector from "@/components/LocationSelector";
 import IngredientsSheet from "@/components/IngredientsSheet";
+import Footer from "@/components/Footer";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import {
   distanceFromBusinessKm,
   isWithinServiceArea,
 } from "@/helpers/distance";
 import { GST_RATE } from "@/lib/subscription";
-import { MEALS_PER_PLAN } from "@/lib/subscriptionBrackets";
+import {
+  MEALS_PER_PLAN,
+  effectivePricePerMeal,
+  discountPercent,
+} from "@/lib/subscriptionBrackets";
 import { isBracketKey, isDiet } from "@/lib/subscriptionBrackets";
 import type {
   ProteinBracketKey,
@@ -44,7 +51,14 @@ import {
   type SubscriptionItem,
 } from "@/components/subscription/types";
 
+// The price we charge — bracket discount applied — kept in lockstep with the
+// server's computeBracketPlanTotals so the shown total equals the charged one.
 function priceForDiet(b: BracketOption, diet: SubscriptionDiet) {
+  return effectivePricePerMeal(b, diet);
+}
+
+// The pre-discount list price, for a struck-through "was" figure.
+function listPriceForDiet(b: BracketOption, diet: SubscriptionDiet) {
   return diet === "veg-nonveg" ? b.nonVegPrice : b.vegPrice;
 }
 
@@ -194,9 +208,21 @@ function PurchaseWizard() {
   const totals = useMemo(() => {
     if (!selectedBracket || !diet) return null;
     const per = priceForDiet(selectedBracket, diet);
+    const listPer = listPriceForDiet(selectedBracket, diet);
     const subtotal = per * MEALS_PER_PLAN;
+    const listSubtotal = listPer * MEALS_PER_PLAN;
     const tax = Math.round(subtotal * GST_RATE);
-    return { per, subtotal, tax, total: subtotal + tax };
+    return {
+      per,
+      listPer,
+      subtotal,
+      listSubtotal,
+      // Pre-tax rupees saved by the bracket discount (0 when none).
+      discount: listSubtotal - subtotal,
+      discountPercent: discountPercent(selectedBracket, diet),
+      tax,
+      total: subtotal + tax,
+    };
   }, [selectedBracket, diet]);
 
   const addresses = useMemo(
@@ -260,7 +286,8 @@ function PurchaseWizard() {
       if (!merged.some((a) => sameAddr(a, g))) merged.push(g);
     }
     const done = () => {
-      if (typeof window !== "undefined") localStorage.removeItem(GUEST_ADDR_KEY);
+      if (typeof window !== "undefined")
+        localStorage.removeItem(GUEST_ADDR_KEY);
     };
     if (merged.length === existing.length) {
       done();
@@ -426,17 +453,60 @@ function PurchaseWizard() {
               ))}
         </div>
 
+        {/* Need help — a call-us line plus a "how to subscribe" demo video,
+            below the tier bands. */}
+        <section className="border-t border-black/10 bg-white px-4 pt-6 pb-14">
+          <h2 className="text-center text-base font-bold text-[#111]">
+            Need help?
+          </h2>
+          <p className="mt-1 text-center text-xs text-[#737373]">
+            We&apos;re happy to walk you through it before you subscribe.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {/* Demo: how to buy a subscription. Placeholder embed URL — swap
+                the src for the real video later. */}
+            <div className="relative w-full overflow-hidden rounded-xl border border-gray-100 bg-black pt-[56.25%]">
+              <iframe
+                src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+                title="How to buy a subscription"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                className="absolute inset-0 h-full w-full"
+              />
+            </div>
+            <p className="text-center text-sm font-medium text-[#737373]">or</p>
+            <a
+              href="tel:+919759399537"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#f56215] py-3.5 text-base font-semibold text-white active:bg-[#e05610]"
+            >
+              <Phone className="h-5 w-5" />
+              Call us
+            </a>
+          </div>
+        </section>
+
+        <Footer />
+
         {/* Mounted only while previewing, so the Veg/Non-veg toggle resets each open. */}
         {optionsBracket && (
           <MealOptionsSheet
             open
             onClose={() => setOptionsBracket(null)}
+            onChoose={() => {
+              const key = optionsBracket.bracket.key;
+              setOptionsBracket(null);
+              go({ bracket: key });
+            }}
             title={TIER_LABELS[optionsBracket.index] ?? ""}
             subtitle={`${optionsBracket.bracket.proteinMin}–${optionsBracket.bracket.proteinMax}g protein`}
             items={optionsItems}
             loading={optionsLoading}
-            vegPrice={optionsBracket.bracket.vegPrice}
-            nonVegPrice={optionsBracket.bracket.nonVegPrice}
+            vegPrice={effectivePricePerMeal(optionsBracket.bracket, "veg")}
+            nonVegPrice={effectivePricePerMeal(
+              optionsBracket.bracket,
+              "veg-nonveg"
+            )}
           />
         )}
       </main>
@@ -487,6 +557,8 @@ function PurchaseWizard() {
                   key={d}
                   diet={d}
                   pricePerMeal={per}
+                  listPricePerMeal={listPriceForDiet(selectedBracket, d)}
+                  discountPercent={discountPercent(selectedBracket, d)}
                   totalPrice={total}
                   optionCount={
                     counts ? (d === "veg" ? counts.veg : counts.all) : null
@@ -584,44 +656,74 @@ function PurchaseWizard() {
               {addresses.length > 0 ? (
                 <div className="mt-3 space-y-2">
                   {addresses.map((addr) => {
-                    const isSel = !!selectedAddress && sameAddr(addr, selectedAddress);
-                    const serviceable = isWithinServiceArea(addr.lat, addr.long);
+                    const isSel =
+                      !!selectedAddress && sameAddr(addr, selectedAddress);
+                    const serviceable = isWithinServiceArea(
+                      addr.lat,
+                      addr.long
+                    );
                     return (
-                      <button
+                      <div
                         key={addr.id ?? addr.address}
-                        type="button"
-                        onClick={() => setPickedAddress(addr)}
-                        className={`w-full text-left rounded-xl border p-3 flex gap-3 transition-colors ${
-                          isSel ? "border-[#f56215] bg-[#fff4ec]" : "border-gray-200"
+                        className={`relative rounded-xl border transition-colors ${
+                          isSel
+                            ? "border-[#f56215] bg-[#fff4ec]"
+                            : "border-gray-200"
                         }`}
                       >
-                        <span
-                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
-                            isSel ? "border-[#f56215]" : "border-gray-300"
-                          }`}
+                        {/* Full-card select target beneath the content, so a tap
+                            anywhere but the Edit button picks this address. */}
+                        <button
+                          type="button"
+                          onClick={() => setPickedAddress(addr)}
+                          aria-label="Use this address"
+                          className="absolute inset-0 z-[1] rounded-xl outline-none"
+                        />
+                        <div className="pointer-events-none relative z-[2] flex gap-3 p-3">
+                          <span
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${
+                              isSel ? "border-[#f56215]" : "border-gray-300"
+                            }`}
+                          >
+                            {isSel && (
+                              <span className="h-2 w-2 rounded-full bg-[#f56215]" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            {isSel && (
+                              <span className="mb-1 inline-block rounded-full bg-[#f56215] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                                Default
+                              </span>
+                            )}
+                            <span className="block text-sm text-[#111] pr-14">
+                              {addr.address}
+                            </span>
+                            {addr.receiverName && (
+                              <span className="block text-xs text-[#737373] mt-0.5">
+                                Deliver to: {addr.receiverName}
+                              </span>
+                            )}
+                            {!serviceable && (
+                              <span className="mt-1 flex items-center gap-1 text-xs text-red-600">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                Outside our 10 km delivery area
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        {/* Edit — sits above the select overlay */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAddress(addr);
+                            setShowLocationSelector(true);
+                          }}
+                          className="absolute right-2 top-2 z-[3] inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-[#f56215] hover:bg-[#f56215]/10"
                         >
-                          {isSel && <span className="h-2 w-2 rounded-full bg-[#f56215]" />}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          {isSel && (
-                            <span className="mb-1 inline-block rounded-full bg-[#f56215] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                              Default
-                            </span>
-                          )}
-                          <span className="block text-sm text-[#111]">{addr.address}</span>
-                          {addr.receiverName && (
-                            <span className="block text-xs text-[#737373] mt-0.5">
-                              Deliver to: {addr.receiverName}
-                            </span>
-                          )}
-                          {!serviceable && (
-                            <span className="mt-1 flex items-center gap-1 text-xs text-red-600">
-                              <AlertTriangle className="h-3 w-3 shrink-0" />
-                              Outside our 10 km delivery area
-                            </span>
-                          )}
-                        </span>
-                      </button>
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -642,7 +744,9 @@ function PurchaseWizard() {
                   className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#f56215]"
                 >
                   <Plus className="h-3.5 w-3.5" />{" "}
-                  {addresses.length > 0 ? "Add another address" : "Set location"}
+                  {addresses.length > 0
+                    ? "Add another address"
+                    : "Set location"}
                 </button>
               )}
             </div>
@@ -666,25 +770,38 @@ function PurchaseWizard() {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between text-[#555]">
                   <span>
-                    {MEALS_PER_PLAN} meals × {rupees(totals.per)}
+                    {MEALS_PER_PLAN} meals × {rupees(totals.listPer)}
                   </span>
                   <span className="tabular-nums">
-                    {rupees(totals.subtotal)}
+                    {rupees(totals.listSubtotal)}
                   </span>
                 </div>
+                {totals.discount > 0 && (
+                  <div className="flex items-center justify-between text-[#1a7f37]">
+                    <span>
+                      Discount
+                      {totals.discountPercent > 0
+                        ? ` (${Math.round(totals.discountPercent)}%)`
+                        : ""}
+                    </span>
+                    <span className="tabular-nums">
+                      −{rupees(totals.discount)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-[#555]">
                   <span>GST (5%)</span>
                   <span className="tabular-nums">{rupees(totals.tax)}</span>
                 </div>
               </div>
               <div className="mt-3 flex items-baseline justify-between border-t border-gray-100 pt-3">
-                <span className="font-semibold text-[#111]">Total payable</span>
+                <span className="font-semibold text-[#111]">Total Amount</span>
                 <span className="text-lg font-bold text-[#111] tabular-nums">
                   {rupees(totals.total)}
                 </span>
               </div>
               <p className="mt-3 rounded-lg bg-[#f6f7f8] px-3 py-2 text-xs text-[#737373]">
-                You&rsquo;ll pick your meals after checkout — 7 credits, any 7
+                You&rsquo;ll pick your meals after checkout - 7 credits, any 7
                 days in the next 30.
               </p>
             </div>
@@ -703,7 +820,7 @@ function PurchaseWizard() {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#f56215] py-4 text-base font-semibold text-white active:bg-[#e05610]"
           >
             <Phone className="h-5 w-5" />
-            Call us · 9759399537
+            Call us
           </a>
         </div>
       )}

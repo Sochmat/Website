@@ -27,10 +27,15 @@ function validPrice(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v > 0 && v < 100000;
 }
 
+/** A whole-number discount percent, 0–100 inclusive. */
+function validDiscount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100;
+}
+
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { key, vegPrice, nonVegPrice, label, proteinMin, proteinMax, active } = body;
+    const { key, vegPrice, nonVegPrice, vegDiscount, nonVegDiscount, label, proteinMin, proteinMax, active } = body;
 
     if (!isBracketKey(key)) {
       return NextResponse.json(
@@ -44,8 +49,23 @@ export async function PUT(request: NextRequest) {
         { status: 400 },
       );
     }
+    // Discounts are optional; default to 0 when omitted.
+    const vegDisc = vegDiscount === undefined ? 0 : vegDiscount;
+    const nonVegDisc = nonVegDiscount === undefined ? 0 : nonVegDiscount;
+    if (!validDiscount(vegDisc) || !validDiscount(nonVegDisc)) {
+      return NextResponse.json(
+        { success: false, message: "Discounts must be whole numbers from 0 to 100" },
+        { status: 400 },
+      );
+    }
 
-    const $set: Record<string, unknown> = { vegPrice, nonVegPrice, updatedAt: new Date() };
+    const $set: Record<string, unknown> = {
+      vegPrice,
+      nonVegPrice,
+      vegDiscount: vegDisc,
+      nonVegDiscount: nonVegDisc,
+      updatedAt: new Date(),
+    };
     if (typeof label === "string" && label.trim()) $set.label = label.trim();
     if (typeof proteinMin === "number") $set.proteinMin = proteinMin;
     if (typeof proteinMax === "number") $set.proteinMax = proteinMax;

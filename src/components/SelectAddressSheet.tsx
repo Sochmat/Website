@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { Pencil } from "lucide-react";
 import type { UserAddress } from "@/lib/types";
 import SheetCloseButton from "./subscription/SheetCloseButton";
 
@@ -17,7 +18,7 @@ interface SelectAddressSheetProps {
   onSelect: (addr: UserAddress) => void;
   onAddNew: () => void;
   onEdit?: (addr: UserAddress) => void;
-  /** Show the floating centered close button (subscription flow). */
+  /** @deprecated The floating close button is always shown now; kept for call-site compatibility. */
   floatingClose?: boolean;
 }
 
@@ -29,7 +30,6 @@ export default function SelectAddressSheet({
   onSelect,
   onAddNew,
   onEdit,
-  floatingClose = false,
 }: SelectAddressSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -53,7 +53,7 @@ export default function SelectAddressSheet({
         onClick={onClose}
         aria-hidden
       />
-      {floatingClose && <SheetCloseButton onClose={onClose} />}
+      <SheetCloseButton onClose={onClose} />
       <div
         ref={sheetRef}
         className="relative w-full max-w-[430px] bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[85vh] flex flex-col"
@@ -62,21 +62,7 @@ export default function SelectAddressSheet({
         aria-label="Select Address"
       >
         <div className="w-12 h-1 bg-[#e5e5e5] rounded-full mx-auto mt-3 shrink-0" />
-        <div className="px-4 pb-6 pt-2 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 mb-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 -ml-2 text-[#111]"
-              aria-label="Back"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h2 className="text-lg font-semibold text-[#111]">Select Address</h2>
-          </div>
-
+        <div className="px-4 pb-6 pt-4 flex flex-col overflow-hidden">
           <button
             type="button"
             onClick={onAddNew}
@@ -128,8 +114,9 @@ export default function SelectAddressSheet({
                           e.stopPropagation();
                           onEdit(addr);
                         }}
-                        className="absolute bottom-3 right-3 text-[#f56215] text-xs font-medium hover:underline"
+                        className="absolute bottom-3 right-3 inline-flex items-center gap-1 text-[#f56215] text-xs font-medium hover:underline"
                       >
+                        <Pencil className="h-3.5 w-3.5" />
                         Edit
                       </button>
                     )}

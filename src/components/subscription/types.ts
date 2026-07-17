@@ -26,6 +26,10 @@ export interface BracketOption {
   proteinMax: number;
   vegPrice: number;
   nonVegPrice: number;
+  /** Percent (0–100) off the veg list price. 0 = no discount. */
+  vegDiscount?: number;
+  /** Percent (0–100) off the non-veg list price. 0 = no discount. */
+  nonVegDiscount?: number;
   sortOrder: number;
 }
 

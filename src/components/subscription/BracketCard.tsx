@@ -1,6 +1,10 @@
 "use client";
 
 import { ArrowRight, UtensilsCrossed } from "lucide-react";
+import {
+  discountPercent,
+  effectivePricePerMeal,
+} from "@/lib/subscriptionBrackets";
 import { rupees, TIER_LABELS, type BracketOption } from "./types";
 
 /**
@@ -72,6 +76,17 @@ export default function BracketCard({
   const isMostSelected = index === 1;
   const tierName = TIER_LABELS[index] ?? TIER_LABELS[0];
 
+  // The cheapest per-meal price across both diets drives the "Starting @" pill;
+  // the discount shown is the one that produced it.
+  const effVeg = effectivePricePerMeal(bracket, "veg");
+  const effNonVeg = effectivePricePerMeal(bracket, "veg-nonveg");
+  const startIsVeg = effVeg <= effNonVeg;
+  const startEff = startIsVeg ? effVeg : effNonVeg;
+  const startList = startIsVeg ? bracket.vegPrice : bracket.nonVegPrice;
+  const startDiscount = Math.round(
+    discountPercent(bracket, startIsVeg ? "veg" : "veg-nonveg")
+  );
+
   return (
     <div className={`group relative flex-1 w-full overflow-hidden ${t.band}`}>
       {/* Full-card select target, beneath the content so taps fall through
@@ -136,8 +151,30 @@ export default function BracketCard({
             {bracket.proteinMin}–{bracket.proteinMax}
           </span>
           <span className={`mb-1.5 text-xl font-bold ${t.ink}`}>g</span>
+          <span className={`mb-2 text-sm ${t.sub}`}>protein / meal</span>
         </span>
-        <span className={`text-sm ${t.sub}`}>protein per meal</span>
+        <span className={`flex flex-wrap items-center gap-2 text-sm ${t.sub}`}>
+          {startDiscount > 0 && (
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold backdrop-blur-sm ${t.pill}`}
+            >
+              {startDiscount}% OFF
+            </span>
+          )}
+          <span
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold backdrop-blur-sm ${t.pill}`}
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden
+            >
+              <path d="M19.44 9.03 15.41 5H11v2h3.59l2 2H5c-2.8 0-5 2.2-5 5s2.2 5 5 5c2.46 0 4.45-1.69 4.9-4h1.65l2.77-2.77c-.21.54-.32 1.14-.32 1.77 0 2.8 2.2 5 5 5s5-2.2 5-5c0-2.79-2.2-4.97-4.56-4.97zM7.82 15C7.4 16.15 6.28 17 5 17c-1.63 0-3-1.37-3-3s1.37-3 3-3c1.28 0 2.4.85 2.82 2H5v2h2.82zM19 17c-1.63 0-3-1.37-3-3s1.37-3 3-3 3 1.37 3 3-1.37 3-3 3z" />
+            </svg>
+            Free delivery
+          </span>
+        </span>
 
         <span className="mt-3 flex items-center justify-between gap-2">
           <span
@@ -146,7 +183,12 @@ export default function BracketCard({
             <span className="text-[11px] font-medium opacity-80">
               Starting @
             </span>
-            {rupees(Math.min(bracket.vegPrice, bracket.nonVegPrice))}
+            {startEff < startList && (
+              <span className="text-[11px] font-medium line-through opacity-60">
+                {rupees(startList)}
+              </span>
+            )}
+            {rupees(startEff)}
             <span className="text-[11px] font-medium opacity-80">/ meal</span>
           </span>
 

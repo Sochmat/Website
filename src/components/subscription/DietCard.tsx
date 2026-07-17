@@ -14,17 +14,21 @@ import { rupees } from "./types";
 const THEME = {
   veg: {
     band: "bg-gradient-to-br from-[#1a7f37] to-[#25a244]",
-    sheen: "radial-gradient(120% 90% at 15% -10%, rgba(255,255,255,0.30), transparent 55%)",
+    sheen:
+      "radial-gradient(120% 90% at 15% -10%, rgba(255,255,255,0.30), transparent 55%)",
   },
   "veg-nonveg": {
     band: "bg-gradient-to-br from-[#F56215] to-[#FF8A3D]",
-    sheen: "radial-gradient(120% 90% at 15% -10%, rgba(255,255,255,0.28), transparent 55%)",
+    sheen:
+      "radial-gradient(120% 90% at 15% -10%, rgba(255,255,255,0.28), transparent 55%)",
   },
 } as const;
 
 export default function DietCard({
   diet,
   pricePerMeal,
+  listPricePerMeal,
+  discountPercent,
   totalPrice,
   optionCount,
   mealsPerPlan,
@@ -32,11 +36,19 @@ export default function DietCard({
 }: {
   diet: SubscriptionDiet;
   pricePerMeal: number;
+  /** Pre-discount list price; shown struck-through when above pricePerMeal. */
+  listPricePerMeal?: number;
+  /** Discount percent (0–100); a badge appears when > 0. */
+  discountPercent?: number;
   totalPrice: number;
   optionCount: number | null;
   mealsPerPlan: number;
   onSelect: () => void;
 }) {
+  const hasDiscount =
+    typeof listPricePerMeal === "number" && listPricePerMeal > pricePerMeal;
+  const discountPct =
+    typeof discountPercent === "number" ? Math.round(discountPercent) : 0;
   const isVegOnly = diet === "veg";
   const theme = isVegOnly ? THEME.veg : THEME["veg-nonveg"];
   const WatermarkIcon = isVegOnly ? Leaf : Drumstick;
@@ -45,7 +57,7 @@ export default function DietCard({
   // sells the choice rather than repeating a number.
   const tagline = isVegOnly
     ? "100% pure vegetarian menu"
-    : "Full menu unlocked — veg & non-veg";
+    : "Full menu unlocked";
 
   return (
     <button
@@ -82,7 +94,14 @@ export default function DietCard({
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="inline-flex items-baseline gap-1">
-              <span className="text-lg font-bold text-white">{rupees(pricePerMeal)}</span>
+              {hasDiscount && (
+                <span className="text-sm text-white/60 line-through">
+                  {rupees(listPricePerMeal)}
+                </span>
+              )}
+              <span className="text-lg font-bold text-white">
+                {rupees(pricePerMeal)}
+              </span>
               <span className="text-[11px] text-white/75">/ meal</span>
             </span>
             <ChevronRight className="h-5 w-5 text-white/70 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-white" />
@@ -99,10 +118,19 @@ export default function DietCard({
             <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5">
               {mealsPerPlan} meals / plan
             </span>
+            {discountPct > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5">
+                {discountPct}% OFF
+              </span>
+            )}
           </div>
           <span className="text-right leading-tight">
-            <span className="text-base font-bold text-white">{rupees(totalPrice)}</span>
-            <span className="block text-[10px] text-white/70">total · incl. GST</span>
+            <span className="text-base font-bold text-white">
+              {rupees(totalPrice)}
+            </span>
+            <span className="block text-[10px] text-white/70">
+              total · incl. GST
+            </span>
           </span>
         </div>
       </div>

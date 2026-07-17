@@ -19,6 +19,8 @@ export async function GET() {
       proteinMax: b.proteinMax,
       vegPrice: b.vegPrice,
       nonVegPrice: b.nonVegPrice,
+      vegDiscount: b.vegDiscount ?? 0,
+      nonVegDiscount: b.nonVegDiscount ?? 0,
       sortOrder: b.sortOrder,
     }));
 

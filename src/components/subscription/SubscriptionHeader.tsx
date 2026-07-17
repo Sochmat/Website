@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogIn, LogOut, MapPin, ReceiptText, Ticket, User } from "lucide-react";
@@ -30,7 +31,9 @@ export default function SubscriptionHeader() {
   // Address manager (reuses the same sheets the checkout uses).
   const [showAddresses, setShowAddresses] = useState(false);
   const [showLocationSelector, setShowLocationSelector] = useState(false);
-  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(null);
+  const [editingAddress, setEditingAddress] = useState<UserAddress | null>(
+    null
+  );
 
   const addresses = isAuthenticated ? user?.addresses ?? [] : [];
 
@@ -42,7 +45,12 @@ export default function SubscriptionHeader() {
       .then((r) => r.json())
       .then((d) => {
         if (cancelled || !d?.success || !Array.isArray(d.plans)) return;
-        const total = (d.plans as Array<{ accounting?: CreditAccounting; paymentStatus: string }>)
+        const total = (
+          d.plans as Array<{
+            accounting?: CreditAccounting;
+            paymentStatus: string;
+          }>
+        )
           .filter((p) => p.paymentStatus === "paid")
           .reduce((sum, p) => sum + (p.accounting?.available ?? 0), 0);
         setCredits(total);
@@ -70,12 +78,18 @@ export default function SubscriptionHeader() {
   return (
     <>
       <header className="sticky top-0 z-30 bg-white border-b border-gray-100 max-w-[430px] mx-auto h-16 px-4 flex items-center justify-between">
-        <Link href="/subscription" className="font-bold text-[#111] text-[19px] tracking-tight">
-          Sochmat
-          <span className="text-[#f56215]">.</span>
-          <span className="ml-1.5 font-medium text-[#737373] text-[13px] tracking-normal">
+        <Link href="/subscription" className="flex items-center gap-2">
+          <Image
+            src="/logo.svg"
+            alt="Sochmat"
+            width={284}
+            height={72}
+            priority
+            className="h-12 w-auto"
+          />
+          {/* <span className="font-medium text-[#737373] text-[13px] tracking-normal">
             Subscriptions
-          </span>
+          </span> */}
         </Link>
 
         <button
@@ -105,7 +119,9 @@ export default function SubscriptionHeader() {
                       {user?.name || "Your account"}
                     </p>
                     {user?.phone && (
-                      <p className="text-xs text-[#737373] truncate">{user.phone}</p>
+                      <p className="text-xs text-[#737373] truncate">
+                        {user.phone}
+                      </p>
                     )}
                   </div>
 

@@ -13,6 +13,7 @@ import type { SubscriptionItem } from "./types";
 export default function MealOptionsSheet({
   open,
   onClose,
+  onChoose,
   title,
   subtitle,
   items,
@@ -22,6 +23,7 @@ export default function MealOptionsSheet({
 }: {
   open: boolean;
   onClose: () => void;
+  onChoose: () => void;
   title: string;
   subtitle: string;
   items: SubscriptionItem[];
@@ -91,7 +93,7 @@ export default function MealOptionsSheet({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto px-4 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
           {loading ? (
             <div className="space-y-2">
               {[0, 1, 2].map((i) => (
@@ -113,6 +115,18 @@ export default function MealOptionsSheet({
               ))}
             </div>
           )}
+        </div>
+
+        {/* Floating action pinned below the scroll area — turns a passive
+            preview into a one-tap commitment to this tier. */}
+        <div className="border-t border-gray-100 bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={onChoose}
+            className="w-full rounded-xl bg-[#f56215] py-3.5 text-base font-bold text-white shadow-sm transition-colors hover:bg-[#e0530a] active:bg-[#e0530a]"
+          >
+            Choose this plan
+          </button>
         </div>
       </div>
     </div>

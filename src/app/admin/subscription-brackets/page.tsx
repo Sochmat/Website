@@ -3,10 +3,16 @@
 import { useEffect, useState } from "react";
 import { message } from "antd";
 import { GST_RATE } from "@/lib/subscription";
-import { MEALS_PER_PLAN } from "@/lib/subscriptionBrackets";
+import { applyDiscount, MEALS_PER_PLAN } from "@/lib/subscriptionBrackets";
 import type { SubscriptionBracket } from "@/lib/types";
 
-type Row = SubscriptionBracket & { vegPriceStr: string; nonVegPriceStr: string; dirty: boolean };
+type Row = SubscriptionBracket & {
+  vegPriceStr: string;
+  nonVegPriceStr: string;
+  vegDiscountStr: string;
+  nonVegDiscountStr: string;
+  dirty: boolean;
+};
 
 function planTotal(perMeal: number): number {
   const subtotal = perMeal * MEALS_PER_PLAN;
@@ -27,6 +33,8 @@ export default function AdminSubscriptionBracketsPage() {
               ...b,
               vegPriceStr: String(b.vegPrice),
               nonVegPriceStr: String(b.nonVegPrice),
+              vegDiscountStr: String(b.vegDiscount ?? 0),
+              nonVegDiscountStr: String(b.nonVegDiscount ?? 0),
               dirty: false,
             })),
           );
@@ -38,7 +46,11 @@ export default function AdminSubscriptionBracketsPage() {
 
   useEffect(load, []);
 
-  const edit = (key: string, field: "vegPriceStr" | "nonVegPriceStr", value: string) => {
+  const edit = (
+    key: string,
+    field: "vegPriceStr" | "nonVegPriceStr" | "vegDiscountStr" | "nonVegDiscountStr",
+    value: string,
+  ) => {
     setRows((rs) =>
       rs.map((r) => (r.key === key ? { ...r, [field]: value, dirty: true } : r)),
     );
@@ -47,10 +59,19 @@ export default function AdminSubscriptionBracketsPage() {
   const save = async (row: Row) => {
     const vegPrice = Number(row.vegPriceStr);
     const nonVegPrice = Number(row.nonVegPriceStr);
+    const vegDiscount = Number(row.vegDiscountStr) || 0;
+    const nonVegDiscount = Number(row.nonVegDiscountStr) || 0;
     const res = await fetch("/api/admin/subscription-brackets", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: row.key, vegPrice, nonVegPrice, active: row.active }),
+      body: JSON.stringify({
+        key: row.key,
+        vegPrice,
+        nonVegPrice,
+        vegDiscount,
+        nonVegDiscount,
+        active: row.active,
+      }),
     });
     const data = await res.json();
     if (data.success) {
@@ -90,24 +111,59 @@ export default function AdminSubscriptionBracketsPage() {
             <div className="grid grid-cols-2 gap-4">
               {(
                 [
-                  ["Veg / meal", "vegPriceStr", Number(row.vegPriceStr)],
-                  ["Non-veg / meal", "nonVegPriceStr", Number(row.nonVegPriceStr)],
+                  ["Veg", "vegPriceStr", "vegDiscountStr"],
+                  ["Non-veg", "nonVegPriceStr", "nonVegDiscountStr"],
                 ] as const
-              ).map(([label, field, value]) => (
-                <div key={field}>
-                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                  <input
-                    type="number"
-                    value={row[field]}
-                    onChange={(e) => edit(row.key, field, e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    {MEALS_PER_PLAN} × ₹{value || 0} + 5% GST ={" "}
-                    <span className="font-semibold">₹{planTotal(value || 0)}</span>
-                  </p>
-                </div>
-              ))}
+              ).map(([label, priceField, discountField]) => {
+                const price = Number(row[priceField]) || 0;
+                const discount = Number(row[discountField]) || 0;
+                const effective = applyDiscount(price, discount);
+                return (
+                  <div key={priceField}>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">
+                          {label} / meal
+                        </label>
+                        <input
+                          type="number"
+                          value={row[priceField]}
+                          onChange={(e) => edit(row.key, priceField, e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <label className="block text-xs text-gray-500 mb-1">
+                          Discount %
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={row[discountField]}
+                          onChange={(e) => edit(row.key, discountField, e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {discount > 0 ? (
+                        <>
+                          ₹{effective}/meal{" "}
+                          <span className="line-through">₹{price}</span> · {MEALS_PER_PLAN} ×
+                          + 5% GST ={" "}
+                          <span className="font-semibold">₹{planTotal(effective)}</span>
+                        </>
+                      ) : (
+                        <>
+                          {MEALS_PER_PLAN} × ₹{price} + 5% GST ={" "}
+                          <span className="font-semibold">₹{planTotal(price)}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
