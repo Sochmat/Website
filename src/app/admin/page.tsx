@@ -7,9 +7,15 @@ export default function AdminPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const token =
-      typeof window !== "undefined" ? localStorage.getItem("adminToken") : null;
-    router.replace(token ? "/admin/menu" : "/admin/login");
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("adminToken");
+    if (!token) {
+      router.replace("/admin/login");
+      return;
+    }
+    // Shop role can't see the dashboard; send it to orders. Admins land here.
+    const role = localStorage.getItem("adminRole");
+    router.replace(role === "shop" ? "/admin/orders" : "/admin/dashboard");
   }, [router]);
 
   return null;

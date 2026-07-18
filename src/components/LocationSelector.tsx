@@ -2,9 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useLocation } from "@/context/LocationContext";
 import { getCurrentLocation } from "@/helpers/currentLocation";
-import { BUSINESS_LAT, BUSINESS_LNG } from "@/helpers/distance";
+import {
+  BUSINESS_LAT,
+  BUSINESS_LNG,
+  isWithinServiceArea,
+} from "@/helpers/distance";
 import AddAddressSheet from "./AddAddressSheet";
 import type { UserAddress } from "@/lib/types";
 
@@ -26,6 +31,16 @@ interface LocationSelectorProps {
   onClose: () => void;
   editAddress?: UserAddress | null;
   onSaved?: (addr: UserAddress) => void;
+  /** Forwarded to the embedded AddAddressSheet (subscription flow). */
+  floatingClose?: boolean;
+  /**
+   * Subscription flow: silently auto-fill GPS on open (only if permission is
+   * already granted), and block "Add More Address Details" for out-of-range
+   * locations with a "we don't deliver here" prompt.
+   */
+  enforceServiceArea?: boolean;
+  /** Reuse a shared receiver instead of asking again (adding a 2nd address). */
+  receiverOverride?: { name: string; phone: string } | null;
 }
 
 export default function LocationSelector({
@@ -33,7 +48,11 @@ export default function LocationSelector({
   onClose,
   editAddress: editAddressProp,
   onSaved,
+  floatingClose = false,
+  enforceServiceArea = false,
+  receiverOverride = null,
 }: LocationSelectorProps) {
+  const router = useRouter();
   const { location, setLocation } = useLocation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -47,8 +66,11 @@ export default function LocationSelector({
   const [reversing, setReversing] = useState(false);
   const [addressSheetOpen, setAddressSheetOpen] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  // Shown when the picked location is beyond the delivery radius.
+  const [outOfRange, setOutOfRange] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reverseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoFetchedRef = useRef(false);
 
   // When opening, sync pin to editAddress > current location > default
   useEffect(() => {
@@ -126,7 +148,7 @@ export default function LocationSelector({
     [reverseGeocode],
   );
 
-  const handleGPS = async () => {
+  const handleGPS = async (opts?: { silent?: boolean }) => {
     setGpsLoading(true);
     setGpsError(null);
     try {
@@ -135,16 +157,60 @@ export default function LocationSelector({
       setPinAddress(address ?? null);
       setLocation({ lat, lng, address, pincode, timestamp: Date.now() });
     } catch {
-      const isInsecure = window.location.protocol !== "https:";
-      if (isInsecure) {
-        setGpsError("Location requires HTTPS. Use search instead.");
-      } else {
-        setGpsError("Could not get location. Please allow permission.");
+      // Auto-fetch failures stay silent; only an explicit tap surfaces an error.
+      if (!opts?.silent) {
+        const isInsecure = window.location.protocol !== "https:";
+        if (isInsecure) {
+          setGpsError("Location requires HTTPS. Use search instead.");
+        } else {
+          setGpsError("Could not get location. Please allow permission.");
+        }
+        setTimeout(() => setGpsError(null), 4000);
       }
-      setTimeout(() => setGpsError(null), 4000);
     } finally {
       setGpsLoading(false);
     }
+  };
+
+  // Subscription flow: on open, silently drop the pin on the customer's real
+  // location — but only if they've already granted permission, so opening the
+  // picker never itself triggers a permission prompt.
+  useEffect(() => {
+    if (!open) {
+      autoFetchedRef.current = false;
+      return;
+    }
+    if (!enforceServiceArea || editAddressProp || autoFetchedRef.current) return;
+    autoFetchedRef.current = true;
+    if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" as PermissionName })
+        .then((status) => {
+          if (status.state === "granted") handleGPS({ silent: true });
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, enforceServiceArea, editAddressProp]);
+
+  // "Add More Address Details" — in the subscription flow, gate on the 10 km
+  // delivery radius before letting the customer fill in address details.
+  const handleAddDetails = () => {
+    if (
+      enforceServiceArea &&
+      !isWithinServiceArea(pinPosition[0], pinPosition[1])
+    ) {
+      setOutOfRange(true);
+      return;
+    }
+    setAddressSheetOpen(true);
+  };
+
+  const goHome = () => {
+    setOutOfRange(false);
+    setAddressSheetOpen(false);
+    onClose();
+    router.push("/subscription");
   };
 
   const handleSelectResult = (result: SearchResult) => {
@@ -285,7 +351,7 @@ export default function LocationSelector({
         {/* Current location button on map */}
         <button
           type="button"
-          onClick={handleGPS}
+          onClick={() => handleGPS()}
           disabled={gpsLoading}
           className="absolute bottom-6 right-14 z-[10] bg-white rounded-full shadow-lg flex items-center gap-2 px-4 py-2.5 disabled:opacity-60"
         >
@@ -353,7 +419,7 @@ export default function LocationSelector({
           </button> */}
           <button
             type="button"
-            onClick={() => setAddressSheetOpen(true)}
+            onClick={handleAddDetails}
             disabled={!pinAddress && !reversing}
             className="w-full py-3 rounded-[12px] border border-[#1c1c1c] text-[#1c1c1c] font-semibold text-[14px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[rgba(2,88,63,0.06)] transition-colors"
           >
@@ -380,7 +446,64 @@ export default function LocationSelector({
               }
             : null
         }
+        floatingClose={floatingClose}
+        receiverOverride={receiverOverride}
       />
+
+      {/* Out-of-delivery-range prompt (subscription flow) */}
+      {outOfRange && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            onClick={() => setOutOfRange(false)}
+            aria-hidden
+          />
+          <div
+            className="relative w-full max-w-[360px] rounded-2xl bg-white p-6 text-center shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delivery not available"
+          >
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
+              <svg
+                className="h-7 w-7 text-red-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 9v3.75m0 3.75h.008M10.34 3.94l-8.09 14A1.5 1.5 0 003.55 20.25h16.9a1.5 1.5 0 001.3-2.31l-8.09-14a1.5 1.5 0 00-2.62 0z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-[#111]">
+              We don&rsquo;t deliver here
+            </h3>
+            <p className="mt-1.5 text-sm text-[#737373]">
+              This location is outside our delivery area.
+            </p>
+            <div className="mt-6 space-y-2.5">
+              <button
+                type="button"
+                onClick={() => setOutOfRange(false)}
+                className="w-full rounded-xl bg-[#f56215] py-3 font-semibold text-white"
+              >
+                Pick another location
+              </button>
+              <button
+                type="button"
+                onClick={goHome}
+                className="w-full rounded-xl border border-gray-200 py-3 font-medium text-[#111]"
+              >
+                Go to home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

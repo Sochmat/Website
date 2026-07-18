@@ -55,6 +55,34 @@ button {
   animation: slide-up 0.3s ease-out forwards;
 }
 
+@keyframes slide-down {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.animate-slide-down {
+  animation: slide-down 0.25s ease-in forwards;
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-fade-out {
+  animation: fade-out 0.25s ease-in forwards;
+}
+
 @keyframes heart-sprout {
   0% {
     transform: translateY(0) scale(0.3);

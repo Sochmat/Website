@@ -52,7 +52,11 @@ export default function OrderPage() {
   const { distanceFromStoreKm, isServiceable, society } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
-  const { open: storeOpen, loading: storeLoading } = useStoreStatus();
+  const {
+    open: storeOpen,
+    deliveryOn,
+    loading: storeLoading,
+  } = useStoreStatus();
   const router = useRouter();
 
   useEffect(() => {
@@ -327,9 +331,22 @@ export default function OrderPage() {
             );
           },
           onError: (error) => {
-            message.error(error.message || "Payment failed");
+            const msg =
+              error instanceof Error
+                ? error.message
+                : String(error ?? "Payment failed");
             console.error(error);
             setPlacingOrder(false);
+            // A dismissed/cancelled checkout sheet keeps the user on the cart
+            // so they can retry; a real failure routes to the failed page.
+            if (/cancel/i.test(msg)) {
+              message.error(msg || "Payment cancelled");
+              return;
+            }
+            const params = new URLSearchParams();
+            if (data.order?._id) params.set("orderId", String(data.order._id));
+            if (msg) params.set("reason", msg);
+            router.push(`/failed?${params.toString()}`);
           },
         });
       } else {
@@ -687,6 +704,7 @@ export default function OrderPage() {
           defaultFloor={savedDeliveryDetails?.floor ?? ""}
           defaultRoom={savedDeliveryDetails?.room ?? ""}
           submitting={placingOrder}
+          deliveryAvailable={deliveryOn}
           onConfirm={placeOrder}
         />
       )}

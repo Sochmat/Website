@@ -2,17 +2,21 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Product } from "@/context/CartContext";
+import SheetCloseButton from "./subscription/SheetCloseButton";
 
 interface IngredientsSheetProps {
   open: boolean;
   onClose: () => void;
   product: Product;
+  /** Show the floating centered close button (subscription flow). */
+  floatingClose?: boolean;
 }
 
 export default function IngredientsSheet({
   open,
   onClose,
   product,
+  floatingClose = false,
 }: IngredientsSheetProps) {
   const [closing, setClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -71,12 +75,17 @@ export default function IngredientsSheet({
   if (!open && !closing) return null;
 
   return (
-    <div className="fixed inset-0 z-100 flex items-end justify-center">
+    <div className="fixed inset-0 z-100 flex flex-col items-center justify-end">
       {/* Backdrop */}
       <div
         className={`absolute inset-0 bg-black/40 ${closing ? "animate-fade-out" : ""}`}
         onClick={closeWithSlide}
       />
+
+      {/* Floating close (subscription flow) — hidden once dragged full-screen */}
+      {floatingClose && !expanded && (
+        <SheetCloseButton onClose={closeWithSlide} closing={closing} />
+      )}
 
       {/* Sheet */}
 

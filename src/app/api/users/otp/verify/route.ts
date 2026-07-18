@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import {
+  CUSTOMER_COOKIE,
+  customerCookieOptions,
+  signCustomerSession,
+} from "@/lib/customerAuth";
 
 export async function POST(request: NextRequest) {
   const limited = await rateLimit(request, limiters.auth);
@@ -65,9 +70,11 @@ export async function POST(request: NextRequest) {
 
     await db.collection("otps").deleteOne(query);
 
+    // Legacy opaque token, still read by UserContext for its localStorage state.
+    // It authenticates nothing; the httpOnly cookie below is the real credential.
     const token = Buffer.from(`${user._id}:${Date.now()}`).toString("base64");
-    
-    return NextResponse.json({
+
+    const response = NextResponse.json({
       success: true,
       token,
       user: {
@@ -81,6 +88,13 @@ export async function POST(request: NextRequest) {
         updatedAt: user.updatedAt,
       },
     });
+
+    response.cookies.set(
+      CUSTOMER_COOKIE,
+      await signCustomerSession(String(user._id)),
+      customerCookieOptions(),
+    );
+    return response;
   } catch (error) {
     console.error("Error verifying OTP:", error);
     return NextResponse.json(

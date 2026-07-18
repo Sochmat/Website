@@ -41,7 +41,9 @@ export default function AdminLoginPage() {
       });
       const data = await res.json();
       if (data.success) {
-        localStorage.setItem("adminToken", data.token);
+        // The real session lives in an httpOnly cookie set by the server. These
+        // localStorage values are only UI markers (which dashboard to render).
+        localStorage.setItem("adminToken", "1");
         localStorage.setItem("adminRole", data.role);
         await unlockNotificationSound();
         router.replace(data.role === "shop" ? "/admin/orders" : "/admin/menu");

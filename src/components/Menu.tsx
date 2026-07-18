@@ -195,6 +195,9 @@ export default function Menu({
   // ignore the selected category; otherwise filter by the chosen category.
   const query = search.trim().toLowerCase();
   const listProducts = products.filter((p) => {
+    // Add-on items are only offered inside the add-to-cart sheet, never as
+    // standalone menu cards.
+    if (p.isAddOn) return false;
     if ((p.type ?? "food") !== activeTab) return false;
     if (query) {
       return `${p.name} ${p.description ?? ""}`.toLowerCase().includes(query);

@@ -13,12 +13,18 @@ import {
 
 interface StoreStatusContextType {
   open: boolean;
+  deliveryOn: boolean;
   loading: boolean;
+  /** When closed by the schedule, a label like "11:00 AM" for the reopen time. */
+  opensAtLabel: string | null;
   refresh: () => Promise<void>;
   setOpen: (value: boolean) => Promise<boolean>;
+  setDeliveryOn: (value: boolean) => Promise<boolean>;
 }
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Short so an automatic open/close from the schedule shows on open tabs quickly.
+// (The server-side 503 gate enforces immediately regardless of this cadence.)
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const StoreStatusContext = createContext<StoreStatusContextType | undefined>(
   undefined,
@@ -26,13 +32,20 @@ const StoreStatusContext = createContext<StoreStatusContextType | undefined>(
 
 export function StoreStatusProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(true);
+  const [deliveryOn, setDeliveryOnState] = useState(true);
+  const [opensAtLabel, setOpensAtLabel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const cancelledRef = useRef(false);
   const openRef = useRef(true);
+  const deliveryRef = useRef(true);
 
   useEffect(() => {
     openRef.current = open;
   }, [open]);
+
+  useEffect(() => {
+    deliveryRef.current = deliveryOn;
+  }, [deliveryOn]);
 
   const refresh = useCallback(async () => {
     try {
@@ -42,6 +55,13 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
       if (data?.success && typeof data.open === "boolean") {
         openRef.current = data.open;
         setOpenState(data.open);
+        setOpensAtLabel(
+          typeof data.opensAtLabel === "string" ? data.opensAtLabel : null,
+        );
+      }
+      if (data?.success && typeof data.delivery === "boolean") {
+        deliveryRef.current = data.delivery;
+        setDeliveryOnState(data.delivery);
       }
     } catch (error) {
       console.error("Failed to fetch store status:", error);
@@ -75,6 +95,31 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setDeliveryOn = useCallback(async (value: boolean) => {
+    const previous = deliveryRef.current;
+    deliveryRef.current = value;
+    setDeliveryOnState(value); // optimistic
+    try {
+      const res = await fetch("/api/admin/delivery-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on: value }),
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        deliveryRef.current = previous;
+        if (!cancelledRef.current) setDeliveryOnState(previous);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error("Failed to update delivery status:", error);
+      deliveryRef.current = previous;
+      if (!cancelledRef.current) setDeliveryOnState(previous);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     cancelledRef.current = false;
     refresh();
@@ -86,8 +131,16 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ open, loading, refresh, setOpen }),
-    [open, loading, refresh, setOpen],
+    () => ({
+      open,
+      deliveryOn,
+      loading,
+      opensAtLabel,
+      refresh,
+      setOpen,
+      setDeliveryOn,
+    }),
+    [open, deliveryOn, loading, opensAtLabel, refresh, setOpen, setDeliveryOn],
   );
 
   return (

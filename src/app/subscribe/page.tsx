@@ -290,6 +290,7 @@ function SubscribeContent() {
             contact: selectedAddress.receiverPhone ?? "",
           },
           orderId: data.subscription?._id,
+          flow: "subscription",
           onSuccess: async (response) => {
             if (data.subscription?._id && response.razorpay_payment_id) {
               try {

@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { Pencil } from "lucide-react";
 import type { UserAddress } from "@/lib/types";
+import SheetCloseButton from "./subscription/SheetCloseButton";
 
 function sameAddress(a: UserAddress, b: UserAddress): boolean {
   if (a.id && b.id) return a.id === b.id;
@@ -16,6 +18,8 @@ interface SelectAddressSheetProps {
   onSelect: (addr: UserAddress) => void;
   onAddNew: () => void;
   onEdit?: (addr: UserAddress) => void;
+  /** @deprecated The floating close button is always shown now; kept for call-site compatibility. */
+  floatingClose?: boolean;
 }
 
 export default function SelectAddressSheet({
@@ -43,35 +47,22 @@ export default function SelectAddressSheet({
   if (!open) return null;
 
   return (
-    <>
+    <div className="fixed inset-0 z-[210] flex flex-col items-center justify-end">
       <div
-        className="fixed inset-0 z-[210] bg-black/40"
+        className="absolute inset-0 bg-black/40"
         onClick={onClose}
         aria-hidden
       />
+      <SheetCloseButton onClose={onClose} />
       <div
         ref={sheetRef}
-        className="fixed left-0 right-0 bottom-0 z-[211] max-w-[430px] mx-auto bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[85vh] flex flex-col"
+        className="relative w-full max-w-[430px] bg-white rounded-t-[24px] shadow-[0_-4px_24px_rgba(0,0,0,0.12)] animate-slide-up max-h-[85vh] flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label="Select Address"
       >
         <div className="w-12 h-1 bg-[#e5e5e5] rounded-full mx-auto mt-3 shrink-0" />
-        <div className="px-4 pb-6 pt-2 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 mb-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 -ml-2 text-[#111]"
-              aria-label="Back"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h2 className="text-lg font-semibold text-[#111]">Select Address</h2>
-          </div>
-
+        <div className="px-4 pb-6 pt-4 flex flex-col overflow-hidden">
           <button
             type="button"
             onClick={onAddNew}
@@ -123,8 +114,9 @@ export default function SelectAddressSheet({
                           e.stopPropagation();
                           onEdit(addr);
                         }}
-                        className="absolute bottom-3 right-3 text-[#f56215] text-xs font-medium hover:underline"
+                        className="absolute bottom-3 right-3 inline-flex items-center gap-1 text-[#f56215] text-xs font-medium hover:underline"
                       >
+                        <Pencil className="h-3.5 w-3.5" />
                         Edit
                       </button>
                     )}
@@ -135,6 +127,6 @@ export default function SelectAddressSheet({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

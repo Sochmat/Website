@@ -35,6 +35,8 @@ export interface MenuItem {
   isAddOn?: boolean;
   isRecommended?: boolean;
   showOnHomePage?: boolean;
+  /** Gates the "Subscribe" choice on the à-la-carte item card, which routes to
+   *  the legacy single-item /subscribe flow. Unrelated to the bracket plans. */
   isAvailableForSubscription?: boolean;
   hidden?: boolean;
   addOns?: string[];
@@ -96,6 +98,15 @@ export interface Order {
   paymentId?: string;
   paymentUrl?: string;
   paymentSignature?: string;
+  /** Razorpay order id bound to this order at payment verification time. */
+  razorpayOrderId?: string;
+  /** Razorpay refund id + time, set when an order is rejected & refunded. */
+  refundId?: string;
+  refundedAt?: Date;
+  /** Frozen ETA stamped at successful payment (paidAt + 30 min). */
+  expectedReadyAt?: Date | string;
+  /** Time the order was first accepted/confirmed (drives the shop timer). */
+  confirmedAt?: Date | string;
 
   orderItems: OrderItem[];
   method?: "Dine-in" | "Delivery";
@@ -160,6 +171,150 @@ export interface User {
   country?: string;
   pincode?: string;
   addresses?: UserAddress[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export const BRACKET_KEYS = ["25-30", "30-40", "40-50"] as const;
+export type ProteinBracketKey = (typeof BRACKET_KEYS)[number];
+
+/** "veg" = veg items only, veg price. "veg-nonveg" = both lists, non-veg price. */
+export type SubscriptionDiet = "veg" | "veg-nonveg";
+
+/** Flat per-meal pricing for one protein bracket. Admin-editable, and the only
+ *  source of truth the server will price a plan from. Collection: `subscriptionBrackets`. */
+export interface SubscriptionBracket {
+  _id?: ObjectId | string;
+  key: ProteinBracketKey;
+  label: string; // "25-30g protein"
+  proteinMin: number;
+  proteinMax: number;
+  /** Pre-GST list price of ONE meal on a veg-only plan (before discount). */
+  vegPrice: number;
+  /** Pre-GST list price of ONE meal on a veg+non-veg plan (charged even for veg meals). */
+  nonVegPrice: number;
+  /** Percent (0–100) knocked off `vegPrice`. Absent/0 = no discount. */
+  vegDiscount?: number;
+  /** Percent (0–100) knocked off `nonVegPrice`. Absent/0 = no discount. */
+  nonVegDiscount?: number;
+  sortOrder: number;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/** A meal offered inside a subscription bracket. Collection: `subscriptionMenuItems`,
+ *  which is completely independent of the à-la-carte `menuItems`. There is no
+ *  per-item price: the plan's bracket + diet sets it. */
+export interface SubscriptionMenuItem {
+  _id?: ObjectId | string;
+  bracket: ProteinBracketKey;
+  name: string;
+  /** Normalized `name`, recomputed on every write. Search + duplicate detection. */
+  nameKey: string;
+  /** Immutable identity of the source spreadsheet row, and the importer's upsert
+   *  key — so an admin renaming an item never causes a duplicate on re-import.
+   *  Absent for items created by hand in the admin UI. */
+  importKey?: string;
+  description?: string;
+  /** 0 means "unknown"; the importer marks such rows `hidden` for an admin to fix. */
+  protein: number;
+  kcal: number;
+  fiber?: number;
+  carbs?: number;
+  image: string;
+  isVeg: boolean;
+  ingredients?: string[];
+  /** The spreadsheet's `price` column. INTERNAL ONLY — never serialized to a
+   *  customer response. Kept for margin analysis. See `toPublicSubscriptionItem`. */
+  referencePrice: number;
+  hidden?: boolean;
+  sortOrder?: number;
+  source?: "sheet" | "admin";
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type SubscriptionCreditStatus =
+  | "available" // unassigned, spendable
+  | "scheduled" // assigned to a date + item, editable until that date's noon IST
+  | "delivered" // kitchen fulfilled it
+  | "expired" // still available when the plan's expiresOn passed
+  | "cancelled"; // admin-voided
+
+/** One of the meals bought. Item fields are snapshotted at schedule time, so a
+ *  later admin edit to the menu item cannot mutate a locked delivery. */
+export interface SubscriptionCredit {
+  /** Stable within the plan: "c1".."c7". Never reused. */
+  id: string;
+  status: SubscriptionCreditStatus;
+  /** IST calendar date (yyyy-mm-dd). Set iff status is scheduled | delivered. */
+  date?: string;
+  weekday?: string;
+  /** `subscriptionMenuItems._id` as a string. */
+  productId?: string;
+  itemName?: string;
+  protein?: number;
+  kcal?: number;
+  isVeg?: boolean;
+  /** Per-meal delivery address override (snapshot). Falls back to the plan's
+   *  `receiver` when unset, so most meals need no per-meal address at all. */
+  receiver?: {
+    name: string;
+    phone: string;
+    address: string;
+    lat?: number;
+    long?: number;
+  };
+  scheduledAt?: Date;
+  deliveredAt?: Date;
+  expiredAt?: Date;
+  cancelledAt?: Date;
+}
+
+/** A purchase of N meal credits inside one bracket + diet.
+ *  Collection: `subscriptionMealPlans`. */
+export interface SubscriptionMealPlan {
+  _id?: ObjectId | string;
+  planNumber: string;
+  userId: ObjectId | string;
+
+  bracket: ProteinBracketKey;
+  diet: SubscriptionDiet;
+
+  /** Pre-GST price of ONE meal, frozen at purchase. Later bracket price edits
+   *  never re-price an existing plan. */
+  pricePerMeal: number;
+  mealCount: number;
+  subtotal: number;
+  tax: number;
+  totalAmount: number;
+
+  credits: SubscriptionCredit[]; // length === mealCount
+
+  /** Set at payment success. Expiry anchors here, not on createdAt. */
+  activatedAt?: Date;
+  /** Last IST calendar date a credit may be delivered on, inclusive. Empty until paid. */
+  expiresOn: string;
+  expiresAt?: Date;
+
+  receiver: {
+    name: string;
+    phone: string;
+    address: string;
+    lat?: number;
+    long?: number;
+  };
+  deliveryTime: string; // "HH:mm" IST, applies to every scheduled day
+
+  paymentMethod: "razorpay";
+  paymentStatus: "pending" | "paid" | "failed" | "refunded";
+  paymentId?: string;
+  razorpayOrderId?: string;
+
+  /** "pending" until paid. "completed" when no credit is available or scheduled. */
+  status: "pending" | "active" | "completed" | "expired" | "cancelled";
+
   createdAt?: Date;
   updatedAt?: Date;
 }
