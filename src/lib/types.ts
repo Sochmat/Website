@@ -173,6 +173,14 @@ export interface User {
   addresses?: UserAddress[];
   createdAt?: Date;
   updatedAt?: Date;
+  /** Unique share code, e.g. "SM4K9T". Generated lazily; see src/lib/referral.ts. */
+  referralCode?: string;
+  /** The referrer's user id. Set once, only at registration, only for a new user. */
+  referredBy?: ObjectId | string;
+  /** True once the referrer for this user has been paid their ₹200. */
+  referralCredited?: boolean;
+  /** Integer ₹ wallet balance. Missing means 0. */
+  walletBalance?: number;
 }
 
 export const BRACKET_KEYS = ["25-30", "30-40", "40-50"] as const;
@@ -285,6 +293,12 @@ export interface SubscriptionMealPlan {
   subtotal: number;
   tax: number;
   totalAmount: number;
+  /** ₹ removed by the first-plan 20% discount. 0/absent if not the user's first plan. */
+  firstPlanDiscount?: number;
+  /** ₹ of wallet reserved against this plan. 0/absent if none. */
+  walletApplied?: number;
+  /** = totalAmount - walletApplied. What Razorpay charges and what verify matches. */
+  amountPayable?: number;
 
   credits: SubscriptionCredit[]; // length === mealCount
 
@@ -313,4 +327,17 @@ export interface SubscriptionMealPlan {
 
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/** Append-only wallet ledger. Collection: `walletTransactions`. `walletBalance`
+ *  on the user is the fast-read value; this is the source of truth for support. */
+export interface WalletTransaction {
+  _id?: ObjectId | string;
+  userId: ObjectId | string;
+  type: "referral_earned" | "reserved" | "spent" | "refunded";
+  /** Always positive ₹; `type` gives the direction. */
+  amount: number;
+  planId?: ObjectId | string;
+  refereeUserId?: ObjectId | string;
+  createdAt: Date;
 }
