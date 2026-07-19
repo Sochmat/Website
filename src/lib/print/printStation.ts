@@ -73,10 +73,27 @@ function printHtml(html: string): Promise<void> {
     doc.write(html);
     doc.close();
 
-    // Give the iframe a tick to lay out before printing. The fallback timer
-    // covers browsers (e.g. Chrome --kiosk-printing) that never fire
-    // onafterprint.
-    setTimeout(() => {
+    // Receipts are printed as a bitmap <img> whose data URL decodes async, so
+    // wait for images to finish loading (capped) before printing — otherwise a
+    // blank page spools. The fallback timer covers browsers (e.g. Chrome
+    // --kiosk-printing) that never fire onafterprint.
+    const images = Array.from(doc.images ?? []);
+    const imagesReady = Promise.all(
+      images.map((img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>((res) => {
+              img.onload = () => res();
+              img.onerror = () => res();
+            }),
+      ),
+    );
+    const readyOrTimeout = Promise.race([
+      imagesReady,
+      new Promise<void>((res) => setTimeout(res, 3000)),
+    ]);
+
+    void readyOrTimeout.then(() => {
       try {
         win.focus();
         win.print();
@@ -84,6 +101,6 @@ function printHtml(html: string): Promise<void> {
         // ignore; the fallback timer resolves the job
       }
       setTimeout(finish, 1500);
-    }, 100);
+    });
   });
 }

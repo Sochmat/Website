@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Table, Select, Button, Popconfirm, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { enqueuePrint } from "@/lib/print/printStation";
-import { renderKot } from "@/lib/print/renderKot";
-import { renderBill } from "@/lib/print/renderBill";
+import { renderKotImageDoc, renderBillImageDoc } from "@/lib/print/rasterize";
 import { SAMPLE_BILL, SAMPLE_TICKET } from "@/lib/print/samples";
 import type { ReceiptOrder, ShopConfig } from "@/lib/print/types";
 
@@ -456,7 +455,7 @@ export default function AdminOrdersPage() {
         if (!inFlightRef.current.has(tag)) {
           inFlightRef.current.add(tag);
           const receipt = receiptOrderFromRow(rowOrder);
-          enqueuePrint(renderKot(receipt, shopConfig), () =>
+          enqueuePrint(renderKotImageDoc(receipt, shopConfig), () =>
             ackPrint(rowOrder.key, "kot"),
           );
         }
@@ -466,7 +465,7 @@ export default function AdminOrdersPage() {
         if (!inFlightRef.current.has(tag)) {
           inFlightRef.current.add(tag);
           const receipt = receiptOrderFromRow(rowOrder);
-          enqueuePrint(renderBill(receipt, shopConfig), () =>
+          enqueuePrint(renderBillImageDoc(receipt, shopConfig), () =>
             ackPrint(rowOrder.key, "bill"),
           );
         }
@@ -891,8 +890,8 @@ export default function AdminOrdersPage() {
                   address: "",
                   cashier: "biller",
                 };
-              enqueuePrint(renderKot(SAMPLE_TICKET, cfg), () => {});
-              enqueuePrint(renderBill(SAMPLE_BILL, cfg), () => {});
+              enqueuePrint(renderKotImageDoc(SAMPLE_TICKET, cfg), () => {});
+              enqueuePrint(renderBillImageDoc(SAMPLE_BILL, cfg), () => {});
             }}
           >
             Test print
