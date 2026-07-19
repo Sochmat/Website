@@ -26,6 +26,7 @@ const NAV_ITEMS: { href: string; label: string; adminOnly: boolean }[] = [
   { href: "/admin/users", label: "Users", adminOnly: true },
   { href: "/admin/payment-logs", label: "Payment Logs", adminOnly: true },
   { href: "/admin/store-hours", label: "Store Hours", adminOnly: true },
+  { href: "/admin/society-discounts", label: "Location Discounts", adminOnly: true },
 ];
 
 /**
@@ -218,7 +219,9 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (!mounted || typeof window === "undefined") return;
-    if (pathname === "/admin/login") return;
+    // Only poll for new paid orders while the Orders page is open — no need to
+    // hit /api/orders from every other admin route.
+    if (pathname !== "/admin/orders") return;
     const token = localStorage.getItem("adminToken");
     if (!token) return;
 

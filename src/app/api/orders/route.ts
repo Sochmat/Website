@@ -5,6 +5,12 @@ import { Order, User } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
+import {
+  SOCIETY_DISCOUNTS_KEY,
+  sanitizeDiscountMap,
+  discountPercentFor,
+  computeSocietyDiscount,
+} from "@/lib/societyDiscounts";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -65,9 +71,10 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const [storeDoc, deliveryDoc] = await Promise.all([
+    const [storeDoc, deliveryDoc, societyDiscountsDoc] = await Promise.all([
       settingsDb.collection("settings").findOne({ key: "store" }),
       settingsDb.collection("settings").findOne({ key: "delivery" }),
+      settingsDb.collection("settings").findOne({ key: SOCIETY_DISCOUNTS_KEY }),
     ]);
     if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
@@ -243,6 +250,19 @@ export async function POST(request: NextRequest) {
       allowedDiscount = allowed;
     }
 
+    // Per-society flat discount (% of subtotal). Resolved server-side from the
+    // society id so the client can't inflate it; stacks with the coupon. Being
+    // generous here only relaxes the floor, so it never over-rejects.
+    const societyDiscountPercent = discountPercentFor(
+      sanitizeDiscountMap(societyDiscountsDoc?.discounts),
+      typeof body.societyId === "string" ? body.societyId : undefined,
+    );
+    const societyDiscountAmount = computeSocietyDiscount(
+      serverSubtotal,
+      societyDiscountPercent,
+    );
+    allowedDiscount += societyDiscountAmount;
+
     const minAcceptable = Math.max(
       0,
       serverSubtotal - Math.max(0, allowedDiscount),
@@ -305,6 +325,13 @@ export async function POST(request: NextRequest) {
         body.orderType === "delivery" ? body.deliveryFloor : undefined,
       deliveryRoom:
         body.orderType === "delivery" ? body.deliveryRoom : undefined,
+      deliverySlot:
+        body.orderType === "delivery" ? body.deliverySlot : undefined,
+      deliveryFee:
+        body.orderType === "delivery" ? Number(body.deliveryFee) || 0 : 0,
+      societyId: typeof body.societyId === "string" ? body.societyId : undefined,
+      societyDiscount: societyDiscountAmount,
+      societyDiscountPercent,
       totalAmount,
       discountAmount,
       tax,

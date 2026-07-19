@@ -27,6 +27,12 @@ import { ArrowRightIcon } from "lucide-react";
 import DeliveryDetailsSheet, {
   type DeliveryDetails,
 } from "@/components/DeliveryDetailsSheet";
+import {
+  activeSlot,
+  isDeliveryOpenNow,
+  slotWindowLabel,
+} from "@/lib/societySlots";
+import { computeSocietyDiscount } from "@/lib/societyDiscounts";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -49,7 +55,8 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { distanceFromStoreKm, isServiceable, society } = useLocation();
+  const { distanceFromStoreKm, isServiceable, society, societyDiscountPercent } =
+    useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const {
@@ -204,14 +211,25 @@ export default function OrderPage() {
     let orderTypeFields: Partial<Order>;
 
     if (details.orderType === "delivery") {
+      // Recompute the slot against a fresh clock: the cutoff may have passed
+      // while the page sat open. No active slot → delivery is closed for now.
+      const slot = activeSlot(society, new Date());
+      if (society.slots.length > 0 && !slot) {
+        message.error(
+          `Delivery slots for ${society.name} are closed for now. Please choose Dine-in.`,
+        );
+        return;
+      }
       receiverName = details.name;
       receiverPhone = details.phone;
-      addressStr = `${details.tower}, Floor ${details.floor}, Room ${details.room}, ${society.label}`;
+      const slotSuffix = slot ? ` (delivery by ${slotWindowLabel(slot)})` : "";
+      addressStr = `${details.tower}, Floor ${details.floor}, Room ${details.room}, ${society.label}${slotSuffix}`;
       orderTypeFields = {
         orderType: "delivery",
         deliveryTower: details.tower,
         deliveryFloor: details.floor,
         deliveryRoom: details.room,
+        ...(slot ? { deliverySlot: slotWindowLabel(slot) } : {}),
       };
     } else {
       receiverName = details.name;
@@ -253,7 +271,16 @@ export default function OrderPage() {
     setPlacingOrder(true);
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
-      const discountedAmount = Math.max(0, totalPrice - couponDiscountAmount);
+      // Location discount: % of item subtotal, stacks with any coupon, all
+      // order types. Authoritatively re-derived on the server from societyId.
+      const societyDiscountAmount = computeSocietyDiscount(
+        totalPrice,
+        societyDiscountPercent,
+      );
+      const discountedAmount = Math.max(
+        0,
+        totalPrice - couponDiscountAmount - societyDiscountAmount,
+      );
       const gstAmount = Math.round(discountedAmount * 0.05);
       // Delivery charge applies only to delivery orders (not dine-in).
       const deliveryFeeAmount =
@@ -296,6 +323,9 @@ export default function OrderPage() {
         discountAmount: couponDiscountAmount,
         tax: gstAmount,
         deliveryFee: deliveryFeeAmount,
+        societyId: society.id,
+        societyDiscount: societyDiscountAmount,
+        societyDiscountPercent: societyDiscountPercent,
         paymentMethod: paymentMethod,
         couponCode: appliedCoupon?.code ?? undefined,
       };
@@ -372,11 +402,25 @@ export default function OrderPage() {
   };
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
-  const discountedSubtotal = Math.max(0, totalPrice - couponDiscount);
+  // Flat location discount for the selected society (% of item subtotal),
+  // stacks with any coupon. Authoritatively re-derived server-side.
+  const societyDiscount = computeSocietyDiscount(
+    totalPrice,
+    societyDiscountPercent,
+  );
+  const discountedSubtotal = Math.max(
+    0,
+    totalPrice - couponDiscount - societyDiscount,
+  );
   const gst = Math.round(discountedSubtotal * 0.05);
+  // Delivery is available only when the store allows it AND this society's slots
+  // (if any) are still open. Societies without slots (e.g. Pivotal) are always
+  // open. Recomputed authoritatively at order time in placeOrder.
+  const slotsAllowDelivery = isDeliveryOpenNow(society, new Date());
+  const deliveryAvailable = deliveryOn && slotsAllowDelivery;
   // Preview the delivery charge when delivery is available (the default choice);
   // dine-in orders drop it — the authoritative amount is recomputed in placeOrder.
-  const deliveryFee = deliveryOn ? society.deliveryCharge : 0;
+  const deliveryFee = deliveryAvailable ? society.deliveryCharge : 0;
   const finalPrice = discountedSubtotal + gst + deliveryFee;
   const originalWithTax = Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
 
@@ -606,13 +650,13 @@ export default function OrderPage() {
                 <span className="font-semibold text-sm text-[#111]">
                   ₹{finalPrice}
                 </span>
-                {couponDiscount ? (
+                {couponDiscount || societyDiscount ? (
                   <span className="text-[#777] text-[13px] line-through">
                     ₹{originalWithTax}
                   </span>
                 ) : null}
               </div>
-              {couponDiscount ? (
+              {couponDiscount || societyDiscount ? (
                 <p className="text-[#00a86e] text-[11px] font-medium text-left">
                   ₹{originalWithTax - finalPrice} saved!
                 </p>
@@ -649,6 +693,14 @@ export default function OrderPage() {
                   <span className="text-[#666]">Discount</span>
                   <span className="text-[#00a86e]">₹{couponDiscount}</span>
                 </div>
+                {societyDiscount > 0 ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#666]">
+                      Location discount ({societyDiscountPercent}%)
+                    </span>
+                    <span className="text-[#00a86e]">₹{societyDiscount}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between text-sm">
                   <span className="text-[#666]">GST (5%)</span>
                   <span className="text-[#666] text-[13px]">₹{gst}</span>
@@ -719,7 +771,7 @@ export default function OrderPage() {
           defaultFloor={savedDeliveryDetails?.floor ?? ""}
           defaultRoom={savedDeliveryDetails?.room ?? ""}
           submitting={placingOrder}
-          deliveryAvailable={deliveryOn}
+          deliveryAvailable={deliveryAvailable}
           onConfirm={placeOrder}
         />
       )}
