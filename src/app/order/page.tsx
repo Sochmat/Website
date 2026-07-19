@@ -33,6 +33,7 @@ import {
   slotWindowLabel,
 } from "@/lib/societySlots";
 import { computeSocietyDiscount } from "@/lib/societyDiscounts";
+import LocationDiscountModal from "@/components/LocationDiscountModal";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -775,6 +776,8 @@ export default function OrderPage() {
           onConfirm={placeOrder}
         />
       )}
+
+      <LocationDiscountModal />
 
       {/* OLD address sheets — disabled; replaced by DeliveryDetailsSheet
       <SelectAddressSheet
