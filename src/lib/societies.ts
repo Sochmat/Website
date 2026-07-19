@@ -12,6 +12,8 @@ export interface Society {
   label: string;
   /** Towers available within this society. */
   towers: string[];
+  /** Delivery charge (INR) for orders to this society. */
+  deliveryCharge: number;
 }
 
 export const SOCIETIES: Society[] = [
@@ -21,6 +23,15 @@ export const SOCIETIES: Society[] = [
     sector: "Sector 62",
     label: "Pivotal Paradise, Sector 62",
     towers: ["T1", "T2", "T3", "T4", "T5", "T6", "T7"],
+    deliveryCharge: 0,
+  },
+  {
+    id: "zomato-office-sector-62",
+    name: "Zomato office",
+    sector: "Sector 62",
+    label: "Zomato office, Sector 62",
+    towers: ["T1", "T2"],
+    deliveryCharge: 15,
   },
 ];
 

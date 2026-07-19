@@ -255,7 +255,10 @@ export default function OrderPage() {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       const discountedAmount = Math.max(0, totalPrice - couponDiscountAmount);
       const gstAmount = Math.round(discountedAmount * 0.05);
-      const finalAmount = discountedAmount + gstAmount;
+      // Delivery charge applies only to delivery orders (not dine-in).
+      const deliveryFeeAmount =
+        details.orderType === "delivery" ? society.deliveryCharge : 0;
+      const finalAmount = discountedAmount + gstAmount + deliveryFeeAmount;
 
       const orderPayload: Order = {
         paymentStatus: "pending",
@@ -292,6 +295,7 @@ export default function OrderPage() {
         totalAmount: finalAmount,
         discountAmount: couponDiscountAmount,
         tax: gstAmount,
+        deliveryFee: deliveryFeeAmount,
         paymentMethod: paymentMethod,
         couponCode: appliedCoupon?.code ?? undefined,
       };
@@ -370,7 +374,11 @@ export default function OrderPage() {
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   const discountedSubtotal = Math.max(0, totalPrice - couponDiscount);
   const gst = Math.round(discountedSubtotal * 0.05);
-  const finalPrice = discountedSubtotal + gst;
+  // Preview the delivery charge when delivery is available (the default choice);
+  // dine-in orders drop it — the authoritative amount is recomputed in placeOrder.
+  const deliveryFee = deliveryOn ? society.deliveryCharge : 0;
+  const finalPrice = discountedSubtotal + gst + deliveryFee;
+  const originalWithTax = Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
 
   if (totalItems === 0) {
     return (
@@ -600,14 +608,13 @@ export default function OrderPage() {
                 </span>
                 {couponDiscount ? (
                   <span className="text-[#777] text-[13px] line-through">
-                    ₹{Math.round(totalPrice + totalPrice * 0.05)}
+                    ₹{originalWithTax}
                   </span>
                 ) : null}
               </div>
               {couponDiscount ? (
                 <p className="text-[#00a86e] text-[11px] font-medium text-left">
-                  ₹{Math.round(totalPrice + totalPrice * 0.05) - finalPrice}{" "}
-                  saved!
+                  ₹{originalWithTax - finalPrice} saved!
                 </p>
               ) : null}
             </div>
@@ -646,6 +653,14 @@ export default function OrderPage() {
                   <span className="text-[#666]">GST (5%)</span>
                   <span className="text-[#666] text-[13px]">₹{gst}</span>
                 </div>
+                {deliveryFee > 0 ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#666]">Delivery Charge</span>
+                    <span className="text-[#666] text-[13px]">
+                      ₹{deliveryFee}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </>
           )}
