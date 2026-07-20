@@ -1,15 +1,29 @@
 import { Db, ObjectId } from "mongodb";
 
 const USERS = "users";
-// No 0/O/1/I to keep shared codes unambiguous.
-const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-export function randomReferralCode(rand: () => number = Math.random): string {
-  let code = "SM";
-  for (let i = 0; i < 4; i++) {
-    code += ALPHABET[Math.floor(rand() * ALPHABET.length)];
-  }
-  return code;
+/**
+ * The uppercased first name, stripped to A–Z and capped, used as the human-
+ * readable prefix of a referral code. Falls back to "USER" when the name has no
+ * usable letters (empty, or all digits/punctuation).
+ */
+export function referralPrefix(name?: string): string {
+  const first = String(name ?? "").trim().split(/\s+/)[0] ?? "";
+  const letters = first.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 12);
+  return letters || "USER";
+}
+
+/**
+ * `<PREFIX><4 digits>`, e.g. "HARSH1042". The name prefix makes the code
+ * recognisable to share; the 4-digit suffix keeps it short. Uniqueness is the
+ * caller's job (retry against the unique index in getOrCreateReferralCode).
+ */
+export function randomReferralCode(
+  name?: string,
+  rand: () => number = Math.random,
+): string {
+  const suffix = String(Math.floor(rand() * 10000)).padStart(4, "0");
+  return `${referralPrefix(name)}${suffix}`;
 }
 
 let indexReady: Promise<unknown> | null = null;
@@ -32,12 +46,13 @@ export async function getOrCreateReferralCode(
 ): Promise<string> {
   const existing = await db
     .collection(USERS)
-    .findOne({ _id: userId }, { projection: { referralCode: 1 } });
+    .findOne({ _id: userId }, { projection: { referralCode: 1, name: 1 } });
   if (existing?.referralCode) return existing.referralCode;
 
   await ensureIndex(db);
   for (let attempt = 0; attempt < 8; attempt++) {
-    const code = randomReferralCode();
+    // A fresh 4-digit suffix each attempt, so a collision retries with a new code.
+    const code = randomReferralCode(existing?.name);
     try {
       const res = await db
         .collection(USERS)

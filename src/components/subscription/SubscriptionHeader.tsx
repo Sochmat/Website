@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogIn, LogOut, MapPin, ReceiptText, Ticket, User } from "lucide-react";
+import { Gift, LogIn, LogOut, MapPin, ReceiptText, Ticket, User } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import SelectAddressSheet from "@/components/SelectAddressSheet";
@@ -127,6 +127,11 @@ export default function SubscriptionHeader() {
                       closeMenu();
                       setShowAddresses(true);
                     }}
+                  />
+                  <MenuRow
+                    icon={<Gift className="w-4 h-4" />}
+                    label="Refer & Earn"
+                    onClick={() => go("/subscription/refer")}
                   />
                   <MenuRow
                     icon={<LogOut className="w-4 h-4" />}
