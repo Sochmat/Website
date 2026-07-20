@@ -18,6 +18,10 @@ import {
   getSocietyById,
   type Society,
 } from "@/lib/societies";
+import {
+  discountPercentFor,
+  type SocietyDiscountMap,
+} from "@/lib/societyDiscounts";
 
 export interface UserLocation {
   lat: number;
@@ -39,6 +43,8 @@ interface LocationContextType {
   /** Currently selected delivery society. */
   society: Society;
   setSocietyId: (id: string) => void;
+  /** Admin-configured flat discount % for the selected society (0 when none). */
+  societyDiscountPercent: number;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -48,6 +54,7 @@ const LocationContext = createContext<LocationContextType | undefined>(
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [location, setLocationState] = useState<UserLocation | null>(null);
   const [societyId, setSocietyIdState] = useState<string>(DEFAULT_SOCIETY.id);
+  const [discounts, setDiscounts] = useState<SocietyDiscountMap>({});
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -75,6 +82,26 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   }, [mounted]);
 
+  // Load admin-configured per-society discounts (public, no-store).
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/society-discounts", { cache: "no-store" });
+        const data = await res.json();
+        if (!cancelled && data?.success && data.discounts) {
+          setDiscounts(data.discounts as SocietyDiscountMap);
+        }
+      } catch {
+        // ignore — no discount is a safe default
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted]);
+
   const setLocation = (loc: UserLocation | null) => {
     setLocationState(loc);
     if (typeof window === "undefined") return;
@@ -94,6 +121,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   };
 
   const society = getSocietyById(societyId);
+  const societyDiscountPercent = discountPercentFor(discounts, society.id);
 
   const distanceFromStoreKm = location
     ? distanceFromBusinessKm(location.lat, location.lng)
@@ -111,8 +139,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       serviceRadiusKm: SERVICE_RADIUS_KM,
       society,
       setSocietyId,
+      societyDiscountPercent,
     }),
-    [location, distanceFromStoreKm, isServiceable, society]
+    [location, distanceFromStoreKm, isServiceable, society, societyDiscountPercent]
   );
 
   return (
