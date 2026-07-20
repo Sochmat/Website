@@ -5,6 +5,7 @@ import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
+import { settleWallet, creditReferral } from "@/lib/wallet";
 import { PLANS } from "@/lib/subscriptionPlanStore";
 import { CREDIT_VALIDITY_DAYS } from "@/lib/subscriptionBrackets";
 import { addIstDays, istInstant, toIstDate } from "@/lib/ist";
@@ -99,7 +100,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const expectedAmount = Math.round(Number(plan.totalAmount) * 100);
+    // Wallet-reduced net is what Razorpay was told to charge. Falls back to
+    // totalAmount for plans created before the wallet feature (amountPayable unset).
+    const payable = Number(plan.amountPayable ?? plan.totalAmount);
+    const expectedAmount = Math.round(payable * 100);
     if (
       payment.order_id !== razorpay_order_id ||
       payment.status !== "captured" ||
@@ -150,6 +154,14 @@ export async function POST(request: NextRequest) {
       // Someone else activated it between step 2 and here. Still a success.
       return NextResponse.json({ success: true, message: "Payment already verified" });
     }
+
+    // This branch runs at most once per plan (guarded on paymentStatus:"pending").
+    const walletApplied = Number(plan.walletApplied ?? 0);
+    if (walletApplied > 0) {
+      await settleWallet(db, userId, _id, walletApplied);
+    }
+    // Reward the referrer if this is the buyer's first paid plan.
+    await creditReferral(db, userId);
 
     return NextResponse.json({ success: true, message: "Payment verified successfully!" });
   } catch (error) {
