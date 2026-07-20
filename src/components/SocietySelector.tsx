@@ -2,12 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "@/context/LocationContext";
-import { SOCIETIES } from "@/lib/societies";
+import { SOCIETIES, type Society } from "@/lib/societies";
+import SocietyNoticeModal, {
+  hasSeenSocietyNotice,
+  markSocietyNoticeSeen,
+} from "@/components/SocietyNoticeModal";
 
 export default function SocietySelector() {
   const { society, setSocietyId } = useLocation();
   const [open, setOpen] = useState(false);
+  const [noticeSociety, setNoticeSociety] = useState<Society | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Show the launch notice once per session for slot-based societies.
+  const maybeShowNotice = (s: Society) => {
+    if (s.slots.length === 0) return;
+    if (hasSeenSocietyNotice(s.id)) return;
+    markSocietyNoticeSeen(s.id);
+    setNoticeSociety(s);
+  };
 
   // Close on outside click.
   useEffect(() => {
@@ -77,6 +90,7 @@ export default function SocietySelector() {
                 onClick={() => {
                   setSocietyId(s.id);
                   setOpen(false);
+                  maybeShowNotice(s);
                 }}
                 className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[#faf7f2] ${
                   selected ? "bg-[#fff4ec]" : ""
@@ -117,6 +131,11 @@ export default function SocietySelector() {
           })}
         </div>
       )}
+
+      <SocietyNoticeModal
+        society={noticeSociety}
+        onClose={() => setNoticeSociety(null)}
+      />
     </div>
   );
 }

@@ -119,10 +119,17 @@ export interface Order {
 
   /** How the customer receives the order. */
   orderType?: "dine-in" | "delivery";
+  /** Society (delivery location) this order was placed for. */
+  societyId?: string;
+  /** Flat location discount applied (INR) and the % it was derived from. */
+  societyDiscount?: number;
+  societyDiscountPercent?: number;
   /** Structured delivery location (only set when orderType === "delivery"). */
   deliveryTower?: string;
   deliveryFloor?: string;
   deliveryRoom?: string;
+  /** Assigned delivery slot window, e.g. "12:30–13:00" (slot-based societies). */
+  deliverySlot?: string;
 
   status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
 
