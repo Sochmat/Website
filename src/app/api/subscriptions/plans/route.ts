@@ -10,6 +10,15 @@ import {
 } from "@/lib/subscriptionBrackets";
 import { accountCredits, expireCredits } from "@/lib/subscriptionSchedule";
 import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
+import {
+  applyFirstPlanDiscount,
+  computeWalletApplied,
+} from "@/lib/subscriptionDiscount";
+import {
+  getWalletBalance,
+  reserveWallet,
+  sweepStalePlanReservations,
+} from "@/lib/wallet";
 import type { SubscriptionBracket, SubscriptionCredit, SubscriptionMealPlan } from "@/lib/types";
 
 // NOTE: there is deliberately no PATCH handler here.
@@ -82,6 +91,23 @@ export async function POST(request: NextRequest) {
       (_, i) => ({ id: `c${i + 1}`, status: "available" as const }),
     );
 
+    // First-plan 20% discount: only when this user has no prior PAID plan.
+    const priorPaid = await db
+      .collection("subscriptionMealPlans")
+      .findOne({ userId, paymentStatus: "paid" }, { projection: { _id: 1 } });
+
+    let subtotal = totals.subtotal;
+    let tax = totals.tax;
+    let totalAmount = totals.totalAmount;
+    let firstPlanDiscount = 0;
+    if (!priorPaid) {
+      const discounted = applyFirstPlanDiscount(totals);
+      subtotal = discounted.discountedSubtotal;
+      tax = discounted.tax;
+      totalAmount = discounted.totalAmount;
+      firstPlanDiscount = discounted.firstPlanDiscount;
+    }
+
     const now = new Date();
     const planDoc: Omit<SubscriptionMealPlan, "_id"> = {
       planNumber: generatePlanNumber(),
@@ -90,9 +116,13 @@ export async function POST(request: NextRequest) {
       diet,
       pricePerMeal: totals.pricePerMeal,
       mealCount: totals.mealCount,
-      subtotal: totals.subtotal,
-      tax: totals.tax,
-      totalAmount: totals.totalAmount,
+      subtotal,
+      tax,
+      totalAmount,
+      firstPlanDiscount,
+      // Wallet is reserved after insert (needs the plan _id); provisional here.
+      walletApplied: 0,
+      amountPayable: totalAmount,
       credits,
       // Expiry is anchored at payment, not at creation — an abandoned checkout
       // must not silently burn a customer's 30-day window.
@@ -113,9 +143,35 @@ export async function POST(request: NextRequest) {
     };
 
     const result = await db.collection("subscriptionMealPlans").insertOne(planDoc);
+    const planId = result.insertedId;
+
+    // Reserve wallet against the just-created plan. Capped to leave >= MIN_PAYABLE.
+    const balance = await getWalletBalance(db, userId);
+    const { walletApplied, amountPayable } = computeWalletApplied(
+      balance,
+      totalAmount,
+    );
+    let reservedApplied = 0;
+    let reservedPayable = totalAmount;
+    if (walletApplied > 0 && (await reserveWallet(db, userId, planId, walletApplied))) {
+      reservedApplied = walletApplied;
+      reservedPayable = amountPayable;
+      await db
+        .collection("subscriptionMealPlans")
+        .updateOne(
+          { _id: planId },
+          { $set: { walletApplied: reservedApplied, amountPayable: reservedPayable } },
+        );
+    }
+
     return NextResponse.json({
       success: true,
-      plan: { ...planDoc, _id: result.insertedId },
+      plan: {
+        ...planDoc,
+        _id: planId,
+        walletApplied: reservedApplied,
+        amountPayable: reservedPayable,
+      },
     });
   } catch (error) {
     console.error("Error creating subscription plan:", error);
@@ -133,6 +189,10 @@ export async function GET(request: NextRequest) {
     if (!userId) return unauthorized();
 
     const { db } = await connectToDatabase();
+
+    // Return wallet held by checkouts abandoned before the fail-call fired.
+    await sweepStalePlanReservations(db, userId, 30 * 60 * 1000);
+
     const plans = (await db
       .collection("subscriptionMealPlans")
       .find({ userId })
