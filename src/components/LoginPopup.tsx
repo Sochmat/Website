@@ -78,7 +78,14 @@ export default function LoginPopup() {
       const endpoint = mode === "register" ? "/api/users/otp/register" : "/api/users/otp/send";
       const payload =
         mode === "register"
-          ? { email: email.trim().toLowerCase(), name: name.trim() }
+          ? {
+              email: email.trim().toLowerCase(),
+              name: name.trim(),
+              ref:
+                typeof window !== "undefined"
+                  ? localStorage.getItem("sochmat_ref") ?? undefined
+                  : undefined,
+            }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
         method: "POST",
@@ -130,7 +137,14 @@ export default function LoginPopup() {
       const endpoint = mode === "register" ? "/api/users/otp/register" : "/api/users/otp/send";
       const payload =
         mode === "register"
-          ? { email: email.trim().toLowerCase(), name: name.trim() }
+          ? {
+              email: email.trim().toLowerCase(),
+              name: name.trim(),
+              ref:
+                typeof window !== "undefined"
+                  ? localStorage.getItem("sochmat_ref") ?? undefined
+                  : undefined,
+            }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
         method: "POST",

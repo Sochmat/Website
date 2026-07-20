@@ -129,6 +129,12 @@ function PurchaseWizard() {
   // Guards the one-time "ask for location" prompt on entering the browse step.
   const promptedAddressRef = useRef(false);
 
+  // Persist a referral code from the URL so it survives until registration.
+  useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) localStorage.setItem("sochmat_ref", ref.trim().toUpperCase());
+  }, []);
+
   useEffect(() => {
     fetch("/api/subscriptions/brackets")
       .then((r) => r.json())
@@ -198,6 +204,36 @@ function PurchaseWizard() {
     const tax = Math.round(subtotal * GST_RATE);
     return { per, subtotal, tax, total: subtotal + tax };
   }, [selectedBracket, diet]);
+
+  // Server-computed price quote (first-plan discount + wallet), shown
+  // alongside the locally-computed `totals` in the order summary. Only
+  // fetched when signed in (the endpoint is auth-required); any failure is
+  // swallowed and the UI falls back to `totals`.
+  const [quote, setQuote] = useState<{
+    totalAmount: number;
+    firstPlanDiscount: number;
+    walletApplied: number;
+    amountPayable: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selectedBracket || !diet || !isAuthenticated) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(
+      `/api/subscriptions/plans/quote?bracket=${selectedBracket.key}&diet=${diet}`
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d.success) setQuote(d.quote);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedBracket, diet, isAuthenticated]);
 
   const addresses = useMemo(
     () => (isAuthenticated ? user?.addresses ?? [] : guestAddresses),
@@ -379,7 +415,7 @@ function PurchaseWizard() {
 
       const planId = data.plan._id;
       await handleRazorpayPayment({
-        amount: data.plan.totalAmount,
+        amount: data.plan.amountPayable ?? data.plan.totalAmount,
         currency: "INR",
         name: "Sochmat Subscription",
         description: `Plan ${data.plan.planNumber}`,
@@ -681,11 +717,27 @@ function PurchaseWizard() {
                   <span>GST (5%)</span>
                   <span className="tabular-nums">{rupees(totals.tax)}</span>
                 </div>
+                {quote && quote.firstPlanDiscount > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>First-plan discount (20%)</span>
+                    <span className="tabular-nums">
+                      -{rupees(quote.firstPlanDiscount)}
+                    </span>
+                  </div>
+                )}
+                {quote && quote.walletApplied > 0 && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Wallet applied</span>
+                    <span className="tabular-nums">
+                      -{rupees(quote.walletApplied)}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="mt-3 flex items-baseline justify-between border-t border-gray-100 pt-3">
                 <span className="font-semibold text-[#111]">Total payable</span>
                 <span className="text-lg font-bold text-[#111] tabular-nums">
-                  {rupees(totals.total)}
+                  {rupees(quote ? quote.amountPayable : totals.total)}
                 </span>
               </div>
               <p className="mt-3 rounded-lg bg-[#f6f7f8] px-3 py-2 text-xs text-[#737373]">
@@ -746,7 +798,9 @@ function PurchaseWizard() {
                 >
                   {placing
                     ? "Starting your plan…"
-                    : `Buy Subscription - ${rupees(totals.total)}`}
+                    : `Buy Subscription - ${rupees(
+                        quote ? quote.amountPayable : totals.total
+                      )}`}
                 </button>
               </>
             );
