@@ -394,6 +394,11 @@ function PurchaseWizard() {
         failUrl: null,
         onSuccess: () => router.push(`/subscription/success?planId=${planId}`),
         onError: (err) => {
+          // Best-effort: return any reserved wallet so a cancelled checkout
+          // doesn't hold the customer's balance until the sweep runs.
+          fetch(`/api/subscriptions/plans/${planId}/fail`, { method: "POST" }).catch(
+            () => {},
+          );
           message.error(err.message || "Payment failed");
           setPlacing(false);
         },
