@@ -130,35 +130,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Payment already used" }, { status: 409 });
     }
 
-    // 5. Activate. Guarded on the pending state, so a double-submit that races
-    //    past step 2 still can't move `expiresOn`.
+    // 5. Activate. Guarded on the pending state AND — when wallet was used — on the
+    //    reservation still being intact, so a refund that raced in (e.g. the stale-
+    //    reservation sweep firing on a late-paid plan) cannot leave the plan both
+    //    paid at the reduced amount and refunded to the wallet.
+    const reserved = Number(plan.walletApplied ?? 0);
     const activatedAt = new Date();
     const expiresOn = addIstDays(toIstDate(activatedAt), CREDIT_VALIDITY_DAYS);
 
-    const result = await db.collection(PLANS).updateOne(
-      { _id, paymentStatus: "pending" },
-      {
-        $set: {
-          paymentStatus: "paid",
-          status: "active",
-          paymentId: razorpay_payment_id,
-          razorpayOrderId: razorpay_order_id,
-          activatedAt,
-          expiresOn,
-          expiresAt: istInstant(expiresOn, 23, 59),
-          updatedAt: activatedAt,
-        },
+    const activationFilter: Record<string, unknown> =
+      reserved > 0
+        ? { _id, paymentStatus: "pending", walletApplied: reserved }
+        : { _id, paymentStatus: "pending" };
+
+    const result = await db.collection(PLANS).updateOne(activationFilter, {
+      $set: {
+        paymentStatus: "paid",
+        status: "active",
+        paymentId: razorpay_payment_id,
+        razorpayOrderId: razorpay_order_id,
+        activatedAt,
+        expiresOn,
+        expiresAt: istInstant(expiresOn, 23, 59),
+        updatedAt: activatedAt,
       },
-    );
+    });
+
     if (result.matchedCount === 0) {
-      // Someone else activated it between step 2 and here. Still a success.
-      return NextResponse.json({ success: true, message: "Payment already verified" });
+      // Two possibilities. Either someone else already activated this plan (a
+      // double-submit) — idempotent success. Or the reservation changed under us
+      // while the payment was captured (a refund raced in) — in which case we must
+      // NOT silently activate, or the buyer keeps their wallet AND a reduced-price
+      // plan. Distinguish by re-reading the current status.
+      const current = await db
+        .collection(PLANS)
+        .findOne({ _id }, { projection: { paymentStatus: 1 } });
+      if (current?.paymentStatus === "paid") {
+        return NextResponse.json({ success: true, message: "Payment already verified" });
+      }
+      console.error("Plan activation blocked: reservation changed during verify", {
+        planId: String(_id),
+        reserved,
+        paymentId: razorpay_payment_id,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Payment received but the plan could not be finalized. Our team will reconcile it shortly.",
+        },
+        { status: 409 },
+      );
     }
 
-    // This branch runs at most once per plan (guarded on paymentStatus:"pending").
-    const walletApplied = Number(plan.walletApplied ?? 0);
-    if (walletApplied > 0) {
-      await settleWallet(db, userId, _id, walletApplied);
+    // This branch runs at most once per plan, and only when the reservation was
+    // still intact at activation (the guard above), so settling `reserved` is safe.
+    if (reserved > 0) {
+      await settleWallet(db, userId, _id, reserved);
     }
     // Reward the referrer if this is the buyer's first paid plan.
     await creditReferral(db, userId);

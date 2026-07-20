@@ -11,6 +11,7 @@ import {
 } from "@/lib/subscriptionDiscount";
 import { getWalletBalance } from "@/lib/wallet";
 import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
+import { isEligibleForFirstPlanDiscount } from "@/lib/subscriptionEligibility";
 import type { SubscriptionBracket } from "@/lib/types";
 
 /** Display-only price preview for the signed-in customer. Never trusted for money. */
@@ -47,10 +48,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: (e as Error).message }, { status: 400 });
     }
 
-    const priorPaid = await db
-      .collection("subscriptionMealPlans")
-      .findOne({ userId, paymentStatus: "paid" }, { projection: { _id: 1 } });
-    const isFirstPlan = !priorPaid;
+    const isFirstPlan = await isEligibleForFirstPlanDiscount(db, userId);
 
     let { subtotal, tax, totalAmount } = totals;
     let firstPlanDiscount = 0;

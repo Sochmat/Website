@@ -19,6 +19,7 @@ import {
   reserveWallet,
   sweepStalePlanReservations,
 } from "@/lib/wallet";
+import { isEligibleForFirstPlanDiscount } from "@/lib/subscriptionEligibility";
 import type { SubscriptionBracket, SubscriptionCredit, SubscriptionMealPlan } from "@/lib/types";
 
 // NOTE: there is deliberately no PATCH handler here.
@@ -91,16 +92,15 @@ export async function POST(request: NextRequest) {
       (_, i) => ({ id: `c${i + 1}`, status: "available" as const }),
     );
 
-    // First-plan 20% discount: only when this user has no prior PAID plan.
-    const priorPaid = await db
-      .collection("subscriptionMealPlans")
-      .findOne({ userId, paymentStatus: "paid" }, { projection: { _id: 1 } });
+    // First-plan 20% discount: only when this user is still eligible (no paid plan,
+    // and no fresh pending plan already holding the discount — see the helper).
+    const eligibleForFirstPlanDiscount = await isEligibleForFirstPlanDiscount(db, userId);
 
     let subtotal = totals.subtotal;
     let tax = totals.tax;
     let totalAmount = totals.totalAmount;
     let firstPlanDiscount = 0;
-    if (!priorPaid) {
+    if (eligibleForFirstPlanDiscount) {
       const discounted = applyFirstPlanDiscount(totals);
       subtotal = discounted.discountedSubtotal;
       tax = discounted.tax;
