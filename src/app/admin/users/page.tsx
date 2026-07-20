@@ -20,6 +20,7 @@ interface UserRow {
   email: string;
   address: string;
   addresses: UserAddress[];
+  walletBalance: number;
   createdAt: string;
 }
 
@@ -52,6 +53,7 @@ export default function AdminUsersPage() {
                 email: String(u.email ?? "-"),
                 address: addrDisplay,
                 addresses: addrs,
+                walletBalance: Number(u.walletBalance ?? 0),
                 createdAt: u.createdAt
                   ? new Date(u.createdAt as string).toLocaleString()
                   : "-",
@@ -95,6 +97,13 @@ export default function AdminUsersPage() {
     { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
     { title: "Email", dataIndex: "email", key: "email", ellipsis: true },
     { title: "Address", dataIndex: "address", key: "address", ellipsis: true },
+    {
+      title: "Wallet",
+      dataIndex: "walletBalance",
+      key: "walletBalance",
+      width: 100,
+      render: (v?: number) => `₹${Number(v ?? 0)}`,
+    },
     { title: "Created", dataIndex: "createdAt", key: "createdAt", width: 160 },
     {
       title: "Action",

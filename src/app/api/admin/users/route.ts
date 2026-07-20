@@ -19,6 +19,7 @@ export async function GET() {
         email: u.email,
         address: u.address,
         addresses: u.addresses ?? [],
+        walletBalance: u.walletBalance ?? 0,
         createdAt: u.createdAt,
         updatedAt: u.updatedAt,
       })),
