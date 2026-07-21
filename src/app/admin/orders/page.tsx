@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Table, Select, Button, Popconfirm, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { SOCIETIES } from "@/lib/societies";
 
 // Shop delay reminders: replay the alert sound at these minute marks after
 // confirmation, while the order is still "confirmed" (not yet out for delivery).
@@ -76,6 +77,12 @@ interface OrderRow {
   totalAmount: number;
   status: string;
   paymentStatus: string;
+  /** Delivery location name (empty for older orders without a society). */
+  societyName: string;
+  /** True when the order is to a slot-based society (e.g. Zomato office). */
+  isSlotOrder: boolean;
+  /** Selected delivery slot window, e.g. "12:30–13:00" (empty if none). */
+  deliverySlot: string;
   createdAt: string;
   /** Confirmation time in ms (null until accepted); drives the shop timer. */
   confirmedAt: number | null;
@@ -184,6 +191,12 @@ export default function AdminOrdersPage() {
               totalAmount: Number(o.totalAmount ?? 0),
               status: String(o.status ?? ""),
               paymentStatus: String(o.paymentStatus ?? ""),
+              societyName:
+                SOCIETIES.find((s) => s.id === o.societyId)?.name ?? "",
+              isSlotOrder:
+                (SOCIETIES.find((s) => s.id === o.societyId)?.slots.length ??
+                  0) > 0,
+              deliverySlot: o.deliverySlot ? String(o.deliverySlot) : "",
               createdAt: o.createdAt
                 ? new Date(o.createdAt as string).toLocaleString()
                 : "-",
@@ -385,8 +398,6 @@ export default function AdminOrdersPage() {
           <span style={{ fontWeight: 600 }}>{value}</span>
         ),
     },
-    { title: "User", dataIndex: "userName", key: "userName", ellipsis: true },
-    { title: "Phone", dataIndex: "userPhone", key: "userPhone", width: 120 },
     {
       title: "Receiver",
       dataIndex: "receiverName",
@@ -430,6 +441,38 @@ export default function AdminOrdersPage() {
           )}
         </div>
       ),
+    },
+    {
+      title: "Delivery Slot",
+      dataIndex: "deliverySlot",
+      key: "deliverySlot",
+      width: 150,
+      render: (_: string, record: OrderRow) =>
+        record.deliverySlot ? (
+          <div style={{ lineHeight: 1.3 }}>
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "#c2410c",
+                background: "#ffe9d8",
+                borderRadius: 6,
+                padding: "1px 6px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {record.deliverySlot}
+            </span>
+            {record.societyName && (
+              <div style={{ fontSize: 11, color: "#999" }}>
+                {record.societyName}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span style={{ color: "#ccc" }}>—</span>
+        ),
     },
     {
       title: "Amount (₹)",
@@ -714,6 +757,7 @@ export default function AdminOrdersPage() {
         dataSource={orders}
         loading={loading}
         size="small"
+        rowClassName={(record) => (record.isSlotOrder ? "zomato-order-row" : "")}
         expandable={{
           expandedRowRender,
           rowExpandable: (record) => record.items.length > 0,
@@ -723,8 +767,17 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: isShop ? 2080 : 1990 }}
+        scroll={{ x: isShop ? 2230 : 2140 }}
       />
+      <style jsx global>{`
+        /* Tint orders placed to a slot-based location (e.g. Zomato office). */
+        .zomato-order-row > td {
+          background: #fff4ec !important;
+        }
+        .zomato-order-row > td.ant-table-cell-row-hover {
+          background: #ffe9d8 !important;
+        }
+      `}</style>
     </div>
   );
 }
