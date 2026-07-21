@@ -20,6 +20,11 @@ export interface Society {
   label: string;
   /** Towers available within this society. */
   towers: string[];
+  /**
+   * Whether the delivery form collects a room/flat number. Residential
+   * societies need it; offices (e.g. Zomato) deliver to a tower/floor only.
+   */
+  collectRoom: boolean;
   /** Delivery charge (INR) for orders to this society. */
   deliveryCharge: number;
   /**
@@ -37,6 +42,7 @@ export const SOCIETIES: Society[] = [
     sector: "Sector 62",
     label: "Pivotal Paradise, Sector 62",
     towers: ["T1", "T2", "T3", "T4", "T5", "T6", "T7"],
+    collectRoom: true,
     deliveryCharge: 0,
     slots: [],
   },
@@ -46,6 +52,7 @@ export const SOCIETIES: Society[] = [
     sector: "Sector 62",
     label: "Zomato office, Sector 62",
     towers: ["T1", "T2"],
+    collectRoom: false,
     deliveryCharge: 0,
     slots: [
       { orderBefore: "12:30", getTill: "13:00" },

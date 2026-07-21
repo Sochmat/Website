@@ -86,6 +86,8 @@ export default function DeliveryDetailsSheet({
 
   const phoneDigits = phone.replace(/\D/g, "");
   const validPhone = phoneDigits.length === 10;
+  // Offices (e.g. Zomato) deliver to a tower/floor only — no room number.
+  const collectRoom = society.collectRoom;
   const canSubmit =
     orderType === "dine-in"
       ? name.trim().length > 0 && validPhone
@@ -93,7 +95,7 @@ export default function DeliveryDetailsSheet({
         validPhone &&
         !!tower &&
         floor.trim().length > 0 &&
-        room.trim().length > 0;
+        (!collectRoom || room.trim().length > 0);
 
   const handleConfirm = () => {
     if (submitting || !canSubmit) return;
@@ -110,7 +112,7 @@ export default function DeliveryDetailsSheet({
         phone: phoneDigits,
         tower: tower!,
         floor: floor.trim(),
-        room: room.trim(),
+        room: collectRoom ? room.trim() : "",
       });
     }
   };
@@ -333,7 +335,11 @@ export default function DeliveryDetailsSheet({
                 })}
               </div>
 
-              <div className="mb-2 grid grid-cols-2 gap-3">
+              <div
+                className={`mb-2 grid gap-3 ${
+                  collectRoom ? "grid-cols-2" : "grid-cols-1"
+                }`}
+              >
                 <input
                   type="text"
                   inputMode="numeric"
@@ -342,13 +348,15 @@ export default function DeliveryDetailsSheet({
                   onChange={(e) => setFloor(e.target.value)}
                   className="w-full rounded-2xl border border-[#e7e0d6] bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215]"
                 />
-                <input
-                  type="text"
-                  placeholder="Room number"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                  className="w-full rounded-2xl border border-[#e7e0d6] bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215]"
-                />
+                {collectRoom && (
+                  <input
+                    type="text"
+                    placeholder="Room number"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    className="w-full rounded-2xl border border-[#e7e0d6] bg-white px-4 py-3.5 text-[15px] text-[#111] placeholder:text-[#a3a3a3] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#f56215]"
+                  />
+                )}
               </div>
             </>
           )}

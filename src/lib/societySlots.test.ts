@@ -8,6 +8,7 @@ const zomato: Society = {
   sector: "Sector 62",
   label: "Zomato office, Sector 62",
   towers: ["T1", "T2"],
+  collectRoom: false,
   deliveryCharge: 0,
   slots: [
     { orderBefore: "12:30", getTill: "13:00" },
@@ -22,6 +23,7 @@ const pivotal: Society = {
   sector: "Sector 62",
   label: "Pivotal Paradise, Sector 62",
   towers: ["T1"],
+  collectRoom: true,
   deliveryCharge: 0,
   slots: [],
 };

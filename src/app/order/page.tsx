@@ -224,12 +224,14 @@ export default function OrderPage() {
       receiverName = details.name;
       receiverPhone = details.phone;
       const slotSuffix = slot ? ` (delivery by ${slotWindowLabel(slot)})` : "";
-      addressStr = `${details.tower}, Floor ${details.floor}, Room ${details.room}, ${society.label}${slotSuffix}`;
+      // Offices (e.g. Zomato) have no room number — omit that segment.
+      const roomSegment = details.room ? `, Room ${details.room}` : "";
+      addressStr = `${details.tower}, Floor ${details.floor}${roomSegment}, ${society.label}${slotSuffix}`;
       orderTypeFields = {
         orderType: "delivery",
         deliveryTower: details.tower,
         deliveryFloor: details.floor,
-        deliveryRoom: details.room,
+        ...(details.room ? { deliveryRoom: details.room } : {}),
         ...(slot ? { deliverySlot: slotWindowLabel(slot) } : {}),
       };
     } else {
