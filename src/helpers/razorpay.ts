@@ -23,6 +23,34 @@ interface RazorpayPrefill {
   contact: string;
 }
 
+/**
+ * Razorpay only skips its contact screen when the prefilled number is one it
+ * accepts, so a value carrying spaces, dashes or a bare "0" prefix gets the
+ * customer asked for their phone all over again. Normalize to E.164 (assuming
+ * India for 10-digit numbers) and return "" for anything unusable, so the SDK
+ * asks rather than choking on a malformed prefill.
+ */
+export function normalizeContact(raw?: string | null): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  // Local Indian formats: 10 digits, optionally with a trunk "0".
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 11 && digits.startsWith("0"))
+    return `+91${digits.slice(1)}`;
+  // Already carries a country code.
+  if (digits.length >= 11 && digits.length <= 15) return `+${digits}`;
+  return "";
+}
+
+/** Prefill as the SDK wants it: normalized contact, no undefined fields. */
+function buildPrefill(options: RazorpayOptions) {
+  return {
+    name: options.prefill?.name || "",
+    email: options.prefill?.email || "",
+    contact: normalizeContact(options.prefill?.contact),
+  };
+}
+
 export type UpiApp = "google_pay" | "phonepe" | "paytm" | "bhim";
 
 interface RazorpayOptions {
@@ -179,12 +207,13 @@ async function handleUpiIntent(options: RazorpayOptions, order: any) {
     options.onError?.(desc);
   });
 
+  const prefill = buildPrefill(options);
   const paymentData = {
     amount: order.amount,
     currency: order.currency,
     order_id: order.id,
-    email: options.prefill?.email || "",
-    contact: options.prefill?.contact || "",
+    email: prefill.email,
+    contact: prefill.contact,
     method: "upi",
   };
   const app = options.upiApp ? UPI_APP_TO_RAZORPAY[options.upiApp] : "any";
@@ -209,7 +238,7 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
     description: options.description || "Order Payment",
     order_id: order.id,
     image: options.image,
-    prefill: options.prefill,
+    prefill: buildPrefill(options),
     theme: { color: "#f56215" },
     handler: async (response: {
       razorpay_order_id: string;

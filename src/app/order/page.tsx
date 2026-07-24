@@ -410,10 +410,14 @@ export default function OrderPage() {
           name: "Sochmat",
           description: `Order #${data.order?.orderNumber || ""}`,
           prefill: {
-            name: (isAuthenticated ? user?.name : null) ?? receiverName ?? "",
-            email: user?.email ?? "vectorharsh@gmail.com",
+            name: (isAuthenticated ? user?.name : "") || receiverName || "",
+            email: user?.email || "vectorharsh@gmail.com",
+            // The receiver on THIS order is the number to bill against — it's
+            // required above, so it's always present, and it's what the customer
+            // just typed. The account phone only fills a gap. Use || not ??: a
+            // stored "" is missing, not a usable value.
             contact:
-              (isAuthenticated ? user?.phone : null) ?? receiverPhone ?? "",
+              receiverPhone || (isAuthenticated ? user?.phone : "") || "",
           },
           orderId: data.order?._id,
           upiApp: selectedUpiApp ?? undefined,
