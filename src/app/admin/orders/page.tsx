@@ -93,7 +93,7 @@ interface OrderRow {
   referrerName: string;
   referrerPhone: string;
   referrerCode: string;
-  /** True on the order that earned the referrer their ₹200. */
+  /** True on the order that earned the referrer their reward. */
   referralEarned: boolean;
   items: OrderItemRow[];
 }

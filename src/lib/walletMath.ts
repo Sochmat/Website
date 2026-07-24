@@ -7,7 +7,7 @@
 export const MIN_PAYABLE = 1;
 
 /** ₹ credited to a referrer when their referee's first order is paid. */
-export const REFERRAL_REWARD = 200;
+export const REFERRAL_REWARD = 100;
 
 /**
  * How much wallet balance to apply to an order total, capped so at least

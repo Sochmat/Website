@@ -128,7 +128,7 @@ export async function sweepStaleOrderReservations(
 }
 
 /**
- * Credit the referrer ₹200 when their referee's first order is paid. Idempotent:
+ * Credit the referrer REFERRAL_REWARD when their referee's first order is paid. Idempotent:
  * flips the referee's `referralCredited` flag first and only pays if that flip
  * matched, so a retried verify never double-pays.
  */

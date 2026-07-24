@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import { REFERRAL_REWARD } from "@/lib/walletMath";
 
 interface ReferralInfo {
   referralCode: string;
@@ -66,7 +67,8 @@ export default function ReferPage() {
           <>
             <p className="text-sm text-[#666]">
               Share your code. When a friend places their first order, you get
-              ₹200 in wallet credit — used automatically on your next order.
+              ₹{REFERRAL_REWARD} in wallet credit — used automatically on your
+              next order.
             </p>
 
             <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
