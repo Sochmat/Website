@@ -1,73 +1,98 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 
-export async function GET() {
+/**
+ * Validate a coupon code typed by the customer. Codes are never listed to the
+ * storefront — the customer must know the exact code — so every condition
+ * (existence, active flag, minimum order amount, free-item availability) is
+ * checked here and only a matching coupon is returned.
+ */
+export async function POST(request: NextRequest) {
   try {
+    const body = await request.json();
+    const code = String(body?.code ?? "")
+      .trim()
+      .toUpperCase();
+    const totalPrice = Number(body?.totalPrice) || 0;
+
+    if (!code) {
+      return NextResponse.json(
+        { success: false, message: "Please enter a coupon code" },
+        { status: 400 },
+      );
+    }
+
     const { db } = await connectToDatabase();
-    const coupons = await db
+    const coupon = await db
       .collection("coupons")
-      .find({ active: true })
-      .toArray();
+      .findOne({ code, active: true });
 
-    // Resolve the granted item (name + price) for free-item coupons so the
-    // storefront can label and grant it without a second request.
-    const freeItemIds = coupons
-      .filter((c) => c.discountType === "freeItem" && c.freeItemId)
-      .map((c) => {
-        try {
-          return new ObjectId(String(c.freeItemId));
-        } catch {
-          return null;
-        }
-      })
-      .filter((id): id is ObjectId => id !== null);
+    if (!coupon) {
+      return NextResponse.json(
+        { success: false, message: "Invalid coupon code" },
+        { status: 404 },
+      );
+    }
 
-    const freeItems = freeItemIds.length
-      ? await db
-          .collection("menuItems")
-          .find({ _id: { $in: freeItemIds } })
-          .toArray()
-      : [];
-    const freeItemById = new Map(
-      freeItems.map((item) => [item._id.toString(), item]),
-    );
+    const minAmount = Number(coupon.minAmount) || 0;
+    if (minAmount > 0 && totalPrice < minAmount) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `This coupon needs a minimum order of Rs ${minAmount}`,
+        },
+        { status: 400 },
+      );
+    }
+
+    const base = {
+      code: coupon.code,
+      discountType: coupon.discountType ?? "flat",
+      discountAmount: coupon.discountAmount ?? 0,
+      discountPercent: coupon.discountPercent ?? 0,
+      minAmount,
+      maxDiscount: coupon.maxDiscount ?? 0,
+    };
+
+    if (base.discountType !== "freeItem") {
+      return NextResponse.json({ success: true, coupon: base });
+    }
+
+    // Resolve the granted item (name + price) so the storefront can label and
+    // grant it without a second request.
+    let freeItem: { id: string; name: string; price: number } | null = null;
+    if (coupon.freeItemId && ObjectId.isValid(String(coupon.freeItemId))) {
+      const item = await db
+        .collection("menuItems")
+        .findOne({ _id: new ObjectId(String(coupon.freeItemId)) });
+      if (item) {
+        freeItem = {
+          id: item._id.toString(),
+          name: item.name,
+          price: item.price ?? 0,
+        };
+      }
+    }
+
+    if (!freeItem) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This coupon's free item is unavailable",
+        },
+        { status: 400 },
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      coupons: coupons.map((c) => {
-        const base = {
-          _id: c._id,
-          code: c.code,
-          discountType: c.discountType ?? "flat",
-          discountAmount: c.discountAmount ?? 0,
-          discountPercent: c.discountPercent ?? 0,
-          minAmount: c.minAmount ?? 0,
-          maxDiscount: c.maxDiscount ?? 0,
-        };
-        if (c.discountType === "freeItem") {
-          const item = c.freeItemId
-            ? freeItemById.get(String(c.freeItemId))
-            : undefined;
-          return {
-            ...base,
-            freeItemId: c.freeItemId ?? "",
-            freeItem: item
-              ? {
-                  id: item._id.toString(),
-                  name: item.name,
-                  price: item.price ?? 0,
-                }
-              : null,
-          };
-        }
-        return base;
-      }),
+      coupon: { ...base, freeItemId: String(coupon.freeItemId), freeItem },
     });
   } catch (error) {
-    console.error("Error fetching coupons:", error);
+    console.error("Error validating coupon:", error);
     return NextResponse.json(
-      { success: false, message: "Failed to fetch coupons" },
+      { success: false, message: "Failed to validate coupon" },
       { status: 500 },
     );
   }

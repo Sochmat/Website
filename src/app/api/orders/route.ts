@@ -259,14 +259,21 @@ export async function POST(request: NextRequest) {
     // serverSubtotal, so it needs no offset here. Being generous only relaxes
     // the floor, so this never over-rejects.
     if (coupon) {
-      let allowed = Number(coupon.discountAmount) || 0;
-      const pct = Number(coupon.discountPercent) || 0;
-      if (pct > 0) {
-        const pctValue = (serverSubtotal * pct) / 100;
-        const maxDisc = Number(coupon.maxDiscount) || 0;
-        allowed += maxDisc > 0 ? Math.min(pctValue, maxDisc) : pctValue;
+      // Honour the coupon's minimum-order condition server-side: below it the
+      // coupon grants nothing, however the client priced the order.
+      const couponMinAmount = Number(coupon.minAmount) || 0;
+      if (couponMinAmount > 0 && serverSubtotal < couponMinAmount) {
+        couponAllowed = 0;
+      } else {
+        let allowed = Number(coupon.discountAmount) || 0;
+        const pct = Number(coupon.discountPercent) || 0;
+        if (pct > 0) {
+          const pctValue = (serverSubtotal * pct) / 100;
+          const maxDisc = Number(coupon.maxDiscount) || 0;
+          allowed += maxDisc > 0 ? Math.min(pctValue, maxDisc) : pctValue;
+        }
+        couponAllowed = allowed;
       }
-      couponAllowed = allowed;
     }
 
     // First-order 20% discount — resolved server-side from the user's order

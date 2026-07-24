@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Select, message } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Input, message } from "antd";
 
 type FreeItem = { id: string; name: string; price: number };
 
@@ -32,24 +32,6 @@ function percentDiscount(total: number, pct: number, max: number): number {
   return max > 0 ? Math.min(raw, max) : raw;
 }
 
-/** Extra flat/percent discount a free-item coupon may also carry. */
-function freeItemExtra(coupon: Coupon): string {
-  if (coupon.discountPercent > 0)
-    return ` + ${coupon.discountPercent}% off${
-      coupon.maxDiscount > 0 ? ` upto Rs ${coupon.maxDiscount}` : ""
-    }`;
-  if (coupon.discountAmount > 0) return ` + Rs ${coupon.discountAmount} off`;
-  return "";
-}
-
-function couponLabel(coupon: Coupon): string {
-  if (coupon.discountType === "percent")
-    return `${coupon.discountPercent}% off upto Rs ${coupon.maxDiscount}`;
-  if (coupon.discountType === "freeItem")
-    return `Free ${coupon.freeItem?.name ?? "item"}${freeItemExtra(coupon)}`;
-  return `Save Rs ${coupon.discountAmount}`;
-}
-
 function computeDiscount(coupon: Coupon, totalPrice: number): number {
   if (coupon.discountType === "percent")
     return percentDiscount(
@@ -75,182 +57,136 @@ export default function CouponSelector({
   totalPrice,
   onCouponChange,
 }: CouponSelectorProps) {
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [selectedCouponCode, setSelectedCouponCode] = useState("");
-  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(
-    null,
-  );
+  const [codeInput, setCodeInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  const removeCoupon = useCallback(() => {
+    setAppliedCoupon(null);
+    setCodeInput("");
+    setError("");
+    onCouponChange(null);
+  }, [onCouponChange]);
 
-    fetch("/api/coupons")
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled && data.success && Array.isArray(data.coupons)) {
-          setCoupons(data.coupons);
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const selectedCoupon = useMemo(
-    () => coupons.find((coupon) => coupon.code === selectedCouponCode) ?? null,
-    [coupons, selectedCouponCode],
-  );
-
-  const appliedCoupon = useMemo(
-    () => coupons.find((coupon) => coupon.code === appliedCouponCode) ?? null,
-    [coupons, appliedCouponCode],
-  );
-
+  // The cart can change after the coupon is applied — drop it the moment the
+  // order no longer meets the coupon's minimum.
   useEffect(() => {
     if (appliedCoupon?.minAmount && totalPrice < appliedCoupon.minAmount) {
-      setAppliedCouponCode(null);
-      onCouponChange(null);
+      const min = appliedCoupon.minAmount;
+      removeCoupon();
+      setError(`Coupon removed — needs a minimum order of Rs ${min}`);
     }
-  }, [totalPrice, appliedCoupon, onCouponChange]);
+  }, [totalPrice, appliedCoupon, removeCoupon]);
 
-  const handleApplyOrRemove = () => {
-    if (appliedCouponCode) {
-      setAppliedCouponCode(null);
-      onCouponChange(null);
-      return;
-    }
-
-    if (!selectedCoupon) {
-      message.info("Please select a coupon");
-      return;
-    }
-
-    if (
-      selectedCoupon.discountType === "freeItem" &&
-      !selectedCoupon.freeItem
-    ) {
-      message.info("This coupon's free item is unavailable");
-      return;
-    }
-
-    setAppliedCouponCode(selectedCoupon.code);
+  // Keep the discount in sync with the cart total for percent-based coupons.
+  useEffect(() => {
+    if (!appliedCoupon) return;
     onCouponChange({
-      code: selectedCoupon.code,
-      discountAmount: computeDiscount(selectedCoupon, totalPrice),
+      code: appliedCoupon.code,
+      discountAmount: computeDiscount(appliedCoupon, totalPrice),
       freeItem:
-        selectedCoupon.discountType === "freeItem" && selectedCoupon.freeItem
-          ? selectedCoupon.freeItem
+        appliedCoupon.discountType === "freeItem" && appliedCoupon.freeItem
+          ? appliedCoupon.freeItem
           : undefined,
     });
+  }, [appliedCoupon, totalPrice, onCouponChange]);
+
+  const handleApply = async () => {
+    const code = codeInput.trim().toUpperCase();
+    if (!code) {
+      setError("Please enter a coupon code");
+      return;
+    }
+
+    setApplying(true);
+    setError("");
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, totalPrice }),
+      });
+      const data = await res.json();
+
+      if (!data.success || !data.coupon) {
+        setError(data.message || "Invalid coupon code");
+        return;
+      }
+
+      setAppliedCoupon(data.coupon as Coupon);
+      setCodeInput(code);
+      message.success(`Coupon "${code}" applied`);
+    } catch {
+      setError("Could not apply coupon. Please try again.");
+    } finally {
+      setApplying(false);
+    }
   };
 
   return (
     <div className="bg-white rounded-xl p-3 space-y-3">
-      {coupons.length === 0 ? (
-        <p className="text-sm text-gray-500">No coupons available</p>
-      ) : (
-        <>
-          <div className="flex items-center gap-2">
-            <svg
-              className="w-5 h-5 text-[#f56215] shrink-0"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-              />
-            </svg>
-            <p className="font-medium text-sm text-black">Apply Coupon</p>
-          </div>
+      <div className="flex items-center gap-2">
+        <svg
+          className="w-5 h-5 text-[#f56215] shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+          />
+        </svg>
+        <p className="font-medium text-sm text-black">Apply Coupon</p>
+      </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select
-              allowClear
-              value={selectedCouponCode || undefined}
-              onChange={(value) => setSelectedCouponCode(value)}
-              placeholder="Select a coupon"
-              disabled={Boolean(appliedCouponCode)}
-              className="flex-1"
-              popupMatchSelectWidth={false}
-              optionFilterProp="label"
-              options={coupons.map((coupon) => {
-                const meetsMin =
-                  !coupon.minAmount || totalPrice >= coupon.minAmount;
-                const unavailable =
-                  coupon.discountType === "freeItem" && !coupon.freeItem;
-                const label = `${coupon.code} - ${couponLabel(coupon)}`;
-                return {
-                  value: coupon.code,
-                  label,
-                  title: coupon.code,
-                  disabled: !meetsMin || unavailable,
-                };
-              })}
-              optionRender={(option) => {
-                const coupon = coupons.find(
-                  (item) => item.code === option.value,
-                );
-                if (!coupon) return option.label;
-                const meetsMin =
-                  !coupon.minAmount || totalPrice >= coupon.minAmount;
-                const desc = couponLabel(coupon);
-                return (
-                  <div>
-                    <div className="flex items-center justify-between gap-6">
-                      <span
-                        className={`font-medium ${meetsMin ? "text-[#111]" : "text-gray-400"}`}
-                      >
-                        {coupon.code}
-                      </span>
-                      <span
-                        className={`text-xs font-medium ${meetsMin ? "text-[#00a86e]" : "text-gray-400"}`}
-                      >
-                        {desc}
-                      </span>
-                    </div>
-                    {!meetsMin && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        Min order: Rs {coupon.minAmount}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            />
+      <div className="flex items-center gap-2 flex-wrap">
+        <Input
+          value={codeInput}
+          onChange={(e) => {
+            setCodeInput(e.target.value.toUpperCase());
+            if (error) setError("");
+          }}
+          onPressEnter={() => {
+            if (!appliedCoupon && !applying) handleApply();
+          }}
+          placeholder="Enter coupon code"
+          disabled={Boolean(appliedCoupon)}
+          className="flex-1"
+          allowClear
+        />
 
-            <button
-              type="button"
-              onClick={handleApplyOrRemove}
-              className="h-8 px-4 rounded-md border border-[#f56215] text-[#f56215] text-sm font-medium bg-[rgba(245,98,21,0.06)]"
-            >
-              {appliedCouponCode ? "Remove" : "Apply"}
-            </button>
-          </div>
+        <button
+          type="button"
+          onClick={appliedCoupon ? removeCoupon : handleApply}
+          disabled={applying}
+          className="h-8 px-4 rounded-md border border-[#f56215] text-[#f56215] text-sm font-medium bg-[rgba(245,98,21,0.06)] disabled:opacity-60"
+        >
+          {appliedCoupon ? "Remove" : applying ? "Applying..." : "Apply"}
+        </button>
+      </div>
 
-          {appliedCoupon &&
-            (appliedCoupon.discountType === "freeItem" ? (
-              <p className="text-sm text-[#00a86e]">
-                Coupon &quot;{appliedCoupon.code}&quot; applied. You get{" "}
-                {appliedCoupon.freeItem?.name ?? "an item"} free
-                {computeDiscount(appliedCoupon, totalPrice) > 0
-                  ? ` and save Rs ${computeDiscount(appliedCoupon, totalPrice)}`
-                  : ""}
-                !
-              </p>
-            ) : (
-              <p className="text-sm text-[#00a86e]">
-                Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
-                {computeDiscount(appliedCoupon, totalPrice)}.
-              </p>
-            ))}
-        </>
-      )}
+      {error && <p className="text-sm text-red-500">{error}</p>}
+
+      {appliedCoupon &&
+        (appliedCoupon.discountType === "freeItem" ? (
+          <p className="text-sm text-[#00a86e]">
+            Coupon &quot;{appliedCoupon.code}&quot; applied. You get{" "}
+            {appliedCoupon.freeItem?.name ?? "an item"} free
+            {computeDiscount(appliedCoupon, totalPrice) > 0
+              ? ` and save Rs ${computeDiscount(appliedCoupon, totalPrice)}`
+              : ""}
+            !
+          </p>
+        ) : (
+          <p className="text-sm text-[#00a86e]">
+            Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
+            {computeDiscount(appliedCoupon, totalPrice)}.
+          </p>
+        ))}
     </div>
   );
 }

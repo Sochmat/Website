@@ -38,7 +38,6 @@ import {
   resolveOfferDiscount,
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
-import LocationDiscountModal from "@/components/LocationDiscountModal";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -470,6 +469,12 @@ export default function OrderPage() {
     couponDiscount,
     firstOrderDiscountPreview,
   );
+  // A free-item coupon grants an item worth ₹0 instead of money off, so it never
+  // moves the total — surface it in the bill or the coupon looks like it did
+  // nothing. Suppressed when the first-order discount supersedes the coupon,
+  // matching what placeOrder actually sends.
+  const couponFreeItem = firstOrderApplied ? undefined : appliedCoupon?.freeItem;
+  const couponSuperseded = firstOrderApplied && Boolean(appliedCoupon);
   // Flat location discount for the selected society (% of item subtotal),
   // stacks on top of the offer. Authoritatively re-derived server-side.
   const societyDiscount = computeSocietyDiscount(
@@ -774,6 +779,19 @@ export default function OrderPage() {
                     <span className="text-[#00a86e]">₹{couponDiscount}</span>
                   </div>
                 )}
+                {couponFreeItem ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#666]">
+                      Free item ({couponFreeItem.name})
+                    </span>
+                    <span className="text-[#00a86e]">FREE</span>
+                  </div>
+                ) : null}
+                {couponSuperseded ? (
+                  <p className="text-xs text-[#999]">
+                    Coupon not applied — your first-order discount saves more.
+                  </p>
+                ) : null}
                 {societyDiscount > 0 ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-[#666]">
@@ -874,8 +892,6 @@ export default function OrderPage() {
           onConfirm={placeOrder}
         />
       )}
-
-      <LocationDiscountModal />
 
       {/* OLD address sheets — disabled; replaced by DeliveryDetailsSheet
       <SelectAddressSheet
