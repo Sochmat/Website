@@ -1,55 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLocation } from "@/context/LocationContext";
-import { useCart } from "@/context/CartContext";
-import { computeSocietyDiscount } from "@/lib/societyDiscounts";
 
-/** sessionStorage key prefix — show the perk once per session per society. */
-const SEEN_PREFIX = "sochmat_location_discount_seen_";
+interface LocationDiscountModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToMotionPreference(onChange: () => void) {
+  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}
 
 /**
- * A celebratory "location perk" coupon shown on the cart/checkout page when the
- * selected society has an active flat discount. The percentage counts up inside
- * a perforated ticket that springs in — one signature moment, everything else
- * kept quiet. Appears once per session per society and respects reduced motion.
+ * A celebratory "location perk" coupon for the selected delivery location's flat
+ * discount. The percentage counts up inside a perforated ticket that springs in
+ * — one signature moment, everything else kept quiet. Purely presentational: the
+ * caller decides when to open it (see LocationPerkModals). Respects reduced motion.
  */
-export default function LocationDiscountModal() {
+export default function LocationDiscountModal({
+  open,
+  onClose,
+}: LocationDiscountModalProps) {
   const { society, societyDiscountPercent } = useLocation();
-  const { totalPrice, totalItems } = useCart();
-  const [open, setOpen] = useState(false);
-  // The percentage value shown, animated up from 0.
-  const [shown, setShown] = useState(0);
+  // The animated percentage. Ignored entirely under reduced motion, where the
+  // final value is rendered straight away.
+  const [animated, setAnimated] = useState(0);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const reduceMotion = useSyncExternalStore(
+    subscribeToMotionPreference,
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false, // server render: assume motion is fine, the client corrects it
+  );
+  const shown = reduceMotion ? societyDiscountPercent : animated;
 
-  const savings = computeSocietyDiscount(totalPrice, societyDiscountPercent);
-
-  // Open once per session when a discount is live and the cart has items.
+  // Count the percentage up when the modal opens.
   useEffect(() => {
-    if (societyDiscountPercent <= 0 || totalItems <= 0) return;
-    if (typeof window === "undefined") return;
-    const key = `${SEEN_PREFIX}${society.id}`;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, "1");
-    } catch {
-      // sessionStorage unavailable — still show it once this mount.
-    }
-    setOpen(true);
-  }, [societyDiscountPercent, totalItems, society.id]);
-
-  // Count the percentage up when the modal opens (skipped for reduced motion).
-  useEffect(() => {
-    if (!open) return;
+    if (!open || reduceMotion) return;
     const target = societyDiscountPercent;
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setShown(target);
-      return;
-    }
-    setShown(0);
     const duration = 900;
     let raf = 0;
     let start = 0;
@@ -58,23 +50,23 @@ export default function LocationDiscountModal() {
       const p = Math.min(1, (t - start) / duration);
       // easeOutCubic
       const eased = 1 - Math.pow(1 - p, 3);
-      setShown(Math.round(target * eased));
+      setAnimated(Math.round(target * eased));
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [open, societyDiscountPercent]);
+  }, [open, reduceMotion, societyDiscountPercent]);
 
   // Focus the dismiss button and wire Escape-to-close.
   useEffect(() => {
     if (!open) return;
     closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -84,7 +76,7 @@ export default function LocationDiscountModal() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="ldm-title"
-      onClick={() => setOpen(false)}
+      onClick={onClose}
     >
       <div className="ldm-card" onClick={(e) => e.stopPropagation()}>
         {/* Coupon head — the signature count-up */}
@@ -110,17 +102,15 @@ export default function LocationDiscountModal() {
           <h2 id="ldm-title" className="ldm-heading">
             {societyDiscountPercent}% off at {society.name}
           </h2>
-          {savings > 0 && (
-            <p className="ldm-savings">
-              You save <strong>₹{savings}</strong> on this order.
-            </p>
-          )}
+          <p className="ldm-savings">
+            On every order to {society.name}.
+          </p>
           <p className="ldm-note">Applied automatically at checkout.</p>
           <button
             ref={closeBtnRef}
             type="button"
             className="ldm-cta"
-            onClick={() => setOpen(false)}
+            onClick={onClose}
           >
             Sweet, let&rsquo;s order
           </button>

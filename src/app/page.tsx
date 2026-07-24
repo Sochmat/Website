@@ -11,7 +11,7 @@ import HomeCategoryScroll from "@/components/HomeCategoryScroll";
 // import LocationSelector from "@/components/LocationSelector";
 // import { useLocation } from "@/context/LocationContext";
 import SocietySelector from "@/components/SocietySelector";
-import WelcomeLocationModal from "@/components/WelcomeLocationModal";
+import LocationPerkModals from "@/components/LocationPerkModals";
 import StoreClosedBanner from "@/components/StoreClosedBanner";
 
 export default function Home() {
@@ -30,7 +30,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-white max-w-[430px] mx-auto overflow-hidden relative">
-      <WelcomeLocationModal />
+      <LocationPerkModals />
       <StoreClosedBanner />
       {/* Header */}
       <div className="flex justify-between items-center gap-2 mt-[20px] px-4">

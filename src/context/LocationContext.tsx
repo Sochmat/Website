@@ -45,6 +45,8 @@ interface LocationContextType {
   setSocietyId: (id: string) => void;
   /** Admin-configured flat discount % for the selected society (0 when none). */
   societyDiscountPercent: number;
+  /** True once the per-society discounts have been fetched (success or failure). */
+  discountsLoaded: boolean;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -55,6 +57,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [location, setLocationState] = useState<UserLocation | null>(null);
   const [societyId, setSocietyIdState] = useState<string>(DEFAULT_SOCIETY.id);
   const [discounts, setDiscounts] = useState<SocietyDiscountMap>({});
+  const [discountsLoaded, setDiscountsLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -95,6 +98,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // ignore — no discount is a safe default
+      } finally {
+        // Mark loaded either way, so consumers know the discount is now known
+        // (empty map on failure = no discount).
+        if (!cancelled) setDiscountsLoaded(true);
       }
     })();
     return () => {
@@ -140,8 +147,16 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       society,
       setSocietyId,
       societyDiscountPercent,
+      discountsLoaded,
     }),
-    [location, distanceFromStoreKm, isServiceable, society, societyDiscountPercent]
+    [
+      location,
+      distanceFromStoreKm,
+      isServiceable,
+      society,
+      societyDiscountPercent,
+      discountsLoaded,
+    ]
   );
 
   return (

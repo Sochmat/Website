@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Modal } from "antd";
 import { useLocation } from "@/context/LocationContext";
 import { SOCIETIES, type Society } from "@/lib/societies";
@@ -11,37 +11,68 @@ import SocietyNoticeModal, {
 /** localStorage key set by LocationContext once a society is explicitly chosen. */
 const SOCIETY_KEY = "sochmat_society_id";
 
+/** Storage is only readable after hydration; nothing here ever re-subscribes. */
+const noopSubscribe = () => () => {};
+
+function hasStoredSociety(): boolean {
+  try {
+    return Boolean(localStorage.getItem(SOCIETY_KEY));
+  } catch {
+    // localStorage unavailable — default to showing the picker.
+    return false;
+  }
+}
+
+interface WelcomeLocationModalProps {
+  /**
+   * Fired once this flow is finished — after the picker and any chained launch
+   * notice close, or immediately for a returning visitor who never sees it. Lets
+   * a caller queue its own modal behind this one (see LocationPerkModals).
+   */
+  onDone?: () => void;
+}
+
 /**
  * First-visit location picker. Opens on the home page when the user has not yet
  * chosen a society (no persisted selection). It's a forced choice — there is no
  * dismiss — so every visitor lands with an explicit delivery location. Picking a
  * slot-based society (e.g. Zomato office) chains into its slot launch notice.
  */
-export default function WelcomeLocationModal() {
+export default function WelcomeLocationModal({
+  onDone,
+}: WelcomeLocationModalProps) {
   const { setSocietyId } = useLocation();
-  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState(false);
   const [noticeSociety, setNoticeSociety] = useState<Society | null>(null);
+  // False during SSR and the first client render, so reading localStorage can
+  // never cause a hydration mismatch.
+  const hydrated = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 
   // Only first-time visitors: show when no society has been chosen before.
+  const open = hydrated && !picked && !hasStoredSociety();
+
+  // The flow is finished once nothing of ours is on screen — immediately for a
+  // returning visitor, otherwise after the picker and any chained notice close.
+  const flowDone = hydrated && !open && !noticeSociety;
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      if (!localStorage.getItem(SOCIETY_KEY)) setOpen(true);
-    } catch {
-      // localStorage unavailable — default to showing the picker.
-      setOpen(true);
-    }
-  }, []);
+    if (flowDone) onDone?.();
+  }, [flowDone, onDone]);
 
   const handleSelect = (s: Society) => {
     setSocietyId(s.id); // persists the choice → modal won't reopen next visit
-    setOpen(false);
+    setPicked(true);
     if (s.slots.length > 0) {
       // Chain the launch notice, and mark it seen so the selector won't
       // re-show it later this session.
       markSocietyNoticeSeen(s.id);
       setNoticeSociety(s);
     }
+    // No explicit onDone here — closing the picker (and the notice, if any) is
+    // what completes the flow, and the effect above reports it.
   };
 
   return (
