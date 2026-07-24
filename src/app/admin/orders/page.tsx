@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Table, Select, Button, Popconfirm, message } from "antd";
+import { Table, Select, Button, Popconfirm, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SOCIETIES } from "@/lib/societies";
+import { REFERRAL_REWARD } from "@/lib/walletMath";
 
 // Shop delay reminders: replay the alert sound at these minute marks after
 // confirmation, while the order is still "confirmed" (not yet out for delivery).
@@ -86,6 +87,14 @@ interface OrderRow {
   createdAt: string;
   /** Confirmation time in ms (null until accepted); drives the shop timer. */
   confirmedAt: number | null;
+  /** True when the customer signed up with someone's referral code. */
+  isReferred: boolean;
+  /** Referrer of the customer who placed this order (empty when not referred). */
+  referrerName: string;
+  referrerPhone: string;
+  referrerCode: string;
+  /** True on the order that earned the referrer their ₹200. */
+  referralEarned: boolean;
   items: OrderItemRow[];
 }
 
@@ -203,6 +212,16 @@ export default function AdminOrdersPage() {
               confirmedAt: o.confirmedAt
                 ? new Date(o.confirmedAt as string).getTime()
                 : null,
+              isReferred: o.referral != null,
+              referrerName:
+                (o.referral as { referrerName?: string })?.referrerName ?? "",
+              referrerPhone:
+                (o.referral as { referrerPhone?: string })?.referrerPhone ?? "",
+              referrerCode:
+                (o.referral as { referrerCode?: string })?.referrerCode ?? "",
+              referralEarned:
+                (o.referral as { earnedReward?: boolean })?.earnedReward ===
+                true,
               items: Array.isArray(o.orderItems)
                 ? (o.orderItems as Array<Record<string, unknown>>).map(
                     (it) => ({
@@ -413,6 +432,41 @@ export default function AdminOrdersPage() {
       key: "receiverPhone",
       width: 120,
     },
+    // Kitchen staff don't need referral attribution, so it's office-panel only.
+    ...(isShop
+      ? []
+      : ([
+          {
+            title: "Referral",
+            key: "referral",
+            width: 170,
+            render: (_: unknown, record: OrderRow) =>
+              record.isReferred ? (
+                <div style={{ lineHeight: 1.35 }}>
+                  <Tag color="purple" style={{ marginInlineEnd: 0 }}>
+                    Referred
+                  </Tag>
+                  <div style={{ fontSize: 12, fontWeight: 500 }}>
+                    {record.referrerName || "Unnamed referrer"}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#999" }}>
+                    {[record.referrerCode, record.referrerPhone]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                  {record.referralEarned && (
+                    <div
+                      style={{ fontSize: 11, color: "#52c41a", fontWeight: 600 }}
+                    >
+                      ₹{REFERRAL_REWARD} credited on this order
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span style={{ color: "#ccc" }}>—</span>
+              ),
+          },
+        ] as ColumnsType<OrderRow>)),
     {
       title: "Address",
       dataIndex: "receiverAddress",
@@ -767,7 +821,7 @@ export default function AdminOrdersPage() {
           showSizeChanger: true,
           showTotal: (t) => `Total ${t} orders`,
         }}
-        scroll={{ x: isShop ? 2230 : 2140 }}
+        scroll={{ x: isShop ? 2230 : 2310 }}
       />
       <style jsx global>{`
         /* Tint orders placed to a slot-based location (e.g. Zomato office). */

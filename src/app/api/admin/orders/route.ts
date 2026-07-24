@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
+import { Db, ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
@@ -8,6 +8,98 @@ const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
   key_secret: process.env.RAZORPAY_KEY_SECRET!,
 });
+
+interface OrderReferral {
+  /** Who referred the customer that placed this order. */
+  referrerName: string;
+  referrerPhone: string;
+  referrerCode: string;
+  /** True on the order that earned the referrer their reward (the customer's
+   *  first paid order), so admins can tell the payout order from later ones. */
+  earnedReward: boolean;
+}
+
+/**
+ * Map order id → referrer details, for orders placed by customers who signed up
+ * with someone's referral code. Two lookups total (customers, then referrers).
+ */
+async function referralAttribution(
+  db: Db,
+  orders: Array<Record<string, unknown>>,
+): Promise<Map<string, OrderReferral>> {
+  const result = new Map<string, OrderReferral>();
+
+  const customerIds = new Map<string, ObjectId>();
+  for (const order of orders) {
+    if (!order.userId) continue;
+    const id = String(order.userId);
+    if (ObjectId.isValid(id)) customerIds.set(id, new ObjectId(id));
+  }
+  if (customerIds.size === 0) return result;
+
+  const customers = await db
+    .collection("users")
+    .find({ _id: { $in: [...customerIds.values()] }, referredBy: { $exists: true } })
+    .project({ referredBy: 1, referralCredited: 1 })
+    .toArray();
+  if (customers.length === 0) return result;
+
+  const referrerIds: ObjectId[] = [];
+  const referredBy = new Map<string, { referrerId: string; credited: boolean }>();
+  for (const c of customers) {
+    const referrerId = String(c.referredBy);
+    if (!ObjectId.isValid(referrerId)) continue;
+    referredBy.set(String(c._id), {
+      referrerId,
+      credited: c.referralCredited === true,
+    });
+    referrerIds.push(new ObjectId(referrerId));
+  }
+  if (referredBy.size === 0) return result;
+
+  const referrers = await db
+    .collection("users")
+    .find({ _id: { $in: referrerIds } })
+    .project({ name: 1, phone: 1, referralCode: 1 })
+    .toArray();
+  const referrerMap = new Map(referrers.map((r) => [String(r._id), r]));
+
+  // The reward fires on the customer's first paid order, so find the earliest
+  // one per referred customer ("refunded" was paid at some point too).
+  const firstPaidOrderId = new Map<string, { id: string; at: number }>();
+  for (const order of orders) {
+    const customerId = String(order.userId ?? "");
+    if (!referredBy.has(customerId)) continue;
+    const status = String(order.paymentStatus ?? "");
+    if (status !== "paid" && status !== "refunded") continue;
+    const at = new Date(order.createdAt as string | Date).getTime();
+    const best = firstPaidOrderId.get(customerId);
+    if (!best || (Number.isFinite(at) && at < best.at)) {
+      firstPaidOrderId.set(customerId, {
+        id: String(order._id),
+        at: Number.isFinite(at) ? at : Infinity,
+      });
+    }
+  }
+
+  for (const order of orders) {
+    const customerId = String(order.userId ?? "");
+    const link = referredBy.get(customerId);
+    if (!link) continue;
+    const referrer = referrerMap.get(link.referrerId);
+    if (!referrer) continue;
+    const orderId = String(order._id);
+    result.set(orderId, {
+      referrerName: String(referrer.name ?? ""),
+      referrerPhone: String(referrer.phone ?? ""),
+      referrerCode: String(referrer.referralCode ?? ""),
+      earnedReward:
+        link.credited && firstPaidOrderId.get(customerId)?.id === orderId,
+    });
+  }
+
+  return result;
+}
 
 export async function GET() {
   try {
@@ -53,6 +145,8 @@ export async function GET() {
       productMap.set(String(p._id), { name: String(p.name ?? ""), image: p.image });
     }
 
+    const referralByOrderId = await referralAttribution(db, orders);
+
     const enriched = orders.map((order) => {
       const items = ((order.orderItems ?? []) as Array<{
         productId?: string;
@@ -66,7 +160,11 @@ export async function GET() {
           image: product?.image,
         };
       });
-      return { ...order, orderItems: items };
+      return {
+        ...order,
+        orderItems: items,
+        referral: referralByOrderId.get(String(order._id)),
+      };
     });
 
     return NextResponse.json({ success: true, orders: enriched });
