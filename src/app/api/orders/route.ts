@@ -11,6 +11,15 @@ import {
   discountPercentFor,
   computeSocietyDiscount,
 } from "@/lib/societyDiscounts";
+import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
+import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
+import { getCustomerUserId } from "@/lib/customerSession";
+import {
+  getWalletBalance,
+  reserveWallet,
+  sweepStaleOrderReservations,
+} from "@/lib/wallet";
+import { computeWalletApplied } from "@/lib/walletMath";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -148,8 +157,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Canonical order identity: the signed-in session user (from the httpOnly
+    // cookie), NOT the phone-resolved record or the spoofable body.userId. All
+    // per-user logic — first-order eligibility, wallet, referral credit, and the
+    // stored order.userId — must key off the SAME id, or they silently target
+    // different documents. Fall back to the phone-resolved user for the rare
+    // unauthenticated/guest order.
+    const sessionUserId = await getCustomerUserId(request);
+    const orderUserId: ObjectId = sessionUserId ?? user._id;
+
     const discountAmount = Number(body.discountAmount) || 0;
     let allowedDiscount = 0;
+    let couponAllowed = 0;
     let coupon: Record<string, unknown> | null = null;
     if (body.couponCode) {
       coupon = await db.collection("coupons").findOne({
@@ -247,12 +266,25 @@ export async function POST(request: NextRequest) {
         const maxDisc = Number(coupon.maxDiscount) || 0;
         allowed += maxDisc > 0 ? Math.min(pctValue, maxDisc) : pctValue;
       }
-      allowedDiscount = allowed;
+      couponAllowed = allowed;
     }
 
+    // First-order 20% discount — resolved server-side from the user's order
+    // history so it can't be spoofed. It does NOT stack with the coupon: the
+    // larger of the two is allowed (matches the client's "best value" rule).
+    const serverEligibleFirstOrder = await isEligibleForFirstOrderDiscount(
+      db,
+      orderUserId,
+    );
+    const serverFirstOrderDiscount = serverEligibleFirstOrder
+      ? computeFirstOrderDiscount(serverSubtotal)
+      : 0;
+    allowedDiscount = Math.max(couponAllowed, serverFirstOrderDiscount);
+
     // Per-society flat discount (% of subtotal). Resolved server-side from the
-    // society id so the client can't inflate it; stacks with the coupon. Being
-    // generous here only relaxes the floor, so it never over-rejects.
+    // society id so the client can't inflate it; stacks on top of the offer
+    // discount. Being generous here only relaxes the floor, so it never
+    // over-rejects.
     const societyDiscountPercent = discountPercentFor(
       sanitizeDiscountMap(societyDiscountsDoc?.discounts),
       typeof body.societyId === "string" ? body.societyId : undefined,
@@ -281,18 +313,9 @@ export async function POST(request: NextRequest) {
     const tax = Number(body.tax) ?? 0;
     const orderNumber = generateOrderNumber();
 
-    let resolvedUserId: ObjectId | undefined = user._id;
-    if (body.userId) {
-      try {
-        resolvedUserId = new ObjectId(String(body.userId));
-      } catch {
-        // fall back to phone-resolved user
-      }
-    }
-
     const orderDoc: Order = {
       orderNumber,
-      userId: resolvedUserId,
+      userId: orderUserId,
       receiver: body.receiver
         ? {
             name: body.receiver.name ?? "",
@@ -332,6 +355,12 @@ export async function POST(request: NextRequest) {
       societyId: typeof body.societyId === "string" ? body.societyId : undefined,
       societyDiscount: societyDiscountAmount,
       societyDiscountPercent,
+      // Capped at the server-computed amount so a client can't inflate it; >0
+      // marks this order as having claimed the first-order discount.
+      firstOrderDiscount: Math.min(
+        Math.max(0, Number(body.firstOrderDiscount) || 0),
+        serverFirstOrderDiscount,
+      ),
       totalAmount,
       discountAmount,
       tax,
@@ -348,6 +377,50 @@ export async function POST(request: NextRequest) {
     let order = await db
       .collection("orders")
       .findOne({ _id: result.insertedId });
+
+    // Wallet redemption (referral credit) — auto-applied unless the client
+    // opted out. Reserve at creation so the balance can't be double-spent; the
+    // reservation settles at payment (reconcile) or is refunded on fail/sweep.
+    // Only for online orders — COD never reaches the reconcile settle path.
+    const wantWallet =
+      (body as { useWallet?: boolean }).useWallet !== false &&
+      orderDoc.paymentMethod !== "cash";
+    if (wantWallet) {
+      // Reclaim any reservations from this user's abandoned checkouts first —
+      // this must run even at a zero live balance, since the balance can read 0
+      // precisely because it's all tied up in a stale reservation.
+      await sweepStaleOrderReservations(db, orderUserId, 30 * 60 * 1000);
+      const balance = await getWalletBalance(db, orderUserId);
+      const { walletApplied, amountPayable } = computeWalletApplied(
+        balance,
+        totalAmount,
+      );
+      if (walletApplied > 0) {
+        const reserved = await reserveWallet(
+          db,
+          orderUserId,
+          result.insertedId,
+          walletApplied,
+        );
+        if (reserved) {
+          // netAmount is what Razorpay is charged and what reconcile verifies.
+          await db.collection("orders").updateOne(
+            { _id: result.insertedId },
+            {
+              $set: {
+                walletApplied,
+                amountPayable,
+                netAmount: amountPayable,
+                updatedAt: new Date(),
+              },
+            },
+          );
+          order = await db
+            .collection("orders")
+            .findOne({ _id: result.insertedId });
+        }
+      }
+    }
 
     // COD orders are pushed to Petpooja at creation (online orders push from
     // verify-order once payment is confirmed). The push never blocks the

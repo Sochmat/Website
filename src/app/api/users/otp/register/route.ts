@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
 import { limiters, rateLimit } from "@/lib/rateLimit";
+import { findUserIdByReferralCode } from "@/lib/referral";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -46,6 +47,12 @@ export async function POST(request: NextRequest) {
       };
       if (isEmailFlow) newUser.email = email;
       else newUser.phone = phone;
+      // Referral attribution: set `referredBy` once, only for a brand-new user.
+      const ref = String(body.ref ?? "").trim().toUpperCase();
+      if (ref) {
+        const referrerId = await findUserIdByReferralCode(db, ref);
+        if (referrerId) newUser.referredBy = referrerId;
+      }
       const result = await db.collection("users").insertOne(newUser);
       user = { _id: result.insertedId, ...newUser };
     }

@@ -33,6 +33,11 @@ import {
   slotWindowLabel,
 } from "@/lib/societySlots";
 import { computeSocietyDiscount } from "@/lib/societyDiscounts";
+import {
+  computeFirstOrderDiscount,
+  resolveOfferDiscount,
+} from "@/lib/firstOrderDiscount";
+import { computeWalletApplied } from "@/lib/walletMath";
 import LocationDiscountModal from "@/components/LocationDiscountModal";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
@@ -92,6 +97,9 @@ export default function OrderPage() {
     null,
   );
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(true);
+  const [firstOrderEligible, setFirstOrderEligible] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWallet, setUseWallet] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -134,6 +142,39 @@ export default function OrderPage() {
       cancelled = true;
     };
   }, []);
+
+  // Check first-order-discount eligibility + wallet balance, to preview them.
+  // The order route re-checks/reserves authoritatively at creation.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setFirstOrderEligible(false);
+      setWalletBalance(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [eligRes, walletRes] = await Promise.all([
+          fetch("/api/orders/first-order-eligibility", { cache: "no-store" }),
+          fetch("/api/wallet/balance", { cache: "no-store" }),
+        ]);
+        const elig = await eligRes.json();
+        const wallet = await walletRes.json();
+        if (!cancelled) {
+          setFirstOrderEligible(!!elig?.eligible);
+          setWalletBalance(Number(wallet?.balance ?? 0));
+        }
+      } catch {
+        if (!cancelled) {
+          setFirstOrderEligible(false);
+          setWalletBalance(0);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   // Restore the last delivery details so the sheet pre-fills next time.
   useEffect(() => {
@@ -274,7 +315,18 @@ export default function OrderPage() {
     setPlacingOrder(true);
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
-      // Location discount: % of item subtotal, stacks with any coupon, all
+      // First-order 20% discount — best value vs the coupon (they don't stack).
+      const firstOrderDiscountAmount = firstOrderEligible
+        ? computeFirstOrderDiscount(totalPrice)
+        : 0;
+      const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
+        couponDiscountAmount,
+        firstOrderDiscountAmount,
+      );
+      // When the first-order discount wins, the coupon (incl. any free item) is
+      // not applied to this order.
+      const couponActive = !firstOrderApplied && !!appliedCoupon;
+      // Location discount: % of item subtotal, stacks on top of the offer, all
       // order types. Authoritatively re-derived on the server from societyId.
       const societyDiscountAmount = computeSocietyDiscount(
         totalPrice,
@@ -282,7 +334,7 @@ export default function OrderPage() {
       );
       const discountedAmount = Math.max(
         0,
-        totalPrice - couponDiscountAmount - societyDiscountAmount,
+        totalPrice - offerDiscount - societyDiscountAmount,
       );
       const gstAmount = Math.round(discountedAmount * 0.05);
       // Delivery charge applies only to delivery orders (not dine-in).
@@ -311,8 +363,9 @@ export default function OrderPage() {
             variantName: item.variantName,
             addOns: item.selectedAddOns,
           })),
-          // Free-item coupon grants an extra item at no charge.
-          ...(appliedCoupon?.freeItem
+          // Free-item coupon grants an extra item at no charge (only when the
+          // coupon is actually applied — not when superseded by first-order).
+          ...(couponActive && appliedCoupon?.freeItem
             ? [
                 {
                   productId: appliedCoupon.freeItem.id,
@@ -323,20 +376,22 @@ export default function OrderPage() {
             : []),
         ],
         totalAmount: finalAmount,
-        discountAmount: couponDiscountAmount,
+        discountAmount: couponActive ? couponDiscountAmount : 0,
         tax: gstAmount,
         deliveryFee: deliveryFeeAmount,
         societyId: society.id,
         societyDiscount: societyDiscountAmount,
         societyDiscountPercent: societyDiscountPercent,
+        firstOrderDiscount: firstOrderApplied ? firstOrderDiscountAmount : 0,
         paymentMethod: paymentMethod,
-        couponCode: appliedCoupon?.code ?? undefined,
+        couponCode: couponActive ? appliedCoupon?.code : undefined,
       };
 
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(orderPayload),
+        // `useWallet` is a request-only flag (not part of the stored order).
+        body: JSON.stringify({ ...orderPayload, useWallet }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -349,7 +404,9 @@ export default function OrderPage() {
 
       if (paymentMethod === "razorpay") {
         await handleRazorpayPayment({
-          amount: finalAmount,
+          // Charge the server-authoritative payable (reduced by wallet credit),
+          // falling back to the full amount when no wallet was applied.
+          amount: Number(data.order?.netAmount ?? finalAmount),
           currency: "INR",
           name: "Sochmat",
           description: `Order #${data.order?.orderNumber || ""}`,
@@ -405,15 +462,23 @@ export default function OrderPage() {
   };
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
+  // First-order 20% discount — best value vs the coupon (they don't stack).
+  const firstOrderDiscountPreview = firstOrderEligible
+    ? computeFirstOrderDiscount(totalPrice)
+    : 0;
+  const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
+    couponDiscount,
+    firstOrderDiscountPreview,
+  );
   // Flat location discount for the selected society (% of item subtotal),
-  // stacks with any coupon. Authoritatively re-derived server-side.
+  // stacks on top of the offer. Authoritatively re-derived server-side.
   const societyDiscount = computeSocietyDiscount(
     totalPrice,
     societyDiscountPercent,
   );
   const discountedSubtotal = Math.max(
     0,
-    totalPrice - couponDiscount - societyDiscount,
+    totalPrice - offerDiscount - societyDiscount,
   );
   const gst = Math.round(discountedSubtotal * 0.05);
   // Delivery is available only when the store allows it AND this society's slots
@@ -426,6 +491,12 @@ export default function OrderPage() {
   const deliveryFee = deliveryAvailable ? society.deliveryCharge : 0;
   const finalPrice = discountedSubtotal + gst + deliveryFee;
   const originalWithTax = Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
+  // Wallet credit preview — reserved authoritatively server-side at creation.
+  const walletApplied =
+    useWallet && walletBalance > 0
+      ? computeWalletApplied(walletBalance, finalPrice).walletApplied
+      : 0;
+  const payable = finalPrice - walletApplied;
 
   if (totalItems === 0) {
     return (
@@ -651,15 +722,15 @@ export default function OrderPage() {
               <div className="flex items-center gap-1">
                 <span className="font-medium text-sm text-[#111]">To Pay</span>
                 <span className="font-semibold text-sm text-[#111]">
-                  ₹{finalPrice}
+                  ₹{payable}
                 </span>
-                {couponDiscount || societyDiscount ? (
+                {offerDiscount || societyDiscount ? (
                   <span className="text-[#777] text-[13px] line-through">
                     ₹{originalWithTax}
                   </span>
                 ) : null}
               </div>
-              {couponDiscount || societyDiscount ? (
+              {offerDiscount || societyDiscount ? (
                 <p className="text-[#00a86e] text-[11px] font-medium text-left">
                   ₹{originalWithTax - finalPrice} saved!
                 </p>
@@ -692,10 +763,17 @@ export default function OrderPage() {
                     <span className="text-[#00a86e]">₹{totalPrice}</span>
                   </div>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#666]">Discount</span>
-                  <span className="text-[#00a86e]">₹{couponDiscount}</span>
-                </div>
+                {firstOrderApplied ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#666]">First order (20% off)</span>
+                    <span className="text-[#00a86e]">₹{offerDiscount}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-[#666]">Discount</span>
+                    <span className="text-[#00a86e]">₹{couponDiscount}</span>
+                  </div>
+                )}
                 {societyDiscount > 0 ? (
                   <div className="flex justify-between text-sm">
                     <span className="text-[#666]">
@@ -714,6 +792,24 @@ export default function OrderPage() {
                     <span className="text-[#666] text-[13px]">
                       ₹{deliveryFee}
                     </span>
+                  </div>
+                ) : null}
+                {walletBalance > 0 ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <label className="flex items-center gap-2 text-[#666]">
+                      <input
+                        type="checkbox"
+                        checked={useWallet}
+                        onChange={(e) => setUseWallet(e.target.checked)}
+                        className="h-4 w-4 accent-[#f56215]"
+                      />
+                      Use wallet credit (₹{walletBalance})
+                    </label>
+                    {walletApplied > 0 ? (
+                      <span className="text-[#00a86e]">−₹{walletApplied}</span>
+                    ) : (
+                      <span className="text-[#bbb] text-[13px]">₹0</span>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -746,7 +842,7 @@ export default function OrderPage() {
               <span className="font-semibold">
                 {placingOrder ? "Placing…" : "Place Order"}
               </span>
-              <span className="font-medium text-sm">₹{finalPrice}</span>
+              <span className="font-medium text-sm">₹{payable}</span>
             </div>
             <ArrowRightIcon className="w-5 h-5 text-white" />
           </button>

@@ -4,6 +4,7 @@ import Razorpay from "razorpay";
 import type { Order } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { logPayment, type PaymentLogEntry } from "@/lib/paymentLog";
+import { settleWallet, creditReferral } from "@/lib/wallet";
 
 /** The correlation fields shared by every log row in a reconciliation. */
 type LogBase = Pick<
@@ -280,8 +281,11 @@ async function reconcileOrder(
     };
   }
 
-  await db.collection("orders").updateOne(
-    { _id },
+  // Guard the transition on "not already paid" so that when verify and the
+  // webhook race, exactly one caller wins it and runs the paid-once side
+  // effects (wallet settle, referral credit, Petpooja push) below.
+  const transition = await db.collection("orders").updateOne(
+    { _id, paymentStatus: { $ne: "paid" } },
     {
       $set: {
         paymentStatus: "paid",
@@ -293,26 +297,44 @@ async function reconcileOrder(
       },
     },
   );
+  const didTransition = transition.modifiedCount === 1;
 
   await logPayment(db, {
     ...logBase,
     stage: "verified",
     outcome: "success",
-    message: "Payment verified and order marked paid",
+    message: didTransition
+      ? "Payment verified and order marked paid"
+      : "Payment verified; order was concurrently marked paid",
     paymentStatus: payment.status,
     amountPaise: Number(payment.amount),
     expectedAmountPaise: expectedAmount,
   });
 
-  // Order is now paid — push it to Petpooja. The push never blocks
-  // verification; its outcome is recorded on the order for admin.
-  const paidOrder = await db.collection("orders").findOne({ _id });
-  if (paidOrder) {
-    const pushResult = await pushOrderToPetpooja(
-      paidOrder as unknown as Order,
-      db,
-    );
-    await recordPushResult(db, _id, pushResult);
+  // Paid-once side effects — only the caller that won the transition runs them,
+  // so a verify/webhook race never double-settles, double-credits, or double-pushes.
+  if (didTransition) {
+    const userId = order.userId as ObjectId | undefined;
+    const walletApplied = Number(order.walletApplied ?? 0);
+    if (userId) {
+      // Settle the wallet reservation (balance was decremented at reserve) and
+      // credit the referrer for this user's first paid order (idempotent).
+      if (walletApplied > 0) {
+        await settleWallet(db, userId, _id, walletApplied);
+      }
+      await creditReferral(db, userId);
+    }
+
+    // Order is now paid — push it to Petpooja. The push never blocks
+    // verification; its outcome is recorded on the order for admin.
+    const paidOrder = await db.collection("orders").findOne({ _id });
+    if (paidOrder) {
+      const pushResult = await pushOrderToPetpooja(
+        paidOrder as unknown as Order,
+        db,
+      );
+      await recordPushResult(db, _id, pushResult);
+    }
   }
 
   return {

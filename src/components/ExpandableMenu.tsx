@@ -13,6 +13,7 @@ import {
   User,
   Phone,
   ReceiptText,
+  Gift,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
@@ -84,6 +85,15 @@ export default function ExpandableMenu() {
               My Orders
             </Link>
           )}
+
+          <Link
+            href="/refer"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 hover:bg-white/20 rounded-xl text-white font-medium text-lg transition-colors"
+          >
+            <Gift className="w-6 h-6 shrink-0" />
+            Refer &amp; Earn
+          </Link>
 
           {isAuthenticated && (
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">

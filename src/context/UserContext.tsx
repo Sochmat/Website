@@ -15,6 +15,8 @@ const UserContext = createContext<UserContextType | undefined>(undefined);
 
 const STORAGE_KEY = "user";
 const TOKEN_KEY = "userToken";
+/** Referral code captured from a `?ref=` link, sent at the next registration. */
+const REF_KEY = "sochmat_ref";
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUserState] = useState<User | null>(null);
@@ -35,6 +37,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
       // ignore
     } finally {
       setIsLoading(false);
+    }
+  }, []);
+
+  // Capture a `?ref=` referral code from the landing URL so registration can
+  // attribute it, even if the user signs up later in the session.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const ref = new URLSearchParams(window.location.search)
+        .get("ref")
+        ?.trim()
+        .toUpperCase();
+      if (ref) localStorage.setItem(REF_KEY, ref);
+    } catch {
+      // ignore
     }
   }, []);
 

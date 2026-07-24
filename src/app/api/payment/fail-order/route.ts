@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { logPayment } from "@/lib/paymentLog";
+import { refundReservationForOrder } from "@/lib/wallet";
 
 /**
  * Marks an order's payment as failed after a Razorpay failure. Only a
@@ -26,6 +27,10 @@ export async function POST(request: NextRequest) {
       { _id: new ObjectId(orderId), paymentStatus: "pending" },
       { $set: { paymentStatus: "failed", updatedAt: new Date() } },
     );
+
+    // Return any reserved wallet credit to the user (idempotent — a no-op if
+    // nothing was reserved or it was already refunded).
+    await refundReservationForOrder(db, new ObjectId(orderId));
 
     await logPayment(db, {
       flow: "order",

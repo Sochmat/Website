@@ -124,6 +124,12 @@ export interface Order {
   /** Flat location discount applied (INR) and the % it was derived from. */
   societyDiscount?: number;
   societyDiscountPercent?: number;
+  /** First-order 20% discount applied (INR); >0 marks the order as having claimed it. */
+  firstOrderDiscount?: number;
+  /** Wallet credit reserved/applied to this order (INR); reduces amountPayable. */
+  walletApplied?: number;
+  /** Amount actually charged after wallet (= totalAmount − walletApplied). */
+  amountPayable?: number;
   /** Structured delivery location (only set when orderType === "delivery"). */
   deliveryTower?: string;
   deliveryFloor?: string;
@@ -178,8 +184,31 @@ export interface User {
   country?: string;
   pincode?: string;
   addresses?: UserAddress[];
+  /** Unique share code, e.g. "HARSH1042". Assigned lazily on first use. */
+  referralCode?: string;
+  /** The referrer's user id, set once at registration for a brand-new user. */
+  referredBy?: ObjectId | string;
+  /** True once the referrer has been credited for this user's first paid order. */
+  referralCredited?: boolean;
+  /** Wallet balance in ₹ (from referral rewards). Missing = 0. */
+  walletBalance?: number;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+/** Append-only wallet ledger entry (collection: walletTransactions). */
+export interface WalletTransaction {
+  _id?: ObjectId | string;
+  userId: ObjectId | string;
+  /** referral_earned → credit; reserved/spent/refunded → order redemption. */
+  type: "referral_earned" | "reserved" | "spent" | "refunded";
+  /** Always a positive amount in ₹. */
+  amount: number;
+  /** The order this entry relates to (redemption entries). */
+  orderId?: ObjectId | string;
+  /** The referred user whose first order earned a referral reward. */
+  refereeUserId?: ObjectId | string;
+  createdAt?: Date;
 }
 
 export const BRACKET_KEYS = ["25-30", "30-40", "40-50"] as const;
