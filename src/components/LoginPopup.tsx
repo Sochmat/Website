@@ -29,6 +29,7 @@ export default function LoginPopup() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<AuthStep>("details");
   const [error, setError] = useState("");
@@ -56,10 +57,19 @@ export default function LoginPopup() {
       setStep("details");
       setName("");
       setEmail("");
+      setReferralCode("");
       setOtp("");
       setError("");
       setLoading(false);
       setGoogleLoading(false);
+    } else {
+      // Prefill the referral box from a `?ref=` link the user arrived through.
+      try {
+        const captured = localStorage.getItem("sochmat_ref");
+        if (captured) setReferralCode(captured);
+      } catch {
+        // ignore
+      }
     }
   }, [isOpen]);
 
@@ -81,7 +91,11 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
-              ref: localStorage.getItem("sochmat_ref") || undefined,
+              // Typed code wins; otherwise use a code captured from a ?ref= link.
+              ref:
+                referralCode.trim().toUpperCase() ||
+                localStorage.getItem("sochmat_ref") ||
+                undefined,
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -137,7 +151,11 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
-              ref: localStorage.getItem("sochmat_ref") || undefined,
+              // Typed code wins; otherwise use a code captured from a ?ref= link.
+              ref:
+                referralCode.trim().toUpperCase() ||
+                localStorage.getItem("sochmat_ref") ||
+                undefined,
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -299,6 +317,24 @@ export default function LoginPopup() {
                   required
                 />
               </div>
+              {mode === "register" && (
+                <div>
+                  <label htmlFor="login-popup-ref" className="sr-only">
+                    Referral code (optional)
+                  </label>
+                  <input
+                    id="login-popup-ref"
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) =>
+                      setReferralCode(e.target.value.toUpperCase())
+                    }
+                    placeholder="Referral code (optional)"
+                    autoCapitalize="characters"
+                    className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] uppercase tracking-wide text-[#171717] placeholder:text-[#a3a3a3] placeholder:normal-case placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                  />
+                </div>
+              )}
               {error && (
                 <p className="text-sm text-red-600">{error}</p>
               )}

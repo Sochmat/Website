@@ -7,6 +7,7 @@ import { useUser } from "@/context/UserContext";
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"details" | "otp">("details");
   const [error, setError] = useState("");
@@ -22,6 +23,22 @@ export default function RegisterPage() {
     }
   }, [resendTimer]);
 
+  // Prefill the referral box from a `?ref=` link the user arrived through.
+  useEffect(() => {
+    try {
+      const captured = localStorage.getItem("sochmat_ref");
+      if (captured) setReferralCode(captured);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Typed code wins; otherwise use a code captured from a ?ref= link.
+  const resolveRef = () =>
+    referralCode.trim().toUpperCase() ||
+    localStorage.getItem("sochmat_ref") ||
+    undefined;
+
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -31,7 +48,11 @@ export default function RegisterPage() {
       const res = await fetch("/api/users/otp/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), name: name.trim() }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          name: name.trim(),
+          ref: resolveRef(),
+        }),
       });
 
       const data = await res.json();
@@ -87,7 +108,11 @@ export default function RegisterPage() {
       const res = await fetch("/api/users/otp/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), name: name.trim() }),
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          name: name.trim(),
+          ref: resolveRef(),
+        }),
       });
 
       const data = await res.json();
@@ -146,6 +171,24 @@ export default function RegisterPage() {
                 placeholder="Enter your email address"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                 required
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="referral"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Referral code <span className="text-gray-400">(optional)</span>
+              </label>
+              <input
+                id="referral"
+                type="text"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                placeholder="Enter a referral code"
+                autoCapitalize="characters"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg uppercase tracking-wide focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent placeholder:normal-case placeholder:tracking-normal"
               />
             </div>
 
