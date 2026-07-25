@@ -1858,7 +1858,7 @@ Replace it with:
 
 - [ ] **Step 6: Render the streak line and the points toggle**
 
-In the price-breakdown block, find the wallet row (lines ~819–836) and insert the streak banner *before* it and the points row *after* it, so the block reads:
+In the price-breakdown block, find the wallet row (lines ~819–836). Insert the streak banner *before* it and the points row *after* it — the rows must read in the order the balances are actually applied (wallet first, then points), or the bill won't explain its own arithmetic. The block becomes:
 
 ```tsx
                 {isAuthenticated && pointsWillEarn > 0 ? (
@@ -1875,24 +1875,6 @@ In the price-breakdown block, find the wallet row (lines ~819–836) and insert 
                     </div>
                   </div>
                 ) : null}
-                {rewardPoints > 0 ? (
-                  <div className="flex items-center justify-between text-sm">
-                    <label className="flex items-center gap-2 text-[#666]">
-                      <input
-                        type="checkbox"
-                        checked={useRewardPoints}
-                        onChange={(e) => setUseRewardPoints(e.target.checked)}
-                        className="h-4 w-4 accent-[#f56215]"
-                      />
-                      Use reward points ({rewardPoints})
-                    </label>
-                    {pointsApplied > 0 ? (
-                      <span className="text-[#00a86e]">−₹{pointsApplied}</span>
-                    ) : (
-                      <span className="text-[#bbb] text-[13px]">₹0</span>
-                    )}
-                  </div>
-                ) : null}
                 {walletBalance > 0 ? (
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 text-[#666]">
@@ -1906,6 +1888,24 @@ In the price-breakdown block, find the wallet row (lines ~819–836) and insert 
                     </label>
                     {walletApplied > 0 ? (
                       <span className="text-[#00a86e]">−₹{walletApplied}</span>
+                    ) : (
+                      <span className="text-[#bbb] text-[13px]">₹0</span>
+                    )}
+                  </div>
+                ) : null}
+                {rewardPoints > 0 ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <label className="flex items-center gap-2 text-[#666]">
+                      <input
+                        type="checkbox"
+                        checked={useRewardPoints}
+                        onChange={(e) => setUseRewardPoints(e.target.checked)}
+                        className="h-4 w-4 accent-[#f56215]"
+                      />
+                      Use reward points ({rewardPoints})
+                    </label>
+                    {pointsApplied > 0 ? (
+                      <span className="text-[#00a86e]">−₹{pointsApplied}</span>
                     ) : (
                       <span className="text-[#bbb] text-[13px]">₹0</span>
                     )}
