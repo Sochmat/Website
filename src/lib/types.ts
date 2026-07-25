@@ -130,6 +130,16 @@ export interface Order {
   walletApplied?: number;
   /** Amount actually charged after wallet (= totalAmount − walletApplied). */
   amountPayable?: number;
+  /** Server-computed pre-tax total, frozen at creation; the reward earn base. */
+  rewardBase?: number;
+  /** Reward points reserved/redeemed against this order; reduces amountPayable. */
+  pointsApplied?: number;
+  /** Reward points credited when this order was paid. */
+  pointsEarned?: number;
+  /** The earn rate (%) used for this order. */
+  pointsRate?: number;
+  /** The streak day this order produced, for the success screen. */
+  streakAfter?: number;
   /** Structured delivery location (only set when orderType === "delivery"). */
   deliveryTower?: string;
   deliveryFloor?: string;
@@ -192,6 +202,12 @@ export interface User {
   referralCredited?: boolean;
   /** Wallet balance in ₹ (from referral rewards). Missing = 0. */
   walletBalance?: number;
+  /** Reward-point balance (1 point = ₹1). Missing = 0. */
+  rewardPoints?: number;
+  /** Current consecutive-day order streak. Missing = 0. */
+  streakCount?: number;
+  /** IST calendar date (yyyy-mm-dd) of the last streak-advancing paid order. */
+  streakLastDate?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -208,6 +224,26 @@ export interface WalletTransaction {
   orderId?: ObjectId | string;
   /** The referred user whose first order earned a referral reward. */
   refereeUserId?: ObjectId | string;
+  createdAt?: Date;
+}
+
+/** Append-only reward-point ledger entry (collection: rewardTransactions). */
+export interface RewardTransaction {
+  _id?: ObjectId | string;
+  userId: ObjectId | string;
+  /**
+   * earned → credit at payment; reserved/spent/refunded → order redemption;
+   * reversed → clawback when a paid order is refunded.
+   */
+  type: "earned" | "reserved" | "spent" | "refunded" | "reversed";
+  /** Always a positive amount in points. */
+  amount: number;
+  /** The order this entry relates to. */
+  orderId?: ObjectId | string;
+  /** The earn rate (%) applied, on `earned` entries. */
+  rate?: number;
+  /** The streak day reached, on `earned` entries. */
+  streakAfter?: number;
   createdAt?: Date;
 }
 
