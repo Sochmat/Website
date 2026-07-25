@@ -3,6 +3,11 @@ import { Db, ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
+import {
+  reverseRewardPointsForOrder,
+  creditRewardPointsRefund,
+} from "@/lib/rewardPoints";
+import { creditWalletRefund } from "@/lib/wallet";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -265,6 +270,28 @@ export async function PATCH(req: NextRequest) {
       await db
         .collection("orders")
         .updateOne({ _id }, { $set: rejectUpdate });
+
+      // Unwind the order's rewards. Only after the Razorpay refund succeeded —
+      // a failed refund returns above and leaves the order untouched.
+      const orderUserId = order.userId as ObjectId | undefined;
+      if (refunded && orderUserId) {
+        // Give back what the customer spent on this order…
+        const walletSpent = Number(order.walletApplied ?? 0);
+        const pointsSpent = Number(order.pointsApplied ?? 0);
+        if (walletSpent > 0) {
+          await creditWalletRefund(db, orderUserId, _id, walletSpent);
+        }
+        if (pointsSpent > 0) {
+          await creditRewardPointsRefund(db, orderUserId, _id, pointsSpent);
+        }
+        await db.collection("orders").updateOne(
+          { _id },
+          { $set: { walletApplied: 0, pointsApplied: 0, updatedAt: new Date() } },
+        );
+        // …and claw back what it earned. The streak day stands: the order was
+        // genuinely placed, and a rejection is usually the kitchen's call.
+        await reverseRewardPointsForOrder(db, _id);
+      }
 
       return NextResponse.json({
         success: true,
