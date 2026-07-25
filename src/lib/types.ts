@@ -128,7 +128,7 @@ export interface Order {
   firstOrderDiscount?: number;
   /** Wallet credit reserved/applied to this order (INR); reduces amountPayable. */
   walletApplied?: number;
-  /** Amount actually charged after wallet (= totalAmount − walletApplied). */
+  /** Amount actually charged (= totalAmount − walletApplied − pointsApplied). */
   amountPayable?: number;
   /** Server-computed pre-tax total, frozen at creation; the reward earn base. */
   rewardBase?: number;

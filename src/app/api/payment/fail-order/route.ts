@@ -3,7 +3,6 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { logPayment } from "@/lib/paymentLog";
-import { refundOrderRedemptions } from "@/lib/orderRedemption";
 
 /**
  * Marks an order's payment as failed after a Razorpay failure. Only a
@@ -28,10 +27,17 @@ export async function POST(request: NextRequest) {
       { $set: { paymentStatus: "failed", updatedAt: new Date() } },
     );
 
-    // Return any reserved wallet credit and reward points to the user
-    // (idempotent — a no-op if nothing was reserved or it was already refunded).
-    await refundOrderRedemptions(db, new ObjectId(orderId));
-
+    // Deliberately NOT refunding the wallet/points reservation here — do not
+    // "restore" a refund call to this route. Refunding rewrites netAmount back
+    // to the full total, but the Razorpay order was created for the reduced
+    // amount and a retry of the same checkout pays that reduced amount; verify
+    // would then compare the payment against the restored netAmount and reject
+    // it as an amount mismatch, stranding a payment the customer really made.
+    // Leaving the reservation in place keeps netAmount matching the Razorpay
+    // order so a retry reconciles cleanly. A genuinely abandoned checkout is
+    // handled by sweepStaleOrderRedemptions, which returns both balances at the
+    // top of the customer's next order; its filter is
+    // `paymentStatus: { $ne: "paid" }`, so it matches "failed" orders too.
     await logPayment(db, {
       flow: "order",
       route: "/api/payment/fail-order",
