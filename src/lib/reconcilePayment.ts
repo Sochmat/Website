@@ -5,7 +5,7 @@ import type { Order } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { logPayment, type PaymentLogEntry } from "@/lib/paymentLog";
 import { settleWallet, creditReferral } from "@/lib/wallet";
-import { awardRewardPoints } from "@/lib/rewardPoints";
+import { awardRewardPoints, settleRewardPoints } from "@/lib/rewardPoints";
 
 /** The correlation fields shared by every log row in a reconciliation. */
 type LogBase = Pick<
@@ -317,11 +317,15 @@ async function reconcileOrder(
   if (didTransition) {
     const userId = order.userId as ObjectId | undefined;
     const walletApplied = Number(order.walletApplied ?? 0);
+    const pointsApplied = Number(order.pointsApplied ?? 0);
     if (userId) {
       // Settle the wallet reservation (balance was decremented at reserve) and
       // credit the referrer for this user's first paid order (idempotent).
       if (walletApplied > 0) {
         await settleWallet(db, userId, _id, walletApplied);
+      }
+      if (pointsApplied > 0) {
+        await settleRewardPoints(db, userId, _id, pointsApplied);
       }
       await creditReferral(db, userId);
       // Reward points for this order + the streak advance. Inside the

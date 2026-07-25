@@ -14,12 +14,14 @@ import {
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
 import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
 import { getCustomerUserId } from "@/lib/customerSession";
-import {
-  getWalletBalance,
-  reserveWallet,
-  sweepStaleOrderReservations,
-} from "@/lib/wallet";
+import { getWalletBalance, reserveWallet } from "@/lib/wallet";
+import { sweepStaleOrderRedemptions } from "@/lib/orderRedemption";
 import { computeWalletApplied } from "@/lib/walletMath";
+import { computePointsApplied } from "@/lib/rewards";
+import {
+  getRewardPointsBalance,
+  reserveRewardPoints,
+} from "@/lib/rewardPoints";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -390,22 +392,34 @@ export async function POST(request: NextRequest) {
       .collection("orders")
       .findOne({ _id: result.insertedId });
 
-    // Wallet redemption (referral credit) — auto-applied unless the client
-    // opted out. Reserve at creation so the balance can't be double-spent; the
-    // reservation settles at payment (reconcile) or is refunded on fail/sweep.
-    // Only for online orders — COD never reaches the reconcile settle path.
+    // Redemption — wallet credit first, then reward points on whatever payable
+    // remains. Both are auto-applied unless the client opted out, and both are
+    // reserved at creation so a balance can't be double-spent across concurrent
+    // checkouts; the reservations settle at payment (reconcile) or are refunded
+    // on fail/sweep. Only for online orders — COD never reaches the settle path.
+    const online = orderDoc.paymentMethod !== "cash";
     const wantWallet =
-      (body as { useWallet?: boolean }).useWallet !== false &&
-      orderDoc.paymentMethod !== "cash";
+      (body as { useWallet?: boolean }).useWallet !== false && online;
+    const wantPoints =
+      (body as { useRewardPoints?: boolean }).useRewardPoints !== false &&
+      online;
+
+    // Reclaim any reservations from this user's abandoned checkouts first —
+    // this must run even at a zero live balance, since a balance can read 0
+    // precisely because it's all tied up in a stale reservation.
+    if (wantWallet || wantPoints) {
+      await sweepStaleOrderRedemptions(db, orderUserId, 30 * 60 * 1000);
+    }
+
+    // Tracks the payable as each balance is applied, so the MIN_PAYABLE floor
+    // is enforced once across both rather than twice.
+    let payableSoFar = totalAmount;
+
     if (wantWallet) {
-      // Reclaim any reservations from this user's abandoned checkouts first —
-      // this must run even at a zero live balance, since the balance can read 0
-      // precisely because it's all tied up in a stale reservation.
-      await sweepStaleOrderReservations(db, orderUserId, 30 * 60 * 1000);
       const balance = await getWalletBalance(db, orderUserId);
       const { walletApplied, amountPayable } = computeWalletApplied(
         balance,
-        totalAmount,
+        payableSoFar,
       );
       if (walletApplied > 0) {
         const reserved = await reserveWallet(
@@ -415,6 +429,7 @@ export async function POST(request: NextRequest) {
           walletApplied,
         );
         if (reserved) {
+          payableSoFar = amountPayable;
           // netAmount is what Razorpay is charged and what reconcile verifies.
           await db.collection("orders").updateOne(
             { _id: result.insertedId },
@@ -427,11 +442,42 @@ export async function POST(request: NextRequest) {
               },
             },
           );
-          order = await db
-            .collection("orders")
-            .findOne({ _id: result.insertedId });
         }
       }
+    }
+
+    if (wantPoints) {
+      const balance = await getRewardPointsBalance(db, orderUserId);
+      const { pointsApplied, amountPayable } = computePointsApplied(
+        balance,
+        payableSoFar,
+      );
+      if (pointsApplied > 0) {
+        const reserved = await reserveRewardPoints(
+          db,
+          orderUserId,
+          result.insertedId,
+          pointsApplied,
+        );
+        if (reserved) {
+          payableSoFar = amountPayable;
+          await db.collection("orders").updateOne(
+            { _id: result.insertedId },
+            {
+              $set: {
+                pointsApplied,
+                amountPayable,
+                netAmount: amountPayable,
+                updatedAt: new Date(),
+              },
+            },
+          );
+        }
+      }
+    }
+
+    if (wantWallet || wantPoints) {
+      order = await db.collection("orders").findOne({ _id: result.insertedId });
     }
 
     // COD orders are pushed to Petpooja at creation (online orders push from
