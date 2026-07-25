@@ -131,14 +131,16 @@ export async function settleRewardPoints(
  * Return a reservation to the balance.
  *
  * Contract: the caller must have atomically zeroed `order.pointsApplied` in
- * the same guarded update that told it `amount`, exactly like
- * `refundReservationForOrder` does for `walletApplied` in wallet.ts. This
- * function itself does an unconditional `$inc` — it has no idempotency of its
- * own. A caller that instead reads `pointsApplied` and credits it in a
- * separate, non-atomic step can retry (or race) and double-refund the same
- * order. A later task's `refundOrderRedemptions` owns that single atomic
- * update, zeroing `walletApplied` and `pointsApplied` together before calling
- * this helper and `creditWalletRefund`.
+ * the same guarded update that told it `amount`. This function itself does an
+ * unconditional `$inc` — it has no idempotency of its own. A caller that
+ * instead reads `pointsApplied` and credits it in a separate, non-atomic step
+ * can retry (or race) and double-refund the same order.
+ *
+ * `refundOrderRedemptions` in orderRedemption.ts is the caller that discharges
+ * that contract: it zeroes `walletApplied` and `pointsApplied` together in one
+ * guarded update before calling this helper and `creditWalletRefund` in
+ * wallet.ts — the wallet-side sibling with the identical shape and the
+ * identical obligation.
  */
 export async function creditRewardPointsRefund(
   db: Db,
