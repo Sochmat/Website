@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, ReceiptText } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import { Order } from "@/lib/types";
+import { POINT_RATES } from "@/lib/rewards";
 
 type ProductSummary = { name: string; image?: string };
 
@@ -19,6 +20,11 @@ export default function MyOrdersPage() {
     {},
   );
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [rewards, setRewards] = useState<{
+    points: number;
+    streak: number;
+    nextRate: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +47,25 @@ export default function MyOrdersPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    fetch("/api/rewards/me", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data?.success) return;
+        setRewards({
+          points: Number(data.points ?? 0),
+          streak: Number(data.streak ?? 0),
+          nextRate: Number(data.nextRate ?? 10),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (userLoading) return;
@@ -107,6 +132,54 @@ export default function MyOrdersPage() {
         </Link>
         <span className="text-[#111] text-lg font-semibold">My Orders</span>
       </div>
+
+      {isAuthenticated && rewards ? (
+        <div className="mx-4 mt-4 rounded-2xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-2xl font-bold text-[#f56215]">
+                {rewards.points}
+              </div>
+              <div className="text-xs text-gray-500">Reward points</div>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-[#111]">
+                🔥 {rewards.streak}
+              </div>
+              <div className="text-xs text-gray-500">Day streak</div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-1">
+            {POINT_RATES.map((rate, index) => {
+              const day = index + 1;
+              const reached = rewards.streak >= day;
+              return (
+                <div key={rate} className="flex-1 text-center">
+                  <div
+                    className={`h-1.5 rounded-full ${
+                      reached ? "bg-[#f56215]" : "bg-gray-200"
+                    }`}
+                  />
+                  <div
+                    className={`mt-1 text-[10px] ${
+                      reached ? "text-[#f56215] font-semibold" : "text-gray-400"
+                    }`}
+                  >
+                    {rate}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="mt-3 text-xs text-gray-500">
+            Order every day to climb to {POINT_RATES[POINT_RATES.length - 1]}%
+            back. Weekends off don&apos;t break your streak. Your next order
+            earns {rewards.nextRate}%.
+          </p>
+        </div>
+      ) : null}
 
       {!isAuthenticated ? (
         <div className="flex flex-col items-center justify-center h-[60vh] px-6 text-center">
