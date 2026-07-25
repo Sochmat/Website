@@ -5,6 +5,7 @@ import type { Order } from "@/lib/types";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { logPayment, type PaymentLogEntry } from "@/lib/paymentLog";
 import { settleWallet, creditReferral } from "@/lib/wallet";
+import { awardRewardPoints } from "@/lib/rewardPoints";
 
 /** The correlation fields shared by every log row in a reconciliation. */
 type LogBase = Pick<
@@ -323,6 +324,9 @@ async function reconcileOrder(
         await settleWallet(db, userId, _id, walletApplied);
       }
       await creditReferral(db, userId);
+      // Reward points for this order + the streak advance. Inside the
+      // didTransition guard, so a verify/webhook race can't double-credit.
+      await awardRewardPoints(db, userId, _id, new Date());
     }
 
     // Order is now paid — push it to Petpooja. The push never blocks
