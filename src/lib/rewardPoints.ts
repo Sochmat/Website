@@ -128,8 +128,17 @@ export async function settleRewardPoints(
 }
 
 /**
- * Return a reservation to the balance. The caller owns the guarded update that
- * zeroes `order.pointsApplied`, so this is only ever reached once per order.
+ * Return a reservation to the balance.
+ *
+ * Contract: the caller must have atomically zeroed `order.pointsApplied` in
+ * the same guarded update that told it `amount`, exactly like
+ * `refundReservationForOrder` does for `walletApplied` in wallet.ts. This
+ * function itself does an unconditional `$inc` — it has no idempotency of its
+ * own. A caller that instead reads `pointsApplied` and credits it in a
+ * separate, non-atomic step can retry (or race) and double-refund the same
+ * order. A later task's `refundOrderRedemptions` owns that single atomic
+ * update, zeroing `walletApplied` and `pointsApplied` together before calling
+ * this helper and `creditWalletRefund`.
  */
 export async function creditRewardPointsRefund(
   db: Db,
@@ -152,9 +161,10 @@ export async function creditRewardPointsRefund(
 /**
  * Credit the points a paid order earned and advance the customer's streak.
  *
- * Called only from the guarded "order just became paid" block in
- * reconcilePayment, so verify and the webhook racing can never double-credit.
- * The `pointsEarned` check is a second belt for a manual re-run.
+ * Self-idempotent: `rewardsAwarded` is claimed atomically before anything is
+ * credited, mirroring `creditReferral` in wallet.ts, so two concurrent
+ * callers for the same order (verify racing the webhook, or a manual re-run)
+ * can never both pay out — only the update that flips the flag proceeds.
  *
  * The streak advance is guarded on `streakLastDate !== today` so a second order
  * on the same day earns points at the same rate without advancing the day.
@@ -167,13 +177,20 @@ export async function awardRewardPoints(
 ): Promise<void> {
   const order = await db
     .collection(ORDERS)
-    .findOne(
-      { _id: orderId },
-      { projection: { rewardBase: 1, pointsEarned: 1 } },
-    );
+    .findOne({ _id: orderId }, { projection: { rewardBase: 1 } });
   const rewardBase = Number(order?.rewardBase ?? 0);
   if (!(rewardBase > 0)) return;
-  if (Number(order?.pointsEarned ?? 0) > 0) return; // already awarded
+
+  // Claim the award atomically before crediting anything — mirrors
+  // creditReferral in wallet.ts. Two concurrent callers for the same order
+  // both pass a plain "already awarded?" read; only one can win this update.
+  const claimed = await db
+    .collection(ORDERS)
+    .updateOne(
+      { _id: orderId, rewardsAwarded: { $ne: true } },
+      { $set: { rewardsAwarded: true, updatedAt: new Date() } },
+    );
+  if (claimed.matchedCount === 0) return; // another caller owns this award
 
   const [user, exemptDates] = await Promise.all([
     db
@@ -271,6 +288,10 @@ export async function reverseRewardPointsForOrder(
   // Balance already dipped below what this order earned — the points are spent.
   // Take nothing rather than drive the balance negative.
   const amount = taken.matchedCount === 0 ? 0 : earned;
+  // Always logged, even when amount is 0: a zero-amount "reversed" row is an
+  // intentional audit trail for a clawback that was attempted but couldn't be
+  // taken (points already spent), not a bug — it records the attempt, not a
+  // balance change.
   await db
     .collection<RewardTransaction>(LEDGER)
     .insertOne(ledgerEntry({ userId, orderId, type: "reversed", amount }));

@@ -140,6 +140,8 @@ export interface Order {
   pointsRate?: number;
   /** The streak day this order produced, for the success screen. */
   streakAfter?: number;
+  /** True once this order's reward points have been claimed for awarding. */
+  rewardsAwarded?: boolean;
   /** Structured delivery location (only set when orderType === "delivery"). */
   deliveryTower?: string;
   deliveryFloor?: string;
