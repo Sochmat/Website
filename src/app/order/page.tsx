@@ -38,6 +38,7 @@ import {
   resolveOfferDiscount,
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
+import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -99,6 +100,10 @@ export default function OrderPage() {
   const [firstOrderEligible, setFirstOrderEligible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWallet, setUseWallet] = useState(true);
+  const [rewardPoints, setRewardPoints] = useState(0);
+  const [rewardNextStreak, setRewardNextStreak] = useState(1);
+  const [rewardNextRate, setRewardNextRate] = useState(10);
+  const [useRewardPoints, setUseRewardPoints] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -148,25 +153,36 @@ export default function OrderPage() {
     if (!isAuthenticated) {
       setFirstOrderEligible(false);
       setWalletBalance(0);
+      setRewardPoints(0);
+      setRewardNextStreak(1);
+      setRewardNextRate(10);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const [eligRes, walletRes] = await Promise.all([
+        const [eligRes, walletRes, rewardsRes] = await Promise.all([
           fetch("/api/orders/first-order-eligibility", { cache: "no-store" }),
           fetch("/api/wallet/balance", { cache: "no-store" }),
+          fetch("/api/rewards/me", { cache: "no-store" }),
         ]);
         const elig = await eligRes.json();
         const wallet = await walletRes.json();
+        const rewards = await rewardsRes.json();
         if (!cancelled) {
           setFirstOrderEligible(!!elig?.eligible);
           setWalletBalance(Number(wallet?.balance ?? 0));
+          setRewardPoints(Number(rewards?.points ?? 0));
+          setRewardNextStreak(Number(rewards?.nextStreak ?? 1));
+          setRewardNextRate(Number(rewards?.nextRate ?? 10));
         }
       } catch {
         if (!cancelled) {
           setFirstOrderEligible(false);
           setWalletBalance(0);
+          setRewardPoints(0);
+          setRewardNextStreak(1);
+          setRewardNextRate(10);
         }
       }
     })();
@@ -389,8 +405,9 @@ export default function OrderPage() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // `useWallet` is a request-only flag (not part of the stored order).
-        body: JSON.stringify({ ...orderPayload, useWallet }),
+        // `useWallet`/`useRewardPoints` are request-only flags (not part of the
+        // stored order).
+        body: JSON.stringify({ ...orderPayload, useWallet, useRewardPoints }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -505,7 +522,17 @@ export default function OrderPage() {
     useWallet && walletBalance > 0
       ? computeWalletApplied(walletBalance, finalPrice).walletApplied
       : 0;
-  const payable = finalPrice - walletApplied;
+  // Reward points apply to what's left after wallet credit, matching the order
+  // route. Preview only — reserved authoritatively server-side at creation.
+  const pointsApplied =
+    useRewardPoints && rewardPoints > 0
+      ? computePointsApplied(rewardPoints, finalPrice - walletApplied)
+          .pointsApplied
+      : 0;
+  const payable = finalPrice - walletApplied - pointsApplied;
+  // Points this order will earn: the streak rate off the pre-tax total.
+  // Redeeming doesn't shrink the base — points are consideration, not a discount.
+  const pointsWillEarn = computePointsEarned(discountedSubtotal, rewardNextRate);
 
   if (totalItems === 0) {
     return (
@@ -816,6 +843,20 @@ export default function OrderPage() {
                     </span>
                   </div>
                 ) : null}
+                {isAuthenticated && pointsWillEarn > 0 ? (
+                  <div className="rounded-lg bg-[#fff4ec] px-3 py-2">
+                    <div className="text-sm font-semibold text-[#f56215]">
+                      🔥 Day {rewardNextStreak} streak · earning{" "}
+                      {rewardNextRate}%
+                    </div>
+                    <div className="text-xs text-[#8a6b57] mt-0.5">
+                      You&apos;ll earn {pointsWillEarn} points on this order
+                      {rewardNextRate < 20
+                        ? " — order tomorrow to earn more"
+                        : " — you're at the maximum rate"}
+                    </div>
+                  </div>
+                ) : null}
                 {walletBalance > 0 ? (
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 text-[#666]">
@@ -829,6 +870,24 @@ export default function OrderPage() {
                     </label>
                     {walletApplied > 0 ? (
                       <span className="text-[#00a86e]">−₹{walletApplied}</span>
+                    ) : (
+                      <span className="text-[#bbb] text-[13px]">₹0</span>
+                    )}
+                  </div>
+                ) : null}
+                {rewardPoints > 0 ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <label className="flex items-center gap-2 text-[#666]">
+                      <input
+                        type="checkbox"
+                        checked={useRewardPoints}
+                        onChange={(e) => setUseRewardPoints(e.target.checked)}
+                        className="h-4 w-4 accent-[#f56215]"
+                      />
+                      Use reward points ({rewardPoints})
+                    </label>
+                    {pointsApplied > 0 ? (
+                      <span className="text-[#00a86e]">−₹{pointsApplied}</span>
                     ) : (
                       <span className="text-[#bbb] text-[13px]">₹0</span>
                     )}
