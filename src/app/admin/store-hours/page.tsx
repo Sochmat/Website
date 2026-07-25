@@ -157,130 +157,136 @@ export default function StoreHoursPage() {
       ) : (
         <>
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-5">
-          {live && (
-            <div
-              className={`rounded-lg px-4 py-3 text-sm font-medium ${
-                live.effectiveOpen
-                  ? "bg-[rgba(0,153,64,0.1)] text-[#009940]"
-                  : "bg-red-50 text-red-700"
-              }`}
-            >
-              Store is currently {live.effectiveOpen ? "OPEN" : "CLOSED"}
-              {live.overrideActive && " (manual override active)"}
-              {!live.overrideActive &&
-                live.scheduleEnabled &&
-                !live.effectiveOpen &&
-                ` — opens at ${formatMinutesLabel(live.openMinutes)}`}
-            </div>
-          )}
-
-          <label className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <span className="text-[#111] font-medium">
-              Enable automatic hours
-            </span>
-          </label>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Opens at</label>
-              <input
-                type="time"
-                value={openTime}
-                onChange={(e) => setOpenTime(e.target.value)}
-                disabled={!enabled}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">
-                Closes at
-              </label>
-              <input
-                type="time"
-                value={closeTime}
-                onChange={(e) => setCloseTime(e.target.value)}
-                disabled={!enabled}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-              />
-            </div>
-          </div>
-
-          {enabled && openMin !== null && closeMin !== null && (
-            <p className="text-xs text-gray-500">
-              Open daily from {formatMinutesLabel(openMin)} to{" "}
-              {formatMinutesLabel(closeMin)} (IST).
-            </p>
-          )}
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={save}
-              disabled={saving}
-              className="bg-[#1c1c1c] text-white px-5 py-2 rounded-lg font-medium disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            {savedAt && !saving && (
-              <span className="text-sm text-[#009940]">Saved.</span>
+            {live && (
+              <div
+                className={`rounded-lg px-4 py-3 text-sm font-medium ${
+                  live.effectiveOpen
+                    ? "bg-[rgba(0,153,64,0.1)] text-[#009940]"
+                    : "bg-red-50 text-red-700"
+                }`}
+              >
+                Store is currently {live.effectiveOpen ? "OPEN" : "CLOSED"}
+                {live.overrideActive && " (manual override active)"}
+                {!live.overrideActive &&
+                  live.scheduleEnabled &&
+                  !live.effectiveOpen &&
+                  ` — opens at ${formatMinutesLabel(live.openMinutes)}`}
+              </div>
             )}
+
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <span className="text-[#111] font-medium">
+                Enable automatic hours
+              </span>
+            </label>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  Opens at
+                </label>
+                <input
+                  type="time"
+                  value={openTime}
+                  onChange={(e) => setOpenTime(e.target.value)}
+                  disabled={!enabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">
+                  Closes at
+                </label>
+                <input
+                  type="time"
+                  value={closeTime}
+                  onChange={(e) => setCloseTime(e.target.value)}
+                  disabled={!enabled}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            {enabled && openMin !== null && closeMin !== null && (
+              <p className="text-xs text-gray-500">
+                Open daily from {formatMinutesLabel(openMin)} to{" "}
+                {formatMinutesLabel(closeMin)} (IST).
+              </p>
+            )}
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={save}
+                disabled={saving}
+                className="bg-[#1c1c1c] text-white px-5 py-2 rounded-lg font-medium disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+              {savedAt && !saving && (
+                <span className="text-sm text-[#009940]">Saved.</span>
+              )}
+            </div>
           </div>
-        </div>
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4 mt-6">
-          <div>
-            <h2 className="text-[#111] font-semibold">Streak holidays</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Dates the kitchen is shut. Customers won&apos;t lose their
-              reward streak for not ordering on these days. Saturdays and
-              Sundays are always forgiven — you don&apos;t need to list them.
-            </p>
-          </div>
-
-          <DatePicker
-            value={null}
-            disabled={savingHolidays}
-            placeholder="Add a date"
-            onChange={(_, dateString) => {
-              const date = Array.isArray(dateString)
-                ? dateString[0]
-                : dateString;
-              if (!date || holidays.includes(date)) return;
-              void saveHolidays([...holidays, date]);
-            }}
-          />
-
-          {holidays.length === 0 ? (
-            <p className="text-sm text-gray-400">No holidays set.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {holidays.map((date) => (
-                <Tag
-                  key={date}
-                  closable
-                  onClose={(e) => {
-                    e.preventDefault();
-                    void saveHolidays(holidays.filter((d) => d !== date));
-                  }}
-                >
-                  {date}
-                </Tag>
-              ))}
+            <div>
+              <h2 className="text-[#111] font-semibold">Streak holidays</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Dates the kitchen is shut. Customers won&apos;t lose their
+                reward streak for not ordering on these days. Saturdays and
+                Sundays are always forgiven — you don&apos;t need to list
+                them.
+              </p>
             </div>
-          )}
 
-          {savingHolidays && (
-            <Button type="text" loading size="small">
-              Saving…
-            </Button>
-          )}
+            <DatePicker
+              value={null}
+              disabled={savingHolidays}
+              placeholder="Add a date"
+              disabledDate={(current) =>
+                !!current && (current.day() === 0 || current.day() === 6)
+              }
+              onChange={(_, dateString) => {
+                const date = Array.isArray(dateString)
+                  ? dateString[0]
+                  : dateString;
+                if (!date || holidays.includes(date)) return;
+                void saveHolidays([...holidays, date]);
+              }}
+            />
+
+            {holidays.length === 0 ? (
+              <p className="text-sm text-gray-400">No holidays set.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {holidays.map((date) => (
+                  <Tag
+                    key={date}
+                    closable
+                    onClose={(e) => {
+                      e.preventDefault();
+                      void saveHolidays(holidays.filter((d) => d !== date));
+                    }}
+                  >
+                    {date}
+                  </Tag>
+                ))}
+              </div>
+            )}
+
+            {savingHolidays && (
+              <Button type="text" loading size="small">
+                Saving…
+              </Button>
+            )}
           </div>
         </>
       )}
