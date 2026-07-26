@@ -15,6 +15,7 @@ const zomato: Society = {
     { orderBefore: "13:30", getTill: "14:00" },
     { orderBefore: "14:30", getTill: "15:00" },
   ],
+  offersFirstOrderDiscount: true,
 };
 
 const pivotal: Society = {
@@ -26,6 +27,7 @@ const pivotal: Society = {
   collectRoom: true,
   deliveryCharge: 0,
   slots: [],
+  offersFirstOrderDiscount: false,
 };
 
 /** A UTC instant whose IST wall-clock reads hh:mm. IST = UTC + 5:30. */

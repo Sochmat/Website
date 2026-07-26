@@ -33,6 +33,11 @@ export interface Society {
    * populated, delivery is only offered while a slot cutoff is still ahead.
    */
   slots: DeliverySlot[];
+  /**
+   * Whether the 20% first-order discount is offered here. Off for Pivotal
+   * Paradise — that offer runs only at the other locations.
+   */
+  offersFirstOrderDiscount: boolean;
 }
 
 export const SOCIETIES: Society[] = [
@@ -45,6 +50,7 @@ export const SOCIETIES: Society[] = [
     collectRoom: true,
     deliveryCharge: 0,
     slots: [],
+    offersFirstOrderDiscount: false,
   },
   {
     id: "zomato-office-sector-62",
@@ -59,6 +65,7 @@ export const SOCIETIES: Society[] = [
       { orderBefore: "13:30", getTill: "14:00" },
       { orderBefore: "14:30", getTill: "15:00" },
     ],
+    offersFirstOrderDiscount: true,
   },
 ];
 
@@ -66,4 +73,14 @@ export const DEFAULT_SOCIETY: Society = SOCIETIES[0];
 
 export function getSocietyById(id: string | null | undefined): Society {
   return SOCIETIES.find((s) => s.id === id) ?? DEFAULT_SOCIETY;
+}
+
+/**
+ * Whether the first-order discount runs at this society. Unknown/missing ids
+ * fall back to the default society, so the offer is never granted by accident.
+ */
+export function societyOffersFirstOrderDiscount(
+  id: string | null | undefined,
+): boolean {
+  return getSocietyById(id).offersFirstOrderDiscount;
 }
