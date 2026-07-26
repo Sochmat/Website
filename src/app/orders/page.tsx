@@ -162,7 +162,8 @@ export default function MyOrdersPage() {
               const day = index + 1;
               const reached = rewards.streak >= day;
               return (
-                <div key={rate} className="flex-1 text-center">
+                // Position, not value — a ladder may repeat a rate.
+                <div key={index} className="flex-1 text-center">
                   <div
                     className={`h-1.5 rounded-full ${
                       reached ? "bg-[#f56215]" : "bg-gray-200"

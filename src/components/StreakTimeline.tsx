@@ -116,7 +116,8 @@ export default function StreakTimeline() {
             const isGhost = day === ghost;
             return (
               <li
-                key={rate}
+                // Position, not value — a ladder may repeat a rate.
+                key={index}
                 className="animate-streak-node flex w-8 flex-col items-center"
                 style={{ animationDelay: `${index * 70}ms` }}
               >
@@ -154,7 +155,7 @@ export default function StreakTimeline() {
         open={showInfo}
         onClose={() => setShowInfo(false)}
         rates={rates}
-        currentRate={nextRate}
+        currentDay={nextStreak}
       />
     </section>
   );

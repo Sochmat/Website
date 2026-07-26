@@ -12,8 +12,12 @@ interface RewardInfoModalProps {
    * than imported as a constant.
    */
   rates: number[];
-  /** The customer's current earn rate, highlighted in the ladder if given. */
-  currentRate?: number;
+  /**
+   * The day count an order placed right now would produce. Identifies which rung
+   * to highlight — by POSITION, since a ladder may repeat a rate and matching on
+   * the value would light up every rung that shares it.
+   */
+  currentDay?: number;
 }
 
 /** The worked example's figures. Kept round so the arithmetic is followable. */
@@ -34,7 +38,7 @@ export default function RewardInfoModal({
   open,
   onClose,
   rates,
-  currentRate,
+  currentDay,
 }: RewardInfoModalProps) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -50,7 +54,13 @@ export default function RewardInfoModal({
 
   if (!open) return null;
 
-  const exampleRate = currentRate ?? rates[0];
+  // Past the last rung the customer sits on the cap, so clamp rather than
+  // running off the end of the ladder.
+  const currentIndex =
+    currentDay && currentDay > 0
+      ? Math.min(Math.floor(currentDay), rates.length) - 1
+      : -1;
+  const exampleRate = currentIndex >= 0 ? rates[currentIndex] : rates[0];
   const examplePoints = Math.round((EXAMPLE_BASE * exampleRate) / 100);
 
   return (
@@ -100,10 +110,13 @@ export default function RewardInfoModal({
               </div>
               <div className="mt-3 flex gap-1.5">
                 {rates.map((rate, index) => {
-                  const isCurrent = currentRate === rate;
+                  const isCurrent = index === currentIndex;
                   return (
                     <div
-                      key={rate}
+                      // Keyed by position: a ladder may legitimately repeat
+                      // a rate (a flat ladder, or one extended with its own
+                      // last value), so the value is not a unique identity.
+                      key={index}
                       className={`flex-1 rounded-lg py-2 text-center ${
                         isCurrent ? "bg-[#f56215]" : "bg-[#fff4ec]"
                       }`}

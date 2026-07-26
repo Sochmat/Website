@@ -979,7 +979,7 @@ export default function OrderPage() {
         open={showRewardInfo}
         onClose={() => setShowRewardInfo(false)}
         rates={rewardRates}
-        currentRate={rewardNextRate}
+        currentDay={rewardNextStreak}
       />
 
       {showDeliveryDetails && (
