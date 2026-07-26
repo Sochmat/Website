@@ -14,15 +14,18 @@ import {
   Phone,
   ReceiptText,
   Gift,
+  Flame,
 } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import { useRewardSummary } from "@/lib/useRewardSummary";
 
 export default function ExpandableMenu() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const { user, logout: userLogout, isAuthenticated } = useUser();
   const { openLoginPopup } = useLoginPopup();
+  const rewards = useRewardSummary();
 
   const handleUserLogout = () => {
     userLogout();
@@ -99,10 +102,21 @@ export default function ExpandableMenu() {
             <div className="flex items-center gap-3 w-full max-w-[280px] py-4 px-5 bg-white/10 rounded-xl text-white">
               <User className="w-6 h-6 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-lg truncate">
-                  {user?.name || "User"}
+                <p className="font-medium text-lg truncate flex justify-between items-center">
+                  {rewards && rewards.streak > 0 ? (
+                    <span
+                      className="font-play shrink-0 flex items-center gap-1 rounded-full bg-[#f56215] px-2 py-0.5 text-xs"
+                      title={`Day ${rewards.streak} streak`}
+                    >
+                      <Flame className="w-3 h-3 shrink-0" />
+                      {rewards.streak}
+                      {rewards && rewards.points > 0
+                        ? ` · ${rewards.points} pts`
+                        : ""}
+                    </span>
+                  ) : null}
+                  <span className="truncate">{user?.name || "User"}</span>
                 </p>
-                <p className="text-sm text-white/80 truncate">{user?.phone}</p>
               </div>
             </div>
           )}

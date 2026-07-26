@@ -21,12 +21,13 @@ import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment, type UpiApp } from "@/helpers/razorpay";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, Info } from "lucide-react";
 // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
 // import LocationSelector from "@/components/LocationSelector";
 import DeliveryDetailsSheet, {
   type DeliveryDetails,
 } from "@/components/DeliveryDetailsSheet";
+import RewardInfoModal from "@/components/RewardInfoModal";
 import {
   activeSlot,
   isDeliveryOpenNow,
@@ -61,8 +62,12 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { distanceFromStoreKm, isServiceable, society, societyDiscountPercent } =
-    useLocation();
+  const {
+    distanceFromStoreKm,
+    isServiceable,
+    society,
+    societyDiscountPercent,
+  } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const {
@@ -104,6 +109,7 @@ export default function OrderPage() {
   const [rewardNextStreak, setRewardNextStreak] = useState(1);
   const [rewardNextRate, setRewardNextRate] = useState(10);
   const [useRewardPoints, setUseRewardPoints] = useState(true);
+  const [showRewardInfo, setShowRewardInfo] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -494,7 +500,9 @@ export default function OrderPage() {
   // moves the total — surface it in the bill or the coupon looks like it did
   // nothing. Suppressed when the first-order discount supersedes the coupon,
   // matching what placeOrder actually sends.
-  const couponFreeItem = firstOrderApplied ? undefined : appliedCoupon?.freeItem;
+  const couponFreeItem = firstOrderApplied
+    ? undefined
+    : appliedCoupon?.freeItem;
   const couponSuperseded = firstOrderApplied && Boolean(appliedCoupon);
   // Flat location discount for the selected society (% of item subtotal),
   // stacks on top of the offer. Authoritatively re-derived server-side.
@@ -516,7 +524,8 @@ export default function OrderPage() {
   // dine-in orders drop it — the authoritative amount is recomputed in placeOrder.
   const deliveryFee = deliveryAvailable ? society.deliveryCharge : 0;
   const finalPrice = discountedSubtotal + gst + deliveryFee;
-  const originalWithTax = Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
+  const originalWithTax =
+    Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
   // Wallet credit preview — reserved authoritatively server-side at creation.
   const walletApplied =
     useWallet && walletBalance > 0
@@ -532,7 +541,10 @@ export default function OrderPage() {
   const payable = finalPrice - walletApplied - pointsApplied;
   // Points this order will earn: the streak rate off the pre-tax total.
   // Redeeming doesn't shrink the base — points are consideration, not a discount.
-  const pointsWillEarn = computePointsEarned(discountedSubtotal, rewardNextRate);
+  const pointsWillEarn = computePointsEarned(
+    discountedSubtotal,
+    rewardNextRate,
+  );
 
   if (totalItems === 0) {
     return (
@@ -845,15 +857,26 @@ export default function OrderPage() {
                 ) : null}
                 {isAuthenticated && pointsWillEarn > 0 ? (
                   <div className="rounded-lg bg-[#fff4ec] px-3 py-2">
-                    <div className="text-sm font-semibold text-[#f56215]">
-                      🔥 Day {rewardNextStreak} streak · earning{" "}
-                      {rewardNextRate}%
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-semibold text-[#f56215]">
+                        🔥 Day {rewardNextStreak} streak · earning{" "}
+                        {rewardNextRate}%
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowRewardInfo(true)}
+                        className="-my-1 -mr-1 shrink-0 rounded-full p-1 text-[#f56215] transition-colors hover:bg-[#ffe0cb]"
+                        aria-label="How reward points are calculated"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
                     </div>
                     <div className="text-xs text-[#8a6b57] mt-0.5">
                       You&apos;ll earn {pointsWillEarn} points on this order
                       {rewardNextRate < 20
                         ? " — order tomorrow to earn more"
                         : " — you're at the maximum rate"}
+                      . Points can be redeemed on next order
                     </div>
                   </div>
                 ) : null}
@@ -929,6 +952,12 @@ export default function OrderPage() {
           </button>
         </div>
       </div>
+
+      <RewardInfoModal
+        open={showRewardInfo}
+        onClose={() => setShowRewardInfo(false)}
+        currentRate={rewardNextRate}
+      />
 
       {showDeliveryDetails && (
         <DeliveryDetailsSheet
