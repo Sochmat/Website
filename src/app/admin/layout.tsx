@@ -28,6 +28,7 @@ const NAV_ITEMS: { href: string; label: string; adminOnly: boolean }[] = [
   { href: "/admin/store-hours", label: "Store Hours", adminOnly: true },
   { href: "/admin/society-discounts", label: "Location Discounts", adminOnly: true },
   { href: "/admin/streak", label: "Streak Rewards", adminOnly: true },
+  { href: "/admin/delivery-fees", label: "Delivery Fees", adminOnly: true },
 ];
 
 /**

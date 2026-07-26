@@ -40,6 +40,13 @@ import {
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
 import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
+import {
+  DEFAULT_RULE,
+  amountToFreeDelivery,
+  computeDeliveryFee,
+  ruleFor,
+  type DeliveryFeeConfig,
+} from "@/lib/deliveryFees";
 import { DEFAULT_LADDER } from "@/lib/streakLadder";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
@@ -113,6 +120,12 @@ export default function OrderPage() {
   const [rewardsEnabled, setRewardsEnabled] = useState(true);
   const [useRewardPoints, setUseRewardPoints] = useState(true);
   const [showRewardInfo, setShowRewardInfo] = useState(false);
+  const [deliveryFeeConfig, setDeliveryFeeConfig] =
+    useState<DeliveryFeeConfig | null>(null);
+  /** This location's small-order rule; the built-in default until it loads. */
+  const deliveryRule = deliveryFeeConfig
+    ? ruleFor(deliveryFeeConfig, society.id)
+    : DEFAULT_RULE;
   const [placingOrder, setPlacingOrder] = useState(false);
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -217,6 +230,25 @@ export default function OrderPage() {
   // authoritatively by the order route.
   const firstOrderOffered =
     firstOrderEligible && society.offersFirstOrderDiscount;
+
+  // Small-order delivery fee rules. Public, so this runs signed out too — the
+  // order route recomputes the fee authoritatively at creation either way.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/delivery-fees", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data?.default) return;
+        setDeliveryFeeConfig({
+          default: data.default,
+          byLocation: data.byLocation ?? {},
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Restore the last delivery details so the sheet pre-fills next time.
   useEffect(() => {
@@ -381,7 +413,9 @@ export default function OrderPage() {
       const gstAmount = Math.round(discountedAmount * 0.05);
       // Delivery charge applies only to delivery orders (not dine-in).
       const deliveryFeeAmount =
-        details.orderType === "delivery" ? society.deliveryCharge : 0;
+        details.orderType === "delivery"
+          ? computeDeliveryFee(totalPrice, deliveryRule)
+          : 0;
       const finalAmount = discountedAmount + gstAmount + deliveryFeeAmount;
 
       const orderPayload: Order = {
@@ -543,7 +577,13 @@ export default function OrderPage() {
   const deliveryAvailable = deliveryOn && slotsAllowDelivery;
   // Preview the delivery charge when delivery is available (the default choice);
   // dine-in orders drop it — the authoritative amount is recomputed in placeOrder.
-  const deliveryFee = deliveryAvailable ? society.deliveryCharge : 0;
+  const deliveryFee = deliveryAvailable
+    ? computeDeliveryFee(totalPrice, deliveryRule)
+    : 0;
+  // How much more food reaches free delivery; 0 once it already is.
+  const freeDeliveryShortfall = deliveryAvailable
+    ? amountToFreeDelivery(totalPrice, deliveryRule)
+    : 0;
   const finalPrice = discountedSubtotal + gst + deliveryFee;
   const originalWithTax =
     Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
@@ -876,6 +916,11 @@ export default function OrderPage() {
                       ₹{deliveryFee}
                     </span>
                   </div>
+                ) : null}
+                {freeDeliveryShortfall > 0 ? (
+                  <p className="text-xs text-[#f56215]">
+                    Add ₹{freeDeliveryShortfall} more to get free delivery
+                  </p>
                 ) : null}
                 {isAuthenticated && rewardsEnabled && pointsWillEarn > 0 ? (
                   <div className="rounded-lg bg-[#fff4ec] px-3 py-2">

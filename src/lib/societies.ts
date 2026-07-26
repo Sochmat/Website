@@ -25,8 +25,6 @@ export interface Society {
    * societies need it; offices (e.g. Zomato) deliver to a tower/floor only.
    */
   collectRoom: boolean;
-  /** Delivery charge (INR) for orders to this society. */
-  deliveryCharge: number;
   /**
    * Delivery time-slots. An empty array means delivery is available whenever
    * the store is open (no slot restriction), e.g. Pivotal Paradise. When
@@ -48,7 +46,6 @@ export const SOCIETIES: Society[] = [
     label: "Pivotal Paradise, Sector 62",
     towers: ["T1", "T2", "T3", "T4", "T5", "T6", "T7"],
     collectRoom: true,
-    deliveryCharge: 0,
     slots: [],
     offersFirstOrderDiscount: false,
   },
@@ -59,7 +56,6 @@ export const SOCIETIES: Society[] = [
     label: "Zomato office, Sector 62",
     towers: ["T1", "T2"],
     collectRoom: false,
-    deliveryCharge: 0,
     slots: [
       { orderBefore: "12:30", getTill: "13:00" },
       { orderBefore: "13:30", getTill: "14:00" },

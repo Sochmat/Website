@@ -12,6 +12,12 @@ import {
   computeSocietyDiscount,
 } from "@/lib/societyDiscounts";
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
+import {
+  DELIVERY_FEES_KEY,
+  computeDeliveryFee,
+  ruleFor,
+  sanitizeDeliveryFeeConfig,
+} from "@/lib/deliveryFees";
 import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
 import { societyOffersFirstOrderDiscount } from "@/lib/societies";
 import { couponAppliesToSociety } from "@/lib/couponScope";
@@ -84,11 +90,15 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const [storeDoc, deliveryDoc, societyDiscountsDoc] = await Promise.all([
-      settingsDb.collection("settings").findOne({ key: "store" }),
-      settingsDb.collection("settings").findOne({ key: "delivery" }),
-      settingsDb.collection("settings").findOne({ key: SOCIETY_DISCOUNTS_KEY }),
-    ]);
+    const [storeDoc, deliveryDoc, societyDiscountsDoc, deliveryFeesDoc] =
+      await Promise.all([
+        settingsDb.collection("settings").findOne({ key: "store" }),
+        settingsDb.collection("settings").findOne({ key: "delivery" }),
+        settingsDb
+          .collection("settings")
+          .findOne({ key: SOCIETY_DISCOUNTS_KEY }),
+        settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
+      ]);
     if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -319,10 +329,24 @@ export async function POST(request: NextRequest) {
     );
     allowedDiscount += societyDiscountAmount;
 
-    const minAcceptable = Math.max(
-      0,
-      serverSubtotal - Math.max(0, allowedDiscount),
-    );
+    // Small-order delivery fee, resolved server-side from the location's rule
+    // and the server's own subtotal. Never trust body.deliveryFee: the floor
+    // below only covers the pre-tax item total, so a tampered fee would
+    // otherwise slip straight through.
+    const serverDeliveryFee =
+      body.orderType === "delivery"
+        ? computeDeliveryFee(
+            serverSubtotal,
+            ruleFor(
+              sanitizeDeliveryFeeConfig(deliveryFeesDoc),
+              typeof body.societyId === "string" ? body.societyId : undefined,
+            ),
+          )
+        : 0;
+
+    const minAcceptable =
+      Math.max(0, serverSubtotal - Math.max(0, allowedDiscount)) +
+      serverDeliveryFee;
 
     const clientNet = Number(body.netAmount ?? body.totalAmount);
     // 1-rupee epsilon for rounding; tax/delivery only ever raise the real total.
@@ -374,8 +398,7 @@ export async function POST(request: NextRequest) {
         body.orderType === "delivery" ? body.deliveryRoom : undefined,
       deliverySlot:
         body.orderType === "delivery" ? body.deliverySlot : undefined,
-      deliveryFee:
-        body.orderType === "delivery" ? Number(body.deliveryFee) || 0 : 0,
+      deliveryFee: serverDeliveryFee,
       societyId: typeof body.societyId === "string" ? body.societyId : undefined,
       societyDiscount: societyDiscountAmount,
       societyDiscountPercent,
