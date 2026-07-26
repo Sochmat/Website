@@ -212,6 +212,12 @@ export default function OrderPage() {
     };
   }, [isAuthenticated, society.id]);
 
+  // The offer doesn't run at every location (e.g. not at Pivotal Paradise), so
+  // the selected society gates it on top of the per-user eligibility. Re-checked
+  // authoritatively by the order route.
+  const firstOrderOffered =
+    firstOrderEligible && society.offersFirstOrderDiscount;
+
   // Restore the last delivery details so the sheet pre-fills next time.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -352,7 +358,7 @@ export default function OrderPage() {
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       // First-order 20% discount — best value vs the coupon (they don't stack).
-      const firstOrderDiscountAmount = firstOrderEligible
+      const firstOrderDiscountAmount = firstOrderOffered
         ? computeFirstOrderDiscount(totalPrice)
         : 0;
       const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
@@ -504,7 +510,7 @@ export default function OrderPage() {
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   // First-order 20% discount — best value vs the coupon (they don't stack).
-  const firstOrderDiscountPreview = firstOrderEligible
+  const firstOrderDiscountPreview = firstOrderOffered
     ? computeFirstOrderDiscount(totalPrice)
     : 0;
   const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
@@ -760,6 +766,7 @@ export default function OrderPage() {
 
         <CouponSelector
           totalPrice={totalPrice}
+          societyId={society.id}
           onCouponChange={setAppliedCoupon}
         />
 

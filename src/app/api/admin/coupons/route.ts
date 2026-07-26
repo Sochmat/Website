@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Coupon } from "@/lib/types";
+import { sanitizeCouponSocietyIds } from "@/lib/couponScope";
 
 export async function GET() {
   try {
@@ -32,6 +33,10 @@ export async function POST(request: NextRequest) {
       discountType,
       active: data.active !== false,
       minAmount: Number(data.minAmount) || 0,
+      // Locations this code runs at; [] = all locations.
+      societyIds: sanitizeCouponSocietyIds(data.societyIds),
+      // Hidden codes work, but are never listed to the storefront.
+      hidden: data.hidden === true,
     };
 
     if (discountType === "percent") {
@@ -86,6 +91,10 @@ export async function PUT(request: NextRequest) {
       discountType,
       active: fields.active !== false,
       minAmount: Number(fields.minAmount) || 0,
+      // Locations this code runs at; [] = all locations.
+      societyIds: sanitizeCouponSocietyIds(fields.societyIds),
+      // Hidden codes work, but are never listed to the storefront.
+      hidden: fields.hidden === true,
     };
 
     if (discountType === "percent") {

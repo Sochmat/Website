@@ -1,12 +1,93 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { couponAppliesToSociety } from "@/lib/couponScope";
+import { getSocietyById } from "@/lib/societies";
+
+type PublicFreeItem = { id: string; name: string; price: number };
 
 /**
- * Validate a coupon code typed by the customer. Codes are never listed to the
- * storefront — the customer must know the exact code — so every condition
- * (existence, active flag, minimum order amount, free-item availability) is
- * checked here and only a matching coupon is returned.
+ * List the coupons on offer at a location, so checkout can show them to pick
+ * from. Only active, non-hidden coupons scoped to this location are returned,
+ * and a free-item coupon whose item is gone is dropped. Coupons below the
+ * cart's minimum are still listed (checkout shows what's needed to unlock
+ * them); applying always goes through POST, which re-checks every condition.
+ *
+ * Hidden coupons are deliberately absent — they still work, but only for a
+ * customer who knows the code and types it in.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const societyId = searchParams.get("societyId") ?? undefined;
+
+    const { db } = await connectToDatabase();
+    const docs = await db
+      .collection("coupons")
+      .find({ active: true, hidden: { $ne: true } })
+      .toArray();
+    const scoped = docs.filter((c) =>
+      couponAppliesToSociety(c.societyIds, societyId),
+    );
+
+    // Resolve every granted free item in one query so each coupon can be
+    // labelled ("Free Cold Coffee") without a second request.
+    const freeItemIds = scoped
+      .map((c) => String(c.freeItemId ?? ""))
+      .filter((id) => id && ObjectId.isValid(id));
+    const freeItems = new Map<string, PublicFreeItem>();
+    if (freeItemIds.length > 0) {
+      const items = await db
+        .collection("menuItems")
+        .find({ _id: { $in: freeItemIds.map((id) => new ObjectId(id)) } })
+        .toArray();
+      for (const item of items) {
+        freeItems.set(item._id.toString(), {
+          id: item._id.toString(),
+          name: item.name,
+          price: item.price ?? 0,
+        });
+      }
+    }
+
+    const coupons = scoped
+      .map((c) => {
+        const discountType = c.discountType ?? "flat";
+        const freeItem =
+          discountType === "freeItem"
+            ? (freeItems.get(String(c.freeItemId ?? "")) ?? null)
+            : null;
+        return {
+          code: c.code,
+          discountType,
+          discountAmount: c.discountAmount ?? 0,
+          discountPercent: c.discountPercent ?? 0,
+          maxDiscount: c.maxDiscount ?? 0,
+          minAmount: Number(c.minAmount) || 0,
+          ...(freeItem ? { freeItemId: String(c.freeItemId), freeItem } : {}),
+        };
+      })
+      // A free-item coupon with no resolvable item can't be honoured.
+      .filter((c) => c.discountType !== "freeItem" || c.freeItem);
+
+    return NextResponse.json(
+      { success: true, coupons },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("Error listing coupons:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to load coupons" },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * Validate a coupon code — typed by the customer, or picked from the list
+ * above. Every condition (existence, active flag, location scope, minimum
+ * order amount, free-item availability) is checked here and only a matching
+ * coupon is returned.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +96,8 @@ export async function POST(request: NextRequest) {
       .trim()
       .toUpperCase();
     const totalPrice = Number(body?.totalPrice) || 0;
+    const societyId =
+      typeof body?.societyId === "string" ? body.societyId : undefined;
 
     if (!code) {
       return NextResponse.json(
@@ -32,6 +115,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: "Invalid coupon code" },
         { status: 404 },
+      );
+    }
+
+    // Location-scoped coupons are only honoured at their own locations.
+    if (!couponAppliesToSociety(coupon.societyIds, societyId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `This coupon isn't available at ${getSocietyById(societyId).name}`,
+        },
+        { status: 400 },
       );
     }
 

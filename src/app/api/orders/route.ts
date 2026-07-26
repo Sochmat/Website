@@ -13,6 +13,8 @@ import {
 } from "@/lib/societyDiscounts";
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
 import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
+import { societyOffersFirstOrderDiscount } from "@/lib/societies";
+import { couponAppliesToSociety } from "@/lib/couponScope";
 import { getCustomerUserId } from "@/lib/customerSession";
 import { getWalletBalance, reserveWallet } from "@/lib/wallet";
 import { sweepStaleOrderRedemptions } from "@/lib/orderRedemption";
@@ -177,6 +179,17 @@ export async function POST(request: NextRequest) {
         code: String(body.couponCode).trim().toUpperCase(),
         active: true,
       });
+      // A coupon scoped to other locations grants nothing here — drop it so
+      // neither its discount nor its free item applies.
+      if (
+        coupon &&
+        !couponAppliesToSociety(
+          coupon.societyIds,
+          typeof body.societyId === "string" ? body.societyId : undefined,
+        )
+      ) {
+        coupon = null;
+      }
     }
 
     // --- Server-side price recomputation (anti-tampering) -----------------
@@ -281,10 +294,12 @@ export async function POST(request: NextRequest) {
     // First-order 20% discount — resolved server-side from the user's order
     // history so it can't be spoofed. It does NOT stack with the coupon: the
     // larger of the two is allowed (matches the client's "best value" rule).
-    const serverEligibleFirstOrder = await isEligibleForFirstOrderDiscount(
-      db,
-      orderUserId,
-    );
+    // The offer doesn't run at every location (e.g. not at Pivotal Paradise),
+    // so the society gates it too.
+    const serverEligibleFirstOrder =
+      societyOffersFirstOrderDiscount(
+        typeof body.societyId === "string" ? body.societyId : undefined,
+      ) && (await isEligibleForFirstOrderDiscount(db, orderUserId));
     const serverFirstOrderDiscount = serverEligibleFirstOrder
       ? computeFirstOrderDiscount(serverSubtotal)
       : 0;
