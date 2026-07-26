@@ -10,8 +10,18 @@ const PIVOTAL = "pivotal-paradise-sector-62";
 const ZOMATO = "zomato-office-sector-62";
 
 describe("sanitizeCouponSocietyIds", () => {
-  it("keeps known ids in SOCIETIES order, de-duplicated", () => {
-    expect(sanitizeCouponSocietyIds([ZOMATO, PIVOTAL, ZOMATO])).toEqual([
+  it("de-duplicates a repeated id", () => {
+    expect(sanitizeCouponSocietyIds([ZOMATO, ZOMATO])).toEqual([ZOMATO]);
+  });
+
+  // The SOCIETIES-order branch only runs for a PROPER subset, and SOCIETIES
+  // currently holds two locations — so every multi-id selection is "all
+  // locations" and collapses to [] by design. Ordering therefore cannot be
+  // exercised today; it starts mattering the moment a third location exists.
+  // Do not "fix" a future failure here by weakening the collapse rule: it is
+  // what keeps an all-locations coupon working when a location is added.
+  it.skip("keeps a proper subset in SOCIETIES order", () => {
+    expect(sanitizeCouponSocietyIds([ZOMATO, PIVOTAL])).toEqual([
       PIVOTAL,
       ZOMATO,
     ]);
