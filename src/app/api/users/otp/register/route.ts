@@ -4,6 +4,8 @@ import { sendOTPSMS, isKaleyraConfigured } from "@/lib/kaleyra";
 import { sendOTPEmail, isEmailConfigured } from "@/lib/email";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { findUserIdByReferralCode } from "@/lib/referral";
+import { normalizePhone, hasPhone } from "@/lib/phone";
+import { isPhoneAvailableFor, PHONE_TAKEN_MESSAGE } from "@/lib/userPhone";
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -32,6 +34,27 @@ export async function POST(request: NextRequest) {
     const query = isEmailFlow ? { email } : { phone };
 
     let user = await db.collection("users").findOne(query);
+
+    // In the email flow `body.phone` is the account's profile phone, required at
+    // registration so one-time offers can be rationed per number rather than per
+    // address. (In the legacy SMS flow it is the identity instead, and is
+    // already handled by `query` above.)
+    let pendingPhone: string | null = null;
+    if (isEmailFlow && !hasPhone(user)) {
+      pendingPhone = normalizePhone(body.phone);
+      if (!pendingPhone) {
+        return NextResponse.json(
+          { success: false, message: "A valid 10-digit phone number is required" },
+          { status: 400 }
+        );
+      }
+      if (!(await isPhoneAvailableFor(db, pendingPhone, email))) {
+        return NextResponse.json(
+          { success: false, message: PHONE_TAKEN_MESSAGE },
+          { status: 409 }
+        );
+      }
+    }
 
     if (user && name) {
       await db.collection("users").updateOne(
@@ -69,12 +92,18 @@ export async function POST(request: NextRequest) {
     if (isEmailFlow) otpSet.email = email;
     else otpSet.phone = phone;
 
+    // The profile phone rides along with the pending OTP instead of going onto
+    // the user document now. Writing it here would let anyone permanently burn
+    // any number by starting a registration they never finish.
+    const otpUnset: Record<string, string> = isEmailFlow
+      ? { phone: "" }
+      : { email: "" };
+    if (pendingPhone) otpSet.pendingPhone = pendingPhone;
+    else otpUnset.pendingPhone = "";
+
     await db.collection("otps").updateOne(
       query,
-      {
-        $set: otpSet,
-        $unset: isEmailFlow ? { phone: "" } : { email: "" },
-      },
+      { $set: otpSet, $unset: otpUnset },
       { upsert: true }
     );
 

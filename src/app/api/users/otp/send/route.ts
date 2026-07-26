@@ -64,7 +64,10 @@ export async function POST(request: NextRequest) {
 
     await db.collection("otps").updateOne(
       isEmailFlow ? { email } : { phone },
-      { $set: otpSet },
+      // Drop any `pendingPhone` left by an abandoned registration for this
+      // address. It is only meaningful to the registration that staged it, and
+      // if that number has since been taken it would fail this login at verify.
+      { $set: otpSet, $unset: { pendingPhone: "" } },
       { upsert: true }
     );
 

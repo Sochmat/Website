@@ -6,6 +6,7 @@ import {
   customerCookieOptions,
   signCustomerSession,
 } from "@/lib/customerAuth";
+import { hasPhone } from "@/lib/phone";
 
 interface GoogleTokenInfo {
   sub?: string;
@@ -76,8 +77,10 @@ export async function POST(request: NextRequest) {
       await db.collection("users").updateOne({ email }, { $set: updates });
       user = { ...user, ...updates };
     } else {
+      // No `phone: ""` — an empty string would sit inside the unique index's
+      // partial filter and collide with every other phoneless signup. Absent
+      // means absent; the client collects the number via POST /api/users/phone.
       const newUser = {
-        phone: "",
         email,
         name,
         googleId,
@@ -96,6 +99,10 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       success: true,
       token,
+      // Google never gives us a phone number. Until the account has one it is
+      // exempt from the unique-phone rule and from the one-time offers, so the
+      // client must collect it before letting the user continue.
+      needsPhone: !hasPhone(user),
       user: {
         _id: user._id,
         phone: user.phone ?? "",

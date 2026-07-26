@@ -52,10 +52,10 @@ export default function AddAddressSheet({
   // For a brand-new address, seed the receiver from the signed-in profile so
   // returning customers don't retype their own name and number.
   const [receiverName, setReceiverName] = useState(
-    () => editAddress?.receiverName ?? user?.name ?? "",
+    () => editAddress?.receiverName || user?.name || "",
   );
   const [receiverPhone, setReceiverPhone] = useState(
-    () => editAddress?.receiverPhone ?? user?.phone ?? "",
+    () => editAddress?.receiverPhone || user?.phone || "",
   );
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [saving, setSaving] = useState(false);

@@ -22,6 +22,8 @@ import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
 import { societyOffersFirstOrderDiscount } from "@/lib/societies";
 import { couponAppliesToSociety } from "@/lib/couponScope";
 import { getCustomerUserId } from "@/lib/customerSession";
+import { normalizePhone } from "@/lib/phone";
+import { backfillPhoneIfMissing } from "@/lib/userPhone";
 import { getWalletBalance, reserveWallet } from "@/lib/wallet";
 import { sweepStaleOrderRedemptions } from "@/lib/orderRedemption";
 import { computeWalletApplied } from "@/lib/walletMath";
@@ -115,12 +117,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const phone = String(body.receiver?.phone ?? "")
-      .trim()
-      .replace(/\D/g, "");
-    if (!phone) {
+    // The delivery contact, not the account holder — the two are separate, and
+    // ordering for someone else is normal.
+    const receiverPhone = normalizePhone(body.receiver?.phone);
+    if (!receiverPhone) {
       return NextResponse.json(
-        { success: false, message: "user.phone is required" },
+        {
+          success: false,
+          message: "A valid 10-digit receiver.phone is required",
+        },
         { status: 400 },
       );
     }
@@ -143,42 +148,28 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
 
-    let user = (await db.collection("users").findOne({ phone })) as {
-      _id: ObjectId;
-      phone: string;
-      name?: string;
-    } | null;
-    if (!user) {
-      const newUser = {
-        phone,
-        name: body.receiver?.name ?? "",
-        address: body.receiver?.address ?? "",
-        addresses: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const insertResult = await db.collection("users").insertOne(newUser);
-      user = {
-        _id: insertResult.insertedId as ObjectId,
-        phone,
-        name: newUser.name,
-      };
-    }
-    if (!user) {
+    // Canonical order identity: the signed-in session user (from the httpOnly
+    // cookie), NOT the spoofable body.userId. All per-user logic — first-order
+    // eligibility, wallet, referral credit, and the stored order.userId — must
+    // key off the SAME id, or they silently target different documents.
+    //
+    // This used to fall back to a user resolved from (or created from) the
+    // *receiver's* phone, which minted a shadow account under someone else's
+    // number every time you ordered food for a friend. The order page is
+    // auth-gated, so there was never a real guest order to serve.
+    const orderUserId = await getCustomerUserId(request);
+    if (!orderUserId) {
       return NextResponse.json(
-        { success: false, message: "Failed to resolve user" },
-        { status: 500 },
+        { success: false, message: "Please sign in to place an order" },
+        { status: 401 },
       );
     }
 
-    // Canonical order identity: the signed-in session user (from the httpOnly
-    // cookie), NOT the phone-resolved record or the spoofable body.userId. All
-    // per-user logic — first-order eligibility, wallet, referral credit, and the
-    // stored order.userId — must key off the SAME id, or they silently target
-    // different documents. Fall back to the phone-resolved user for the rare
-    // unauthenticated/guest order.
-    const sessionUserId = await getCustomerUserId(request);
-    const orderUserId: ObjectId = sessionUserId ?? user._id;
+    // Legacy accounts predate the required-phone rule. If this one still has no
+    // number and the receiver's is unclaimed, adopt it — that is what restores
+    // their eligibility for the one-time offers. Best-effort: a number that
+    // belongs to someone else just means the order proceeds without a backfill.
+    await backfillPhoneIfMissing(db, orderUserId, receiverPhone);
 
     const discountAmount = Number(body.discountAmount) || 0;
     let allowedDiscount = 0;
@@ -367,7 +358,7 @@ export async function POST(request: NextRequest) {
       receiver: body.receiver
         ? {
             name: body.receiver.name ?? "",
-            phone: String(body.receiver.phone ?? "").trim(),
+            phone: receiverPhone,
             address: body.receiver.address ?? "",
           }
         : undefined,

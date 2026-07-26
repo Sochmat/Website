@@ -6,6 +6,7 @@ import {
   customerCookieOptions,
   signCustomerSession,
 } from "@/lib/customerAuth";
+import { claimPhoneForUser, PHONE_TAKEN_MESSAGE } from "@/lib/userPhone";
 
 export async function POST(request: NextRequest) {
   const limited = await rateLimit(request, limiters.auth);
@@ -70,6 +71,23 @@ export async function POST(request: NextRequest) {
 
     await db.collection("otps").deleteOne(query);
 
+    // The registration phone was held with the OTP rather than written to the
+    // user document, so that an abandoned registration could not squat a number.
+    // Now that the address is proven, put it on the account.
+    let phoneOnAccount = typeof user.phone === "string" ? user.phone : "";
+    const pendingPhone =
+      typeof otpRecord.pendingPhone === "string" ? otpRecord.pendingPhone : null;
+    if (pendingPhone) {
+      const outcome = await claimPhoneForUser(db, user._id, pendingPhone);
+      if (outcome === "taken") {
+        return NextResponse.json(
+          { success: false, message: PHONE_TAKEN_MESSAGE },
+          { status: 409 }
+        );
+      }
+      if (outcome === "claimed") phoneOnAccount = pendingPhone;
+    }
+
     // Legacy opaque token, still read by UserContext for its localStorage state.
     // It authenticates nothing; the httpOnly cookie below is the real credential.
     const token = Buffer.from(`${user._id}:${Date.now()}`).toString("base64");
@@ -79,7 +97,7 @@ export async function POST(request: NextRequest) {
       token,
       user: {
         _id: user._id,
-        phone: user.phone ?? "",
+        phone: phoneOnAccount,
         name: user.name,
         email: user.email,
         address: user.address,

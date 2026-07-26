@@ -1032,16 +1032,18 @@ export default function OrderPage() {
           open
           society={society}
           onClose={() => setShowDeliveryDetails(false)}
+          // Account first, now that every account has a phone. `||` not `??`,
+          // so a legacy empty string falls through instead of winning.
           defaultName={
-            savedDeliveryDetails?.name ??
-            user?.name ??
-            selectedAddress?.receiverName ??
+            user?.name ||
+            savedDeliveryDetails?.name ||
+            selectedAddress?.receiverName ||
             ""
           }
           defaultPhone={
-            savedDeliveryDetails?.phone ??
-            user?.phone ??
-            selectedAddress?.receiverPhone ??
+            user?.phone ||
+            savedDeliveryDetails?.phone ||
+            selectedAddress?.receiverPhone ||
             ""
           }
           defaultTower={savedDeliveryDetails?.tower ?? ""}

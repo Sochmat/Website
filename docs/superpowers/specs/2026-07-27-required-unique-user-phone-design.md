@@ -190,9 +190,15 @@ While there, the misleading `"user.phone is required"` message (`api/orders/rout
 `api/subscriptions/route.ts:30`) becomes `"receiver.phone is required"` — it validates
 `body.receiver.phone`, not a user field.
 
-**Opportunistic backfill.** If the session user has no phone, the route attempts to set the
-normalized receiver phone on their account. Best-effort: a duplicate-key error is swallowed and the
-order proceeds. This gives legacy accounts a phone without interrupting anyone mid-checkout.
+**Opportunistic backfill.** If the session user has no phone, the route adopts the normalized
+receiver phone for their account — but **only when nobody holds it at all**. Unlike the registration
+claim in §3 it never absorbs a shadow: at registration the number is asserted to be yours, whereas
+at checkout it is the *receiver's*, and a phoneless user ordering for a friend must not end up
+owning the friend's number. Best-effort throughout; an order never fails because of this.
+
+`otp/send` (the login path) clears any `pendingPhone` left on the `otps` document by an abandoned
+registration. Without that, a stale pending number would be claimed on a later *login* — and if it
+had since been taken, the 409 would block the login itself.
 
 **Prefill.** `order/page.tsx:1041` flips to account-first and switches `??` to `||`, so an empty
 string falls through instead of winning:

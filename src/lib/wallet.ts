@@ -1,5 +1,6 @@
 import { Db, ObjectId } from "mongodb";
 import { REFERRAL_REWARD } from "./walletMath";
+import { hasPhone } from "./phone";
 import type { WalletTransaction } from "./types";
 
 const USERS = "users";
@@ -96,9 +97,15 @@ export async function creditReferral(
     .collection(USERS)
     .findOne(
       { _id: refereeUserId },
-      { projection: { referredBy: 1, referralCredited: 1 } },
+      { projection: { referredBy: 1, referralCredited: 1, phone: 1 } },
     );
   if (!referee?.referredBy || referee.referralCredited) return;
+
+  // A phoneless account cannot claim the referral bonus — otherwise one person
+  // collects it once per email address, which is what the unique-phone rule is
+  // there to prevent. `referralCredited` is deliberately left unset, so the
+  // credit survives to be paid once their number is backfilled at checkout.
+  if (!hasPhone(referee)) return;
 
   const claimed = await db
     .collection(USERS)

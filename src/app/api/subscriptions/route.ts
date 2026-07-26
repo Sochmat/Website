@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { User } from "@/lib/types";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
+import { normalizePhone } from "@/lib/phone";
 
 function generateSubscriptionNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -22,12 +23,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const phone = String(body.receiver?.phone ?? "")
-      .trim()
-      .replace(/\D/g, "");
-    if (!phone) {
+    // The delivery contact, not the account holder.
+    const receiverPhone = normalizePhone(body.receiver?.phone);
+    if (!receiverPhone) {
       return NextResponse.json(
-        { success: false, message: "user.phone is required" },
+        {
+          success: false,
+          message: "A valid 10-digit receiver.phone is required",
+        },
         { status: 400 },
       );
     }
@@ -50,33 +53,9 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
 
-    let user = (await db.collection("users").findOne({ phone })) as {
-      _id: ObjectId;
-      phone: string;
-      name?: string;
-    } | null;
-    if (!user) {
-      const newUser = {
-        phone,
-        name: body.receiver?.name ?? "",
-        address: body.receiver?.address ?? "",
-        addresses: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const insertResult = await db.collection("users").insertOne(newUser);
-      user = {
-        _id: insertResult.insertedId as ObjectId,
-        phone,
-        name: newUser.name,
-      };
-    }
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: "Failed to resolve user" },
-        { status: 500 },
-      );
-    }
+    // A lookup-or-create keyed on the receiver's phone used to sit here. It
+    // minted a shadow account under someone else's number on every subscription
+    // and was otherwise dead — this route never stored a userId at all.
 
     const tax = Number(body.tax) ?? 0;
     const subscriptionNumber = generateSubscriptionNumber();
@@ -92,7 +71,7 @@ export async function POST(request: NextRequest) {
       receiver: body.receiver
         ? {
             name: body.receiver.name ?? "",
-            phone: String(body.receiver.phone ?? "").trim(),
+            phone: receiverPhone,
             address: body.receiver.address ?? "",
           }
         : undefined,

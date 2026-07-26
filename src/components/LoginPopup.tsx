@@ -5,7 +5,8 @@ import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 
 type AuthMode = "login" | "register";
-type AuthStep = "details" | "otp";
+/** "phone" is only reached after Google sign-in, which never gives us a number. */
+type AuthStep = "details" | "otp" | "phone";
 
 declare global {
   interface Window {
@@ -29,9 +30,16 @@ export default function LoginPopup() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<AuthStep>("details");
+  // Held while the Google-signed-in user supplies their number. The cookie is
+  // already set at this point; this is only the payload for local state.
+  const [pendingSession, setPendingSession] = useState<{
+    token: string;
+    user: unknown;
+  } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -57,11 +65,13 @@ export default function LoginPopup() {
       setStep("details");
       setName("");
       setEmail("");
+      setPhone("");
       setReferralCode("");
       setOtp("");
       setError("");
       setLoading(false);
       setGoogleLoading(false);
+      setPendingSession(null);
     } else {
       // Prefill the referral box from a `?ref=` link the user arrived through.
       try {
@@ -91,6 +101,7 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
+              phone,
               // Typed code wins; otherwise use a code captured from a ?ref= link.
               ref:
                 referralCode.trim().toUpperCase() ||
@@ -140,6 +151,32 @@ export default function LoginPopup() {
     }
   };
 
+  const handleSavePhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/users/phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        persistSession({
+          token: pendingSession?.token ?? "",
+          user: data.user,
+        });
+      } else {
+        setError(data.message || "Could not save that number");
+      }
+    } catch {
+      setError("Could not save that number. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleResendOTP = async () => {
     if (resendTimer > 0) return;
     setError("");
@@ -151,6 +188,7 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
+              phone,
               // Typed code wins; otherwise use a code captured from a ?ref= link.
               ref:
                 referralCode.trim().toUpperCase() ||
@@ -237,7 +275,13 @@ export default function LoginPopup() {
             });
             const data = await res.json();
 
-            if (data.success) {
+            if (data.success && data.needsPhone) {
+              // Signed in, but Google gave us no number. The cookie is already
+              // set — collect the phone before handing over the UI.
+              setPendingSession({ token: data.token, user: data.user });
+              setStep("phone");
+              setError("");
+            } else if (data.success) {
               persistSession({ token: data.token, user: data.user });
             } else {
               setError(data.message || "Google login failed");
@@ -278,14 +322,50 @@ export default function LoginPopup() {
             {mode === "login" ? "Login" : "Register"}
           </h2>
           <p className="text-sm text-[#737373] mb-6">
-            {step === "details"
-              ? mode === "login"
-                ? "Enter your email to receive OTP"
-                : "Enter your name and email to create account"
-              : "Enter the 6-digit OTP sent to your email"}
+            {step === "phone"
+              ? "Almost there — add a phone number for delivery updates"
+              : step === "details"
+                ? mode === "login"
+                  ? "Enter your email to receive OTP"
+                  : "Enter your details to create account"
+                : "Enter the 6-digit OTP sent to your email"}
           </p>
 
-          {step === "details" ? (
+          {step === "phone" ? (
+            <form onSubmit={handleSavePhone} className="space-y-4">
+              <div>
+                <label htmlFor="login-popup-google-phone" className="sr-only">
+                  Phone number
+                </label>
+                <input
+                  id="login-popup-google-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  autoFocus
+                  value={phone}
+                  onChange={(e) =>
+                    setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                  }
+                  placeholder="10-digit mobile number"
+                  maxLength={10}
+                  className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] text-[#171717] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                  required
+                />
+                <p className="mt-2 text-xs text-[#737373]">
+                  One account per number.
+                </p>
+              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading || phone.length !== 10}
+                className="w-full py-3.5 rounded-xl bg-[var(--primary-green)] text-white font-semibold hover:bg-[#034030] disabled:opacity-50 transition-colors"
+              >
+                {loading ? "Saving..." : "Continue"}
+              </button>
+            </form>
+          ) : step === "details" ? (
             <form onSubmit={handleSendOTP} className="space-y-4">
               {mode === "register" && (
                 <div>
@@ -319,6 +399,27 @@ export default function LoginPopup() {
               </div>
               {mode === "register" && (
                 <div>
+                  <label htmlFor="login-popup-phone" className="sr-only">
+                    Phone number
+                  </label>
+                  <input
+                    id="login-popup-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) =>
+                      setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    }
+                    placeholder="10-digit mobile number"
+                    maxLength={10}
+                    className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] text-[#171717] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                    required
+                  />
+                </div>
+              )}
+              {mode === "register" && (
+                <div>
                   <label htmlFor="login-popup-ref" className="sr-only">
                     Referral code (optional)
                   </label>
@@ -340,7 +441,11 @@ export default function LoginPopup() {
               )}
               <button
                 type="submit"
-                disabled={loading || googleLoading}
+                disabled={
+                  loading ||
+                  googleLoading ||
+                  (mode === "register" && phone.length !== 10)
+                }
                 className="w-full py-3.5 rounded-xl bg-[var(--primary-green)] text-white font-semibold hover:bg-[#034030] disabled:opacity-50 transition-colors"
               >
                 {loading ? "Sending..." : "Send OTP"}
