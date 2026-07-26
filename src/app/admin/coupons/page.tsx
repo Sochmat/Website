@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { Select } from "antd";
 import { Coupon, MenuItem } from "@/lib/types";
+import { SOCIETIES } from "@/lib/societies";
+import { describeCouponScope } from "@/lib/couponScope";
 
 type DiscountType = "flat" | "percent" | "freeItem";
 
@@ -20,6 +22,10 @@ export default function AdminCouponsPage() {
   const [freeItemDiscountMode, setFreeItemDiscountMode] = useState<
     "none" | "flat" | "percent"
   >("none");
+  // Locations the coupon runs at. Empty = every location.
+  const [societyIds, setSocietyIds] = useState<string[]>([]);
+  // Hidden coupons work, but aren't listed to customers.
+  const [hidden, setHidden] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -60,6 +66,8 @@ export default function AdminCouponsPage() {
     setMinAmount("");
     setFreeItemId("");
     setFreeItemDiscountMode("none");
+    setSocietyIds([]);
+    setHidden(false);
   };
 
   const handleEdit = (coupon: Coupon) => {
@@ -71,6 +79,10 @@ export default function AdminCouponsPage() {
     setMaxDiscount(coupon.maxDiscount ? String(coupon.maxDiscount) : "");
     setMinAmount(coupon.minAmount ? String(coupon.minAmount) : "");
     setFreeItemId(coupon.freeItemId ? String(coupon.freeItemId) : "");
+    setSocietyIds(
+      Array.isArray(coupon.societyIds) ? coupon.societyIds.map(String) : [],
+    );
+    setHidden(coupon.hidden === true);
     setFreeItemDiscountMode(
       coupon.discountType === "freeItem"
         ? coupon.discountPercent
@@ -101,6 +113,9 @@ export default function AdminCouponsPage() {
         maxDiscount: isPercent ? Number(maxDiscount) || 0 : 0,
         freeItemId: discountType === "freeItem" ? freeItemId : "",
         minAmount: Number(minAmount) || 0,
+        // [] = every location (the server sanitises this against SOCIETIES).
+        societyIds,
+        hidden,
         active: true,
       };
       if (discountType === "freeItem" && !freeItemId) {
@@ -355,6 +370,63 @@ export default function AdminCouponsPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Locations
+            </label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={societyIds.length === 0}
+                  onChange={() => setSocietyIds([])}
+                  className="w-4 h-4 accent-[#1c1c1c]"
+                />
+                All locations
+              </label>
+              {SOCIETIES.map((s) => (
+                <label
+                  key={s.id}
+                  className="flex items-center gap-2 text-sm text-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    checked={societyIds.includes(s.id)}
+                    onChange={(e) =>
+                      setSocietyIds((prev) =>
+                        e.target.checked
+                          ? [...prev, s.id]
+                          : prev.filter((id) => id !== s.id),
+                      )
+                    }
+                    className="w-4 h-4 accent-[#1c1c1c]"
+                  />
+                  {s.name}
+                  <span className="text-gray-400">· {s.sector}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Customers ordering to any other location can&apos;t use this code.
+              Pick none (or all) to run it everywhere.
+            </p>
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={hidden}
+                onChange={(e) => setHidden(e.target.checked)}
+                className="w-4 h-4 accent-[#1c1c1c]"
+              />
+              Hidden
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              Keeps the code out of the customer&apos;s &quot;View all
+              coupons&quot; list. It still works — they have to know it and type
+              it in.
+            </p>
+          </div>
           <button
             type="submit"
             disabled={loading}
@@ -396,15 +468,25 @@ export default function AdminCouponsPage() {
                         : `₹${coupon.discountAmount} off`}
                     {coupon.minAmount ? ` · Min ₹${coupon.minAmount}` : ""}
                   </p>
-                  <span
-                    className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${
-                      coupon.active
-                        ? "bg-green-100 text-green-800"
-                        : "bg-gray-100 text-gray-600"
-                    }`}
-                  >
-                    {coupon.active ? "Active" : "Inactive"}
-                  </span>
+                  <p className="text-xs text-gray-400">
+                    {describeCouponScope(coupon.societyIds)}
+                  </p>
+                  <div className="mt-1 flex items-center gap-1">
+                    <span
+                      className={`inline-block text-xs px-2 py-0.5 rounded ${
+                        coupon.active
+                          ? "bg-green-100 text-green-800"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {coupon.active ? "Active" : "Inactive"}
+                    </span>
+                    {coupon.hidden && (
+                      <span className="inline-block text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                        Hidden
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button

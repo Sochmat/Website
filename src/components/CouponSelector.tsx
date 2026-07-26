@@ -1,19 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Input, message } from "antd";
-
-type FreeItem = { id: string; name: string; price: number };
-
-type Coupon = {
-  code: string;
-  discountType: "flat" | "percent" | "freeItem";
-  discountAmount: number;
-  discountPercent: number;
-  maxDiscount: number;
-  minAmount?: number;
-  freeItem?: FreeItem | null;
-};
+import CouponListSheet from "./CouponListSheet";
+import {
+  computeCouponDiscount,
+  type FreeItem,
+  type StoreCoupon,
+} from "@/lib/couponDisplay";
 
 export type AppliedCoupon = {
   code: string;
@@ -24,43 +18,23 @@ export type AppliedCoupon = {
 
 interface CouponSelectorProps {
   totalPrice: number;
+  /** Selected delivery location — some codes only run at certain locations. */
+  societyId: string;
   onCouponChange: (coupon: AppliedCoupon | null) => void;
-}
-
-function percentDiscount(total: number, pct: number, max: number): number {
-  const raw = Math.round((total * pct) / 100);
-  return max > 0 ? Math.min(raw, max) : raw;
-}
-
-function computeDiscount(coupon: Coupon, totalPrice: number): number {
-  if (coupon.discountType === "percent")
-    return percentDiscount(
-      totalPrice,
-      coupon.discountPercent,
-      coupon.maxDiscount,
-    );
-  // Free-item coupons grant an extra item, plus an optional flat/percent
-  // discount on the bill.
-  if (coupon.discountType === "freeItem") {
-    if (coupon.discountPercent > 0)
-      return percentDiscount(
-        totalPrice,
-        coupon.discountPercent,
-        coupon.maxDiscount,
-      );
-    return coupon.discountAmount || 0;
-  }
-  return coupon.discountAmount;
 }
 
 export default function CouponSelector({
   totalPrice,
+  societyId,
   onCouponChange,
 }: CouponSelectorProps) {
   const [codeInput, setCodeInput] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
-  const [applying, setApplying] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<StoreCoupon | null>(null);
+  const [applying, setApplying] = useState("");
   const [error, setError] = useState("");
+  // Coupons on offer at this location, to pick from instead of typing.
+  const [offers, setOffers] = useState<StoreCoupon[]>([]);
+  const [showOffers, setShowOffers] = useState(false);
 
   const removeCoupon = useCallback(() => {
     setAppliedCoupon(null);
@@ -79,12 +53,43 @@ export default function CouponSelector({
     }
   }, [totalPrice, appliedCoupon, removeCoupon]);
 
+  // Offers are per-location, so reload them whenever the location changes.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/coupons?societyId=${encodeURIComponent(societyId)}`, {
+      cache: "no-store",
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.success && Array.isArray(data.coupons)) {
+          setOffers(data.coupons as StoreCoupon[]);
+        }
+      })
+      .catch(() => {
+        // The typed-code path still works without the list.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [societyId]);
+
+  // A code can be scoped to certain locations, and it was validated against the
+  // one selected when it was applied — drop it if the customer switches.
+  const lastSocietyId = useRef(societyId);
+  useEffect(() => {
+    if (lastSocietyId.current === societyId) return;
+    lastSocietyId.current = societyId;
+    if (!appliedCoupon) return;
+    removeCoupon();
+    setError("Coupon removed — please re-apply it for this location");
+  }, [societyId, appliedCoupon, removeCoupon]);
+
   // Keep the discount in sync with the cart total for percent-based coupons.
   useEffect(() => {
     if (!appliedCoupon) return;
     onCouponChange({
       code: appliedCoupon.code,
-      discountAmount: computeDiscount(appliedCoupon, totalPrice),
+      discountAmount: computeCouponDiscount(appliedCoupon, totalPrice),
       freeItem:
         appliedCoupon.discountType === "freeItem" && appliedCoupon.freeItem
           ? appliedCoupon.freeItem
@@ -92,20 +97,22 @@ export default function CouponSelector({
     });
   }, [appliedCoupon, totalPrice, onCouponChange]);
 
-  const handleApply = async () => {
-    const code = codeInput.trim().toUpperCase();
+  // Both entry points — the typed code and a tapped offer — apply through here,
+  // so the server re-checks every condition either way.
+  const applyCode = async (raw: string) => {
+    const code = raw.trim().toUpperCase();
     if (!code) {
       setError("Please enter a coupon code");
       return;
     }
 
-    setApplying(true);
+    setApplying(code);
     setError("");
     try {
       const res = await fetch("/api/coupons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, totalPrice }),
+        body: JSON.stringify({ code, totalPrice, societyId }),
       });
       const data = await res.json();
 
@@ -114,14 +121,21 @@ export default function CouponSelector({
         return;
       }
 
-      setAppliedCoupon(data.coupon as Coupon);
+      setAppliedCoupon(data.coupon as StoreCoupon);
       setCodeInput(code);
       message.success(`Coupon "${code}" applied`);
     } catch {
       setError("Could not apply coupon. Please try again.");
     } finally {
-      setApplying(false);
+      setApplying("");
     }
+  };
+
+  // Picking from the sheet closes it either way — on success the applied line
+  // shows below the field, on failure the error does.
+  const applyFromSheet = async (code: string) => {
+    await applyCode(code);
+    setShowOffers(false);
   };
 
   return (
@@ -151,7 +165,7 @@ export default function CouponSelector({
             if (error) setError("");
           }}
           onPressEnter={() => {
-            if (!appliedCoupon && !applying) handleApply();
+            if (!appliedCoupon && !applying) applyCode(codeInput);
           }}
           placeholder="Enter coupon code"
           disabled={Boolean(appliedCoupon)}
@@ -161,8 +175,10 @@ export default function CouponSelector({
 
         <button
           type="button"
-          onClick={appliedCoupon ? removeCoupon : handleApply}
-          disabled={applying}
+          onClick={
+            appliedCoupon ? removeCoupon : () => applyCode(codeInput)
+          }
+          disabled={Boolean(applying)}
           className="h-8 px-4 rounded-md border border-[#f56215] text-[#f56215] text-sm font-medium bg-[rgba(245,98,21,0.06)] disabled:opacity-60"
         >
           {appliedCoupon ? "Remove" : applying ? "Applying..." : "Apply"}
@@ -171,20 +187,54 @@ export default function CouponSelector({
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
+      {/* The offers themselves live in a sheet, so checkout stays short.
+          Hidden once a coupon is applied — only one can be used per order. */}
+      {!appliedCoupon && offers.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowOffers(true)}
+          className="flex items-center gap-1 text-sm font-medium text-[#f56215]"
+        >
+          View all coupons ({offers.length})
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 5l7 7-7 7"
+            />
+          </svg>
+        </button>
+      )}
+
+      <CouponListSheet
+        open={showOffers && !appliedCoupon}
+        onClose={() => setShowOffers(false)}
+        coupons={offers}
+        totalPrice={totalPrice}
+        applyingCode={applying}
+        onApply={applyFromSheet}
+      />
+
       {appliedCoupon &&
         (appliedCoupon.discountType === "freeItem" ? (
           <p className="text-sm text-[#00a86e]">
             Coupon &quot;{appliedCoupon.code}&quot; applied. You get{" "}
             {appliedCoupon.freeItem?.name ?? "an item"} free
-            {computeDiscount(appliedCoupon, totalPrice) > 0
-              ? ` and save Rs ${computeDiscount(appliedCoupon, totalPrice)}`
+            {computeCouponDiscount(appliedCoupon, totalPrice) > 0
+              ? ` and save Rs ${computeCouponDiscount(appliedCoupon, totalPrice)}`
               : ""}
             !
           </p>
         ) : (
           <p className="text-sm text-[#00a86e]">
             Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
-            {computeDiscount(appliedCoupon, totalPrice)}.
+            {computeCouponDiscount(appliedCoupon, totalPrice)}.
           </p>
         ))}
     </div>

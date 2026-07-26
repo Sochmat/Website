@@ -712,6 +712,7 @@ export default function OrderPage() {
 
         <CouponSelector
           totalPrice={totalPrice}
+          societyId={society.id}
           onCouponChange={setAppliedCoupon}
         />
 

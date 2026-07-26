@@ -67,6 +67,16 @@ export interface Coupon {
   minAmount?: number;
   /** Menu item granted free when discountType === "freeItem". */
   freeItemId?: string;
+  /**
+   * Locations (society ids) this coupon runs at. Empty/absent = all locations.
+   * See lib/couponScope.ts.
+   */
+  societyIds?: string[];
+  /**
+   * Keep the code out of the storefront's "View all coupons" list. It still
+   * works — the customer has to know it and type it in.
+   */
+  hidden?: boolean;
   active: boolean;
   createdAt?: Date;
 }

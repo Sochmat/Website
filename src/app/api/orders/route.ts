@@ -14,6 +14,7 @@ import {
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
 import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
 import { societyOffersFirstOrderDiscount } from "@/lib/societies";
+import { couponAppliesToSociety } from "@/lib/couponScope";
 import { getCustomerUserId } from "@/lib/customerSession";
 import {
   getWalletBalance,
@@ -176,6 +177,17 @@ export async function POST(request: NextRequest) {
         code: String(body.couponCode).trim().toUpperCase(),
         active: true,
       });
+      // A coupon scoped to other locations grants nothing here — drop it so
+      // neither its discount nor its free item applies.
+      if (
+        coupon &&
+        !couponAppliesToSociety(
+          coupon.societyIds,
+          typeof body.societyId === "string" ? body.societyId : undefined,
+        )
+      ) {
+        coupon = null;
+      }
     }
 
     // --- Server-side price recomputation (anti-tampering) -----------------
