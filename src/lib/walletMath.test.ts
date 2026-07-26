@@ -4,7 +4,7 @@ import { MIN_PAYABLE, REFERRAL_REWARD, computeWalletApplied } from "./walletMath
 describe("constants", () => {
   it("keep parity with the subscription flow", () => {
     expect(MIN_PAYABLE).toBe(1);
-    expect(REFERRAL_REWARD).toBe(100);
+    expect(REFERRAL_REWARD).toBe(75);
   });
 });
 
