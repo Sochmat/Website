@@ -66,6 +66,11 @@ export function istDaysBetween(from: string, to: string): number {
   );
 }
 
+/** The IST calendar month ("yyyy-mm") an IST calendar date falls in. */
+export function istMonth(date: string): string {
+  return date.slice(0, 7);
+}
+
 /** "Monday" … "Sunday" for an IST calendar date. */
 export function istWeekday(date: string): string {
   const [y, m, d] = parts(date);

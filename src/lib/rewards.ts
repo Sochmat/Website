@@ -7,7 +7,7 @@
  * `today` as an IST calendar date (yyyy-mm-dd).
  */
 
-import { addIstDays, istDaysBetween, istWeekday } from "./ist";
+import { istDaysBetween, istMonth } from "./ist";
 import { MIN_PAYABLE } from "./walletMath";
 
 /** Earn rate (%) by streak day: day 1 → 10%, day 6 and beyond → the cap. */
@@ -16,7 +16,7 @@ export const POINT_RATES = [10, 12, 14, 16, 18, 20];
 /** The ceiling on the earn rate, however long the streak runs. */
 export const MAX_POINT_RATE = POINT_RATES[POINT_RATES.length - 1];
 
-/** A customer's stored streak: how many consecutive days, and the last one. */
+/** A customer's stored streak: order days banked this month, and the last one. */
 export interface StreakState {
   count: number;
   /** IST calendar date (yyyy-mm-dd) of the last streak-advancing paid order. */
@@ -31,36 +31,35 @@ export function rateForStreak(streak: number): number {
 }
 
 /**
- * Days that never break a streak: weekends, plus any date an admin has marked
- * as a holiday (kitchen closed, festival). Skipping one is not a missed day.
- */
-export function isExemptDay(date: string, exemptDates: Set<string>): boolean {
-  const weekday = istWeekday(date);
-  return weekday === "Saturday" || weekday === "Sunday" || exemptDates.has(date);
-}
-
-/**
  * The streak value an order placed on `today` produces.
  *
- * - no usable previous streak → 1 (a fresh start)
+ * The count is order DAYS banked within the current calendar month, not
+ * consecutive days: gaps inside the month are free, so a customer who orders on
+ * the 2nd and again on the 20th is on rung 2 either way. What ends a cycle is
+ * the calendar turning over — everyone starts again at rung 1 on the 1st.
+ *
+ * That makes the cycle derivable from `lastDate` alone: if its month differs
+ * from today's, the previous cycle is over. No separate cycle-start field to
+ * keep in sync.
+ *
+ * - no usable previous streak → 1
  * - already ordered today     → unchanged (a 2nd order can't advance it)
- * - every intervening day exempt → +1
- * - a working day was missed  → 1
+ * - last order was last month → 1 (new cycle)
+ * - otherwise                 → +1, however long the gap
+ *
+ * The count keeps climbing past the ladder's length; `rateForStreak` is what
+ * holds the rate at the 20% cap for the rest of the month.
  */
-export function nextStreak(
-  prev: StreakState | null,
-  today: string,
-  exemptDates: Set<string>,
-): number {
+export function nextStreak(prev: StreakState | null, today: string): number {
   if (!prev || !prev.lastDate || !(prev.count > 0)) return 1;
 
   const gap = istDaysBetween(prev.lastDate, today);
   // Same day, or a lastDate somehow ahead of today (clock skew): hold, never punish.
   if (gap <= 0) return prev.count;
 
-  for (let offset = 1; offset < gap; offset++) {
-    if (!isExemptDay(addIstDays(prev.lastDate, offset), exemptDates)) return 1;
-  }
+  // A new calendar month starts the ladder over.
+  if (istMonth(prev.lastDate) !== istMonth(today)) return 1;
+
   return prev.count + 1;
 }
 

@@ -423,13 +423,13 @@ function SuccessContent() {
         {order?.pointsEarned ? (
           <div className="mx-4 mb-4 rounded-xl bg-[#fff4ec] px-4 py-3">
             <div className="text-base font-semibold text-[#f56215]">
-              🔥 Day {order.streakAfter} streak
+              🔥 Day {order.streakAfter} this month
             </div>
             <div className="text-sm text-[#8a6b57] mt-1">
               You earned {order.pointsEarned} reward points at {order.pointsRate}%
               {order.pointsRate && order.pointsRate < 20
-                ? " — order again tomorrow to earn even more"
-                : " — you're at the maximum rate"}
+                ? " — order on another day this month to earn even more"
+                : " — you're at this month's maximum rate"}
             </div>
           </div>
         ) : null}

@@ -106,7 +106,7 @@ export default function ExpandableMenu() {
                   {rewards && rewards.streak > 0 ? (
                     <span
                       className="font-play shrink-0 flex items-center gap-1 rounded-full bg-[#f56215] px-2 py-0.5 text-xs"
-                      title={`Day ${rewards.streak} streak`}
+                      title={`${rewards.streak} order ${rewards.streak === 1 ? "day" : "days"} this month`}
                     >
                       <Flame className="w-3 h-3 shrink-0" />
                       {rewards.streak}

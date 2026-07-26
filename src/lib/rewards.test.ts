@@ -3,14 +3,11 @@ import {
   POINT_RATES,
   MAX_POINT_RATE,
   rateForStreak,
-  isExemptDay,
   nextStreak,
   computePointsEarned,
   computePointsApplied,
   sanitizeExemptDates,
 } from "./rewards";
-
-const NO_HOLIDAYS = new Set<string>();
 
 describe("the rate ladder", () => {
   it("climbs 10 → 20 across the first six streak days", () => {
@@ -36,93 +33,85 @@ describe("the rate ladder", () => {
   });
 });
 
-describe("isExemptDay", () => {
-  it("exempts Saturday and Sunday", () => {
-    expect(isExemptDay("2026-07-25", NO_HOLIDAYS)).toBe(true); // Saturday
-    expect(isExemptDay("2026-07-26", NO_HOLIDAYS)).toBe(true); // Sunday
-  });
-
-  it("does not exempt a plain working day", () => {
-    expect(isExemptDay("2026-07-22", NO_HOLIDAYS)).toBe(false); // Wednesday
-  });
-
-  it("exempts an admin holiday date", () => {
-    expect(isExemptDay("2026-07-22", new Set(["2026-07-22"]))).toBe(true);
-  });
-});
-
 describe("nextStreak", () => {
-  it("starts a first-ever order at day 1", () => {
-    expect(nextStreak(null, "2026-07-20", NO_HOLIDAYS)).toBe(1);
+  it("starts a first-ever order at rung 1", () => {
+    expect(nextStreak(null, "2026-08-12")).toBe(1);
   });
 
-  it("advances on consecutive working days", () => {
-    expect(
-      nextStreak({ count: 2, lastDate: "2026-07-20" }, "2026-07-21", NO_HOLIDAYS),
-    ).toBe(3);
+  it("advances on the next day", () => {
+    expect(nextStreak({ count: 2, lastDate: "2026-08-12" }, "2026-08-13")).toBe(
+      3,
+    );
   });
 
-  it("holds the streak for a second order on the same day", () => {
-    expect(
-      nextStreak({ count: 3, lastDate: "2026-07-21" }, "2026-07-21", NO_HOLIDAYS),
-    ).toBe(3);
+  it("holds for a second order on the same day", () => {
+    expect(nextStreak({ count: 3, lastDate: "2026-08-13" }, "2026-08-13")).toBe(
+      3,
+    );
   });
 
-  it("resets when a working day was missed", () => {
-    // Wednesday missed entirely: Tue → Thu.
-    expect(
-      nextStreak({ count: 5, lastDate: "2026-07-21" }, "2026-07-23", NO_HOLIDAYS),
-    ).toBe(1);
+  it("advances across a gap of days — consecutiveness is not required", () => {
+    expect(nextStreak({ count: 2, lastDate: "2026-08-12" }, "2026-08-20")).toBe(
+      3,
+    );
   });
 
-  it("survives the weekend: Friday → Monday advances", () => {
-    expect(
-      nextStreak({ count: 3, lastDate: "2026-07-24" }, "2026-07-27", NO_HOLIDAYS),
-    ).toBe(4);
+  it("advances across a gap spanning a weekend", () => {
+    // Fri 2026-08-14 → Tue 2026-08-18: two working days missed, still advances.
+    expect(nextStreak({ count: 4, lastDate: "2026-08-14" }, "2026-08-18")).toBe(
+      5,
+    );
   });
 
-  it("breaks when Monday is also missed: Friday → Tuesday resets", () => {
-    expect(
-      nextStreak({ count: 3, lastDate: "2026-07-24" }, "2026-07-28", NO_HOLIDAYS),
-    ).toBe(1);
+  it("advances from the 1st to the 31st of the same month", () => {
+    expect(nextStreak({ count: 5, lastDate: "2026-08-01" }, "2026-08-31")).toBe(
+      6,
+    );
   });
 
-  it("counts a weekend order: Friday → Saturday advances", () => {
-    expect(
-      nextStreak({ count: 3, lastDate: "2026-07-24" }, "2026-07-25", NO_HOLIDAYS),
-    ).toBe(4);
+  it("keeps counting past the ladder's length", () => {
+    // The rate caps at the 6th rung; the count itself is a real day tally.
+    expect(nextStreak({ count: 6, lastDate: "2026-08-20" }, "2026-08-21")).toBe(
+      7,
+    );
+    expect(nextStreak({ count: 12, lastDate: "2026-08-30" }, "2026-08-31")).toBe(
+      13,
+    );
   });
 
-  it("skips an admin holiday: Tuesday → Thursday advances", () => {
-    expect(
-      nextStreak(
-        { count: 4, lastDate: "2026-07-21" },
-        "2026-07-23",
-        new Set(["2026-07-22"]),
-      ),
-    ).toBe(5);
+  it("resets on the 1st: 31 Aug → 1 Sep starts a new cycle", () => {
+    expect(nextStreak({ count: 6, lastDate: "2026-08-31" }, "2026-09-01")).toBe(
+      1,
+    );
   });
 
-  it("chains a holiday Friday into the weekend", () => {
-    // Thu → Mon, with Friday declared a holiday and Sat/Sun exempt.
-    expect(
-      nextStreak(
-        { count: 2, lastDate: "2026-07-23" },
-        "2026-07-27",
-        new Set(["2026-07-24"]),
-      ),
-    ).toBe(3);
+  it("resets after a month away, however high the streak was", () => {
+    expect(nextStreak({ count: 14, lastDate: "2026-08-05" }, "2026-10-02")).toBe(
+      1,
+    );
+  });
+
+  it("does not reset across a year boundary within the same month number", () => {
+    // Dec 2026 → Dec 2027 is a different cycle, not the same December.
+    expect(nextStreak({ count: 5, lastDate: "2026-12-10" }, "2027-12-10")).toBe(
+      1,
+    );
   });
 
   it("treats a corrupt or empty stored streak as a fresh start", () => {
-    expect(nextStreak({ count: 0, lastDate: "2026-07-20" }, "2026-07-21", NO_HOLIDAYS)).toBe(1);
-    expect(nextStreak({ count: 3, lastDate: "" }, "2026-07-21", NO_HOLIDAYS)).toBe(1);
+    expect(nextStreak({ count: 0, lastDate: "2026-08-12" }, "2026-08-13")).toBe(
+      1,
+    );
+    expect(nextStreak({ count: 3, lastDate: "" }, "2026-08-13")).toBe(1);
   });
 
-  it("never punishes a lastDate in the future", () => {
-    expect(
-      nextStreak({ count: 4, lastDate: "2026-07-28" }, "2026-07-27", NO_HOLIDAYS),
-    ).toBe(4);
+  it("never punishes a lastDate in the future, even in a later month", () => {
+    expect(nextStreak({ count: 4, lastDate: "2026-08-20" }, "2026-08-19")).toBe(
+      4,
+    );
+    expect(nextStreak({ count: 4, lastDate: "2026-09-02" }, "2026-08-31")).toBe(
+      4,
+    );
   });
 });
 

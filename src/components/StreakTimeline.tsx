@@ -7,14 +7,16 @@ import { useRewardSummary } from "@/lib/useRewardSummary";
 import RewardInfoModal from "@/components/RewardInfoModal";
 
 /**
- * The customer's reward streak as a rung-by-rung timeline.
+ * The customer's reward ladder for the current calendar month, rung by rung.
  *
- * The rungs are a real sequence — day order decides what an order earns — so
- * the timeline is load-bearing rather than decorative. A flame travels the rail
- * on mount and settles on the last banked day; the rail's gradient runs orange
- * into lime, so the lime only appears once the customer is near the 20% cap.
+ * Each rung is one order DAY banked this month — gaps between them are free, and
+ * the whole ladder resets on the 1st. The rungs are still a real sequence (each
+ * one sets the rate for the next order), so the timeline is load-bearing rather
+ * than decorative. A flame travels the rail on mount and settles on the last
+ * banked day; the rail's gradient runs orange into lime, so the lime only
+ * appears once the customer is near the 20% cap.
  *
- * Signed-in only: a streak is personal, and a signed-out visitor has no number
+ * Signed-in only: the count is personal, and a signed-out visitor has no number
  * to show. All the animation collapses to its final state under
  * prefers-reduced-motion, because every animated property's resting value is
  * set inline and the keyframes only supply the `from`.
@@ -35,13 +37,16 @@ export default function StreakTimeline() {
   const advances = nextStreak > streak;
   const ghost = advances ? Math.min(nextStreak, rungs) : null;
 
-  const title = reached === 0 ? "Start your streak" : `Day ${reached} streak`;
+  const title =
+    reached === 0
+      ? "Start this month"
+      : `${reached} ${reached === 1 ? "day" : "days"} this month`;
   const detail = !advances
-    ? `Today is banked — you're earning ${nextRate}% back.`
+    ? `Today is counted — you're earning ${nextRate}% back.`
     : atCap
-      ? "You're at 20% back — the maximum."
+      ? `You're at ${nextRate}% for the rest of the month.`
       : reached === 0
-        ? "Your first order earns 10% back."
+        ? `Your first order this month earns ${nextRate}% back.`
         : `Order today to reach ${nextRate}%.`;
 
   return (
@@ -138,7 +143,8 @@ export default function StreakTimeline() {
       </div>
 
       <p className="mt-4 text-center text-[11px] text-[#b09b8a]">
-        Weekends off never break your streak
+        Any {rungs} days this month reaches {POINT_RATES.at(-1)}% · resets on the
+        1st
       </p>
 
       <RewardInfoModal

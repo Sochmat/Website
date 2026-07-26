@@ -130,7 +130,7 @@ export default function StoreHoursPage() {
       const data = await res.json();
       if (data?.success && Array.isArray(data.dates)) {
         setHolidays(data.dates as string[]);
-        message.success("Streak holidays saved");
+        message.success("Closure dates saved");
       } else {
         message.error(data?.message ?? "Failed to save holidays");
       }
@@ -238,12 +238,12 @@ export default function StoreHoursPage() {
 
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 space-y-4 mt-6">
             <div>
-              <h2 className="text-[#111] font-semibold">Streak holidays</h2>
+              <h2 className="text-[#111] font-semibold">Closure dates</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Dates the kitchen is shut. Customers won&apos;t lose their
-                reward streak for not ordering on these days. Saturdays and
-                Sundays are always forgiven — you don&apos;t need to list
-                them.
+                A record of dates the kitchen is shut, kept for your reference.
+                These no longer affect reward rates: a customer&apos;s rate only
+                climbs within a calendar month and resets on the 1st, so skipped
+                days cost them nothing either way.
               </p>
             </div>
 

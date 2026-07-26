@@ -1,10 +1,9 @@
 import { Db, ObjectId } from "mongodb";
-import { istToday } from "./ist";
+import { istMonth, istToday } from "./ist";
 import {
   computePointsEarned,
   nextStreak,
   rateForStreak,
-  sanitizeExemptDates,
   type StreakState,
 } from "./rewards";
 import type { RewardTransaction } from "./types";
@@ -12,9 +11,12 @@ import type { RewardTransaction } from "./types";
 const USERS = "users";
 const ORDERS = "orders";
 const LEDGER = "rewardTransactions";
-const SETTINGS = "settings";
 
-/** The `settings` document holding admin-declared streak-exempt dates. */
+/**
+ * The `settings` document key for the admin-managed closure dates. It no longer
+ * affects the streak — a gap of any length is free within a month — but the
+ * admin editor still writes here, so the key stays owned by this module.
+ */
 export const STREAK_EXEMPT_DATES_KEY = "streakExemptDates";
 
 function ledgerEntry(
@@ -31,14 +33,6 @@ export async function getRewardPointsBalance(
     .collection(USERS)
     .findOne({ _id: userId }, { projection: { rewardPoints: 1 } });
   return Number(user?.rewardPoints ?? 0);
-}
-
-/** Dates an admin has declared exempt. Weekends are handled in rewards.ts. */
-export async function getStreakExemptDates(db: Db): Promise<Set<string>> {
-  const doc = await db
-    .collection(SETTINGS)
-    .findOne({ key: STREAK_EXEMPT_DATES_KEY });
-  return new Set(sanitizeExemptDates(doc?.dates));
 }
 
 /** The stored streak, or null when there isn't a usable one yet. */
@@ -67,23 +61,26 @@ export async function getRewardSummary(
   nextStreak: number;
   nextRate: number;
 }> {
-  const [user, exemptDates] = await Promise.all([
-    db
-      .collection(USERS)
-      .findOne(
-        { _id: userId },
-        { projection: { rewardPoints: 1, streakCount: 1, streakLastDate: 1 } },
-      ),
-    getStreakExemptDates(db),
-  ]);
-  const projected = nextStreak(
-    readStreak(user as { streakCount?: unknown; streakLastDate?: unknown } | null),
-    istToday(now),
-    exemptDates,
+  const user = await db
+    .collection(USERS)
+    .findOne(
+      { _id: userId },
+      { projection: { rewardPoints: 1, streakCount: 1, streakLastDate: 1 } },
+    );
+  const today = istToday(now);
+  const stored = readStreak(
+    user as { streakCount?: unknown; streakLastDate?: unknown } | null,
   );
+  // Report the count for the CURRENT cycle, not the raw stored one. A count left
+  // over from last month is spent — surfacing it would show "6 days · 10%",
+  // which reads as a bug. The stored value stays untouched until the next paid
+  // order overwrites it.
+  const banked =
+    stored && istMonth(stored.lastDate) === istMonth(today) ? stored.count : 0;
+  const projected = nextStreak(stored, today);
   return {
     points: Number(user?.rewardPoints ?? 0),
-    streak: Number(user?.streakCount ?? 0),
+    streak: banked,
     nextStreak: projected,
     nextRate: rateForStreak(projected),
   };
@@ -194,21 +191,17 @@ export async function awardRewardPoints(
     );
   if (claimed.matchedCount === 0) return; // another caller owns this award
 
-  const [user, exemptDates] = await Promise.all([
-    db
-      .collection(USERS)
-      .findOne(
-        { _id: userId },
-        { projection: { streakCount: 1, streakLastDate: 1 } },
-      ),
-    getStreakExemptDates(db),
-  ]);
+  const user = await db
+    .collection(USERS)
+    .findOne(
+      { _id: userId },
+      { projection: { streakCount: 1, streakLastDate: 1 } },
+    );
 
   const today = istToday(now);
   const streakAfter = nextStreak(
     readStreak(user as { streakCount?: unknown; streakLastDate?: unknown } | null),
     today,
-    exemptDates,
   );
   const rate = rateForStreak(streakAfter);
   const points = computePointsEarned(rewardBase, rate);

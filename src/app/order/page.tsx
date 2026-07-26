@@ -859,7 +859,7 @@ export default function OrderPage() {
                   <div className="rounded-lg bg-[#fff4ec] px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="text-sm font-semibold text-[#f56215]">
-                        🔥 Day {rewardNextStreak} streak · earning{" "}
+                        🔥 Day {rewardNextStreak} this month · earning{" "}
                         {rewardNextRate}%
                       </div>
                       <button
@@ -874,8 +874,8 @@ export default function OrderPage() {
                     <div className="text-xs text-[#8a6b57] mt-0.5">
                       You&apos;ll earn {pointsWillEarn} points on this order
                       {rewardNextRate < 20
-                        ? " — order tomorrow to earn more"
-                        : " — you're at the maximum rate"}
+                        ? " — order again this month to earn more"
+                        : " — you're at this month's maximum rate"}
                       . Points can be redeemed on next order
                     </div>
                   </div>

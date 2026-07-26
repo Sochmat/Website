@@ -1,7 +1,38 @@
-# Reward points with a daily order streak
+# Reward points with a monthly order ladder
 
 **Date:** 2026-07-25
-**Status:** Approved
+**Status:** Approved, amended 2026-07-26
+
+---
+
+## Amendment (2026-07-26) — the streak rule changed
+
+**This amendment supersedes every "consecutive day" rule below.** The original
+design reset a customer's rate when they missed a working day. It no longer
+does. What is built and shipped is:
+
+- The count is **order days banked within the current calendar month**, not
+  consecutive days. Gaps inside the month are free: order on the 2nd and again
+  on the 20th and you are on rung 2 either way.
+- The rate **only ever climbs within a month**. Nothing a customer does or fails
+  to do resets it mid-month.
+- Once the **20% cap** is reached it holds for the rest of the month.
+- **Everyone resets to 10% on the 1st.** That is the only reset.
+- The cycle is derived from the month of `streakLastDate`; there is no separate
+  cycle-start field.
+
+**Consequently the weekend exemption and the admin holiday dates no longer
+affect anything** — they existed solely to stop a gap from resetting the rate,
+and gaps are now free. `isExemptDay` and the gap-scanning loop are deleted. The
+`settings.streakExemptDates` document, its API route, and the admin editor are
+kept as a record of closure dates (the card is relabelled "Closure dates" and
+states plainly that reward rates are unaffected).
+
+Sections below that describe consecutive-day behaviour, weekend forgiveness, or
+holiday exemptions are **historical** — read them as the original design, not as
+current behaviour.
+
+---
 
 ## Goal
 

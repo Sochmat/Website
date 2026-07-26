@@ -146,7 +146,9 @@ export default function MyOrdersPage() {
               <div className="text-2xl font-bold text-[#111]">
                 🔥 {rewards.streak}
               </div>
-              <div className="text-xs text-gray-500">Day streak</div>
+              <div className="text-xs text-gray-500">
+                {rewards.streak === 1 ? "Day" : "Days"} this month
+              </div>
             </div>
           </div>
 
@@ -174,9 +176,10 @@ export default function MyOrdersPage() {
           </div>
 
           <p className="mt-3 text-xs text-gray-500">
-            Order every day to climb to {POINT_RATES[POINT_RATES.length - 1]}%
-            back. Weekends off don&apos;t break your streak. Your next order
-            earns {rewards.nextRate}%.
+            Order on any {POINT_RATES.length} days in a month to climb to{" "}
+            {POINT_RATES[POINT_RATES.length - 1]}% back — they don&apos;t have to
+            be back-to-back. Resets on the 1st. Your next order earns{" "}
+            {rewards.nextRate}%.
           </p>
         </div>
       ) : null}

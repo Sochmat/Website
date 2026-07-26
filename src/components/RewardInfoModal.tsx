@@ -68,7 +68,7 @@ export default function RewardInfoModal({
               How your points add up
             </h2>
             <p className="mt-1 text-xs text-[#8a6b57]">
-              Order more days in a row, earn a higher rate.
+              The more days you order in a month, the higher your rate.
             </p>
           </div>
           <button
@@ -89,7 +89,7 @@ export default function RewardInfoModal({
               <div className="flex items-baseline gap-2">
                 <span className="font-play text-xs text-[#f56215]">1</span>
                 <h3 className="text-sm font-semibold text-[#1c1c1c]">
-                  Your streak sets the rate
+                  Your order days set the rate
                 </h3>
               </div>
               <div className="mt-3 flex gap-1.5">
@@ -115,16 +115,18 @@ export default function RewardInfoModal({
                         }`}
                       >
                         {index === POINT_RATES.length - 1
-                          ? `Day ${index + 1}+`
-                          : `Day ${index + 1}`}
+                          ? `${index + 1}+ days`
+                          : `${index + 1} day${index === 0 ? "" : "s"}`}
                       </div>
                     </div>
                   );
                 })}
               </div>
               <p className="mt-2 text-xs text-[#8a6b57]">
-                Day one earns {POINT_RATES[0]}%. Every further day you order,
-                the rate climbs two points, up to {POINT_RATES.at(-1)}%.
+                Your first order in a month earns {POINT_RATES[0]}%. Each
+                further day you order that month adds two points, up to{" "}
+                {POINT_RATES.at(-1)}%. The days don&apos;t have to be
+                back-to-back.
               </p>
             </li>
 
@@ -183,7 +185,7 @@ export default function RewardInfoModal({
 
           <div className="mt-6 rounded-xl border border-[#ffe0cb] bg-[#fff8f3] px-4 py-3">
             <h3 className="text-sm font-semibold text-[#1c1c1c]">
-              Keeping your streak
+              How the month works
             </h3>
             <ul className="mt-2 space-y-1.5 text-xs text-[#8a6b57]">
               <li className="flex gap-2">
@@ -193,13 +195,17 @@ export default function RewardInfoModal({
               </li>
               <li className="flex gap-2">
                 <span className="text-[#f56215]">•</span>
-                Weekends never break your streak, and neither do days we&apos;re
-                closed.
+                Skipping days costs you nothing — your rate only ever goes up
+                within a month.
               </li>
               <li className="flex gap-2">
                 <span className="text-[#f56215]">•</span>
-                Miss a working day and the rate starts again at{" "}
-                {POINT_RATES[0]}%.
+                Once you reach {POINT_RATES.at(-1)}%, it stays there for the rest
+                of the month.
+              </li>
+              <li className="flex gap-2">
+                <span className="text-[#f56215]">•</span>
+                On the 1st everyone starts again at {POINT_RATES[0]}%.
               </li>
             </ul>
           </div>
