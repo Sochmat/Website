@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import { message } from "antd";
-import { LogoutOutlined } from "@ant-design/icons";
+import { LogoutOutlined, InboxOutlined } from "@ant-design/icons";
 import type { AdminRole } from "@/lib/useAdminRole";
 
 const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
@@ -337,6 +337,15 @@ export default function AdminLayout({
                   onClick={handleDeliveryToggle}
                 />
                 <span className="mx-1 h-6 w-px bg-white/15" aria-hidden="true" />
+                {/* Inventory lives outside the /admin route group but shares
+                    the admin session, so it sits here rather than in the nav. */}
+                <Link
+                  href="/inventory-management"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-sm font-medium text-gray-200 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <InboxOutlined />
+                  <span className="hidden sm:inline">Inventory</span>
+                </Link>
               </>
             )}
             <button
