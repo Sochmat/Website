@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Info } from "lucide-react";
-import { POINT_RATES } from "@/lib/rewards";
+import { useLocation } from "@/context/LocationContext";
 import { useRewardSummary } from "@/lib/useRewardSummary";
 import RewardInfoModal from "@/components/RewardInfoModal";
 
@@ -22,12 +22,16 @@ import RewardInfoModal from "@/components/RewardInfoModal";
  * set inline and the keyframes only supply the `from`.
  */
 export default function StreakTimeline() {
-  const summary = useRewardSummary();
+  // The selected delivery location decides which ladder's percentages apply.
+  const { society } = useLocation();
+  const summary = useRewardSummary(society?.id);
   const [showInfo, setShowInfo] = useState(false);
-  if (!summary) return null;
+  // Nothing to show at a location that is out of the scheme — promising a
+  // ladder the customer cannot climb from here would be worse than silence.
+  if (!summary || !summary.enabled) return null;
 
-  const { streak, nextStreak, nextRate, points } = summary;
-  const rungs = POINT_RATES.length;
+  const { streak, nextStreak, nextRate, points, rates } = summary;
+  const rungs = rates.length;
   /** Days banked, clamped to the ladder. */
   const reached = Math.max(0, Math.min(streak, rungs));
   /** Percent of the rail (measured dot-centre to dot-centre) that is filled. */
@@ -106,7 +110,7 @@ export default function StreakTimeline() {
         </div>
 
         <ol className="relative flex h-full items-center justify-between">
-          {POINT_RATES.map((rate, index) => {
+          {rates.map((rate, index) => {
             const day = index + 1;
             const done = day <= reached;
             const isGhost = day === ghost;
@@ -143,13 +147,13 @@ export default function StreakTimeline() {
       </div>
 
       <p className="mt-4 text-center text-[11px] text-[#b09b8a]">
-        Any {rungs} days this month reaches {POINT_RATES.at(-1)}% · resets on the
-        1st
+        Any {rungs} days this month reaches {rates[rungs - 1]}% · resets on the 1st
       </p>
 
       <RewardInfoModal
         open={showInfo}
         onClose={() => setShowInfo(false)}
+        rates={rates}
         currentRate={nextRate}
       />
     </section>

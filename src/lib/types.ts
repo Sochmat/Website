@@ -138,6 +138,8 @@ export interface Order {
   pointsEarned?: number;
   /** The earn rate (%) used for this order. */
   pointsRate?: number;
+  /** The cap of the location's ladder at award time, frozen for the receipt. */
+  pointsRateMax?: number;
   /** The streak day this order produced, for the success screen. */
   streakAfter?: number;
   /** True once this order's reward points have been claimed for awarding. */

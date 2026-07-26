@@ -1,37 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  POINT_RATES,
-  MAX_POINT_RATE,
-  rateForStreak,
   nextStreak,
   computePointsEarned,
   computePointsApplied,
   sanitizeExemptDates,
 } from "./rewards";
-
-describe("the rate ladder", () => {
-  it("climbs 10 → 20 across the first six streak days", () => {
-    expect(POINT_RATES).toEqual([10, 12, 14, 16, 18, 20]);
-    expect(rateForStreak(1)).toBe(10);
-    expect(rateForStreak(2)).toBe(12);
-    expect(rateForStreak(3)).toBe(14);
-    expect(rateForStreak(4)).toBe(16);
-    expect(rateForStreak(5)).toBe(18);
-    expect(rateForStreak(6)).toBe(20);
-  });
-
-  it("caps at 20% however long the streak runs", () => {
-    expect(MAX_POINT_RATE).toBe(20);
-    expect(rateForStreak(7)).toBe(20);
-    expect(rateForStreak(20)).toBe(20);
-    expect(rateForStreak(365)).toBe(20);
-  });
-
-  it("treats a zero or negative streak as the first day", () => {
-    expect(rateForStreak(0)).toBe(10);
-    expect(rateForStreak(-3)).toBe(10);
-  });
-});
 
 describe("nextStreak", () => {
   it("starts a first-ever order at rung 1", () => {

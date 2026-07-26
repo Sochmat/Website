@@ -2,11 +2,16 @@
 
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
-import { POINT_RATES } from "@/lib/rewards";
 
 interface RewardInfoModalProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * The ladder in force for the customer's delivery location — earn percentages
+   * by order day. Configured per location in admin, so it is passed in rather
+   * than imported as a constant.
+   */
+  rates: number[];
   /** The customer's current earn rate, highlighted in the ladder if given. */
   currentRate?: number;
 }
@@ -28,6 +33,7 @@ const EXAMPLE_BASE = EXAMPLE_SUBTOTAL - EXAMPLE_DISCOUNT;
 export default function RewardInfoModal({
   open,
   onClose,
+  rates,
   currentRate,
 }: RewardInfoModalProps) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -44,7 +50,7 @@ export default function RewardInfoModal({
 
   if (!open) return null;
 
-  const exampleRate = currentRate ?? POINT_RATES[0];
+  const exampleRate = currentRate ?? rates[0];
   const examplePoints = Math.round((EXAMPLE_BASE * exampleRate) / 100);
 
   return (
@@ -93,7 +99,7 @@ export default function RewardInfoModal({
                 </h3>
               </div>
               <div className="mt-3 flex gap-1.5">
-                {POINT_RATES.map((rate, index) => {
+                {rates.map((rate, index) => {
                   const isCurrent = currentRate === rate;
                   return (
                     <div
@@ -114,7 +120,7 @@ export default function RewardInfoModal({
                           isCurrent ? "text-white/80" : "text-[#c4a894]"
                         }`}
                       >
-                        {index === POINT_RATES.length - 1
+                        {index === rates.length - 1
                           ? `${index + 1}+ days`
                           : `${index + 1} day${index === 0 ? "" : "s"}`}
                       </div>
@@ -123,9 +129,9 @@ export default function RewardInfoModal({
                 })}
               </div>
               <p className="mt-2 text-xs text-[#8a6b57]">
-                Your first order in a month earns {POINT_RATES[0]}%. Each
-                further day you order that month adds two points, up to{" "}
-                {POINT_RATES.at(-1)}%. The days don&apos;t have to be
+                Your first order in a month earns {rates[0]}%. Every further day
+                you order that month moves you up a rung, to a maximum of{" "}
+                {rates[rates.length - 1]}%. The days don&apos;t have to be
                 back-to-back.
               </p>
             </li>
@@ -200,12 +206,12 @@ export default function RewardInfoModal({
               </li>
               <li className="flex gap-2">
                 <span className="text-[#f56215]">•</span>
-                Once you reach {POINT_RATES.at(-1)}%, it stays there for the rest
+                Once you reach {rates[rates.length - 1]}%, it stays there for the rest
                 of the month.
               </li>
               <li className="flex gap-2">
                 <span className="text-[#f56215]">•</span>
-                On the 1st everyone starts again at {POINT_RATES[0]}%.
+                On the 1st everyone starts again at {rates[0]}%.
               </li>
             </ul>
           </div>

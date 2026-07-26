@@ -1,16 +1,20 @@
 import { Db, ObjectId } from "mongodb";
 import { istMonth, istToday } from "./ist";
+import { computePointsEarned, nextStreak, type StreakState } from "./rewards";
 import {
-  computePointsEarned,
-  nextStreak,
+  STREAK_LADDERS_KEY,
+  isStreakDisabled,
+  ladderFor,
   rateForStreak,
-  type StreakState,
-} from "./rewards";
+  sanitizeStreakConfig,
+  type StreakConfig,
+} from "./streakLadder";
 import type { RewardTransaction } from "./types";
 
 const USERS = "users";
 const ORDERS = "orders";
 const LEDGER = "rewardTransactions";
+const SETTINGS = "settings";
 
 /**
  * The `settings` document key for the admin-managed closure dates. It no longer
@@ -35,6 +39,17 @@ export async function getRewardPointsBalance(
   return Number(user?.rewardPoints ?? 0);
 }
 
+/**
+ * The per-location streak config: ladders, plus the locations opted out. Unset
+ * locations inherit the default ladder and are enabled.
+ */
+export async function getStreakConfig(db: Db): Promise<StreakConfig> {
+  const doc = await db
+    .collection(SETTINGS)
+    .findOne({ key: STREAK_LADDERS_KEY });
+  return sanitizeStreakConfig(doc);
+}
+
 /** The stored streak, or null when there isn't a usable one yet. */
 function readStreak(user: {
   streakCount?: unknown;
@@ -47,26 +62,38 @@ function readStreak(user: {
 }
 
 /**
- * Everything the cart and the rewards card need: the balance, the streak as it
- * stands, and what an order placed right now would produce. Display only — the
- * award path recomputes all of it at payment time.
+ * Everything the cart and the rewards card need: the balance, the day count as
+ * it stands, what an order placed right now would produce, and the ladder those
+ * rates come from. Display only — the award path recomputes all of it at payment
+ * time from the order's OWN location.
+ *
+ * `societyId` is the location the customer is currently ordering to. It selects
+ * the ladder and decides whether the streak runs there at all; it has no bearing
+ * on the day count, which is per customer.
  */
 export async function getRewardSummary(
   db: Db,
   userId: ObjectId,
   now: Date,
+  societyId?: string | null,
 ): Promise<{
   points: number;
   streak: number;
   nextStreak: number;
   nextRate: number;
+  rates: number[];
+  /** False when this location is opted out — no earning, no day advance. */
+  enabled: boolean;
 }> {
-  const user = await db
-    .collection(USERS)
-    .findOne(
-      { _id: userId },
-      { projection: { rewardPoints: 1, streakCount: 1, streakLastDate: 1 } },
-    );
+  const [user, config] = await Promise.all([
+    db
+      .collection(USERS)
+      .findOne(
+        { _id: userId },
+        { projection: { rewardPoints: 1, streakCount: 1, streakLastDate: 1 } },
+      ),
+    getStreakConfig(db),
+  ]);
   const today = istToday(now);
   const stored = readStreak(
     user as { streakCount?: unknown; streakLastDate?: unknown } | null,
@@ -78,11 +105,14 @@ export async function getRewardSummary(
   const banked =
     stored && istMonth(stored.lastDate) === istMonth(today) ? stored.count : 0;
   const projected = nextStreak(stored, today);
+  const ladder = ladderFor(config.ladders, societyId);
   return {
     points: Number(user?.rewardPoints ?? 0),
     streak: banked,
     nextStreak: projected,
-    nextRate: rateForStreak(projected),
+    nextRate: rateForStreak(projected, ladder),
+    rates: ladder,
+    enabled: !isStreakDisabled(config.disabled, societyId),
   };
 }
 
@@ -167,6 +197,11 @@ export async function creditRewardPointsRefund(
  *
  * The streak advance is guarded on `streakLastDate !== today` so a second order
  * on the same day earns points at the same rate without advancing the day.
+ *
+ * The rate comes from THIS order's location: the day count is per customer, but
+ * which ladder converts it into a percentage is per location. A location that is
+ * switched off awards nothing and does not advance the day count — it is out of
+ * the scheme, so an order there neither earns nor costs the customer progress.
  */
 export async function awardRewardPoints(
   db: Db,
@@ -176,9 +211,16 @@ export async function awardRewardPoints(
 ): Promise<void> {
   const order = await db
     .collection(ORDERS)
-    .findOne({ _id: orderId }, { projection: { rewardBase: 1 } });
+    .findOne({ _id: orderId }, { projection: { rewardBase: 1, societyId: 1 } });
   const rewardBase = Number(order?.rewardBase ?? 0);
   if (!(rewardBase > 0)) return;
+
+  const societyId = typeof order?.societyId === "string" ? order.societyId : null;
+  const config = await getStreakConfig(db);
+  // Switched off for this location: award nothing and leave the day count
+  // untouched. Returning before the claim is safe precisely because nothing
+  // has been credited, so a later re-run simply reaches the same conclusion.
+  if (isStreakDisabled(config.disabled, societyId)) return;
 
   // Claim the award atomically before crediting anything — mirrors
   // creditReferral in wallet.ts. Two concurrent callers for the same order
@@ -203,7 +245,8 @@ export async function awardRewardPoints(
     readStreak(user as { streakCount?: unknown; streakLastDate?: unknown } | null),
     today,
   );
-  const rate = rateForStreak(streakAfter);
+  const ladder = ladderFor(config.ladders, societyId);
+  const rate = rateForStreak(streakAfter, ladder);
   const points = computePointsEarned(rewardBase, rate);
 
   const advanced = await db.collection(USERS).updateOne(
@@ -246,6 +289,10 @@ export async function awardRewardPoints(
       $set: {
         pointsEarned: points,
         pointsRate: rate,
+        // The cap of the ladder that was in force, frozen here so the success
+        // screen can say "you're at the maximum" without re-resolving a config
+        // that may since have changed.
+        pointsRateMax: ladder[ladder.length - 1],
         streakAfter,
         updatedAt: new Date(),
       },

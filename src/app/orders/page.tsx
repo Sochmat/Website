@@ -7,7 +7,7 @@ import { ArrowLeft, ChevronDown, ReceiptText } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import { Order } from "@/lib/types";
-import { POINT_RATES } from "@/lib/rewards";
+import { DEFAULT_LADDER } from "@/lib/streakLadder";
 
 type ProductSummary = { name: string; image?: string };
 
@@ -24,6 +24,7 @@ export default function MyOrdersPage() {
     points: number;
     streak: number;
     nextRate: number;
+    rates: number[];
   } | null>(null);
 
   useEffect(() => {
@@ -58,7 +59,11 @@ export default function MyOrdersPage() {
         setRewards({
           points: Number(data.points ?? 0),
           streak: Number(data.streak ?? 0),
-          nextRate: Number(data.nextRate ?? 10),
+          nextRate: Number(data.nextRate ?? DEFAULT_LADDER[0]),
+          rates:
+            Array.isArray(data.rates) && data.rates.length
+              ? (data.rates as number[])
+              : DEFAULT_LADDER,
         });
       })
       .catch(() => {});
@@ -153,7 +158,7 @@ export default function MyOrdersPage() {
           </div>
 
           <div className="mt-4 flex gap-1">
-            {POINT_RATES.map((rate, index) => {
+            {rewards.rates.map((rate, index) => {
               const day = index + 1;
               const reached = rewards.streak >= day;
               return (
@@ -176,8 +181,8 @@ export default function MyOrdersPage() {
           </div>
 
           <p className="mt-3 text-xs text-gray-500">
-            Order on any {POINT_RATES.length} days in a month to climb to{" "}
-            {POINT_RATES[POINT_RATES.length - 1]}% back — they don&apos;t have to
+            Order on any {rewards.rates.length} days in a month to climb to{" "}
+            {rewards.rates[rewards.rates.length - 1]}% back — they don&apos;t have to
             be back-to-back. Resets on the 1st. Your next order earns{" "}
             {rewards.nextRate}%.
           </p>

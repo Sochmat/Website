@@ -40,6 +40,7 @@ import {
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
 import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
+import { DEFAULT_LADDER } from "@/lib/streakLadder";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -107,7 +108,9 @@ export default function OrderPage() {
   const [useWallet, setUseWallet] = useState(true);
   const [rewardPoints, setRewardPoints] = useState(0);
   const [rewardNextStreak, setRewardNextStreak] = useState(1);
-  const [rewardNextRate, setRewardNextRate] = useState(10);
+  const [rewardNextRate, setRewardNextRate] = useState(DEFAULT_LADDER[0]);
+  const [rewardRates, setRewardRates] = useState<number[]>(DEFAULT_LADDER);
+  const [rewardsEnabled, setRewardsEnabled] = useState(true);
   const [useRewardPoints, setUseRewardPoints] = useState(true);
   const [showRewardInfo, setShowRewardInfo] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
@@ -161,7 +164,9 @@ export default function OrderPage() {
       setWalletBalance(0);
       setRewardPoints(0);
       setRewardNextStreak(1);
-      setRewardNextRate(10);
+      setRewardNextRate(DEFAULT_LADDER[0]);
+      setRewardRates(DEFAULT_LADDER);
+      setRewardsEnabled(true);
       return;
     }
     let cancelled = false;
@@ -170,7 +175,9 @@ export default function OrderPage() {
         const [eligRes, walletRes, rewardsRes] = await Promise.all([
           fetch("/api/orders/first-order-eligibility", { cache: "no-store" }),
           fetch("/api/wallet/balance", { cache: "no-store" }),
-          fetch("/api/rewards/me", { cache: "no-store" }),
+          fetch(`/api/rewards/me?societyId=${encodeURIComponent(society.id)}`, {
+            cache: "no-store",
+          }),
         ]);
         const elig = await eligRes.json();
         const wallet = await walletRes.json();
@@ -180,7 +187,13 @@ export default function OrderPage() {
           setWalletBalance(Number(wallet?.balance ?? 0));
           setRewardPoints(Number(rewards?.points ?? 0));
           setRewardNextStreak(Number(rewards?.nextStreak ?? 1));
-          setRewardNextRate(Number(rewards?.nextRate ?? 10));
+          setRewardNextRate(Number(rewards?.nextRate ?? DEFAULT_LADDER[0]));
+          setRewardRates(
+            Array.isArray(rewards?.rates) && rewards.rates.length
+              ? (rewards.rates as number[])
+              : DEFAULT_LADDER,
+          );
+          setRewardsEnabled(rewards?.enabled !== false);
         }
       } catch {
         if (!cancelled) {
@@ -188,14 +201,16 @@ export default function OrderPage() {
           setWalletBalance(0);
           setRewardPoints(0);
           setRewardNextStreak(1);
-          setRewardNextRate(10);
+          setRewardNextRate(DEFAULT_LADDER[0]);
+          setRewardRates(DEFAULT_LADDER);
+          setRewardsEnabled(true);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, society.id]);
 
   // Restore the last delivery details so the sheet pre-fills next time.
   useEffect(() => {
@@ -855,7 +870,7 @@ export default function OrderPage() {
                     </span>
                   </div>
                 ) : null}
-                {isAuthenticated && pointsWillEarn > 0 ? (
+                {isAuthenticated && rewardsEnabled && pointsWillEarn > 0 ? (
                   <div className="rounded-lg bg-[#fff4ec] px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="text-sm font-semibold text-[#f56215]">
@@ -956,6 +971,7 @@ export default function OrderPage() {
       <RewardInfoModal
         open={showRewardInfo}
         onClose={() => setShowRewardInfo(false)}
+        rates={rewardRates}
         currentRate={rewardNextRate}
       />
 

@@ -427,7 +427,11 @@ function SuccessContent() {
             </div>
             <div className="text-sm text-[#8a6b57] mt-1">
               You earned {order.pointsEarned} reward points at {order.pointsRate}%
-              {order.pointsRate && order.pointsRate < 20
+              {/* Compare against the cap frozen on the order, since the
+                  location's ladder may have been reconfigured since. */}
+              {order.pointsRate &&
+              order.pointsRateMax &&
+              order.pointsRate < order.pointsRateMax
                 ? " — order on another day this month to earn even more"
                 : " — you're at this month's maximum rate"}
             </div>

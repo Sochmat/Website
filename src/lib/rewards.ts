@@ -1,7 +1,8 @@
 /**
  * Reward-point and streak math — pure and client-safe (no DB import), so the
  * cart can preview exactly what the server later awards. The DB-touching
- * operations live in rewardPoints.ts (server only).
+ * operations live in rewardPoints.ts (server only), and the per-location earn
+ * percentages in streakLadder.ts.
  *
  * Following the ist.ts convention, nothing here reads the clock: callers inject
  * `today` as an IST calendar date (yyyy-mm-dd).
@@ -10,24 +11,11 @@
 import { istDaysBetween, istMonth } from "./ist";
 import { MIN_PAYABLE } from "./walletMath";
 
-/** Earn rate (%) by streak day: day 1 → 10%, day 6 and beyond → the cap. */
-export const POINT_RATES = [10, 12, 14, 16, 18, 20];
-
-/** The ceiling on the earn rate, however long the streak runs. */
-export const MAX_POINT_RATE = POINT_RATES[POINT_RATES.length - 1];
-
 /** A customer's stored streak: order days banked this month, and the last one. */
 export interface StreakState {
   count: number;
   /** IST calendar date (yyyy-mm-dd) of the last streak-advancing paid order. */
   lastDate: string;
-}
-
-/** The earn rate for a given streak day. Clamped to the ladder at both ends. */
-export function rateForStreak(streak: number): number {
-  if (!(streak > 0)) return POINT_RATES[0];
-  const index = Math.min(Math.floor(streak), POINT_RATES.length) - 1;
-  return POINT_RATES[index];
 }
 
 /**

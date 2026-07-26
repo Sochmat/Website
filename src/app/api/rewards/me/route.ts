@@ -2,22 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getCustomerUserId } from "@/lib/customerSession";
 import { getRewardSummary } from "@/lib/rewardPoints";
-import { POINT_RATES } from "@/lib/rewards";
+import { DEFAULT_LADDER } from "@/lib/streakLadder";
 
 export const dynamic = "force-dynamic";
 
-/** What a signed-out visitor (or an error) sees: nothing banked, day-1 rate. */
+/**
+ * What a signed-out visitor (or an error) sees: nothing banked, first-rung rate.
+ * Uses the seed ladder rather than a configured one — resolving a location's
+ * ladder needs a session, and this payload exists only so the UI has a coherent
+ * shape to render before sign-in.
+ */
 const EMPTY = {
   points: 0,
   streak: 0,
   nextStreak: 1,
-  nextRate: POINT_RATES[0],
+  nextRate: DEFAULT_LADDER[0],
+  rates: DEFAULT_LADDER,
+  enabled: true,
 };
 
 /**
- * The signed-in customer's reward balance and streak, plus what an order placed
- * right now would earn. Preview only — awardRewardPoints recomputes all of this
- * server-side when the payment settles.
+ * The signed-in customer's reward balance and day count, plus what an order
+ * placed right now would earn and the ladder behind it. Preview only —
+ * awardRewardPoints recomputes all of this server-side when the payment settles,
+ * from the order's own location.
+ *
+ * `?societyId=` is the location being ordered to; it selects the ladder. An
+ * unknown or missing id resolves to the default ladder rather than failing.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -28,8 +39,9 @@ export async function GET(request: NextRequest) {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
+    const societyId = new URL(request.url).searchParams.get("societyId");
     const { db } = await connectToDatabase();
-    const summary = await getRewardSummary(db, userId, new Date());
+    const summary = await getRewardSummary(db, userId, new Date(), societyId);
     return NextResponse.json(
       { success: true, ...summary },
       { headers: { "Cache-Control": "no-store" } },
