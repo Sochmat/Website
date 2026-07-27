@@ -31,6 +31,8 @@ export const BRANDS_COLLECTION = "inventoryBrands";
 export const RAW_MATERIALS_COLLECTION = "inventoryRawMaterials";
 export const PRODUCTION_ITEMS_COLLECTION = "inventoryProductionItems";
 export const ITEM_RECIPES_COLLECTION = "inventoryItemRecipes";
+/** One document per Audit-screen save — see src/lib/stockAudits.ts. */
+export const STOCK_AUDITS_COLLECTION = "inventoryStockAudits";
 
 /**
  * Categories, seeding the default set the first time the collection is empty.

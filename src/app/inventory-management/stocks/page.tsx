@@ -259,7 +259,7 @@ export default function StocksPage() {
   const lowCount =
     materialRows.filter((r) => r.low).length +
     itemRows.filter((r) => r.low).length;
-  // Stock is written by the Adjustment screen, which isn't built yet — say so
+  // Stock is written by the Audit screen, which isn't built yet — say so
   // once rather than leaving a page full of "Not tracked" unexplained.
   const anyTracked = [...materialRows, ...itemRows].some(
     (r) => typeof r.currentStock === "number",
@@ -305,7 +305,7 @@ export default function StocksPage() {
       {!loading && !anyTracked && (
         <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900">
           No stock quantities have been recorded yet, so every row reads “Not
-          tracked”. Quantities will appear here once the Adjustment screen is
+          tracked”. Quantities will appear here once the Audit screen is
           in place.
         </div>
       )}

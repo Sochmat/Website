@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeCost,
+  recipeConsumption,
   roundCurrency,
   sanitizeProductionItem,
   type CostingMaterial,
@@ -214,5 +215,72 @@ describe("sanitizeProductionItem", () => {
   it("stores the recipe in the order given", () => {
     const { doc } = sanitize();
     expect(doc?.recipe.map((r) => r.rawMaterialId)).toEqual(["dal", "ghee"]);
+  });
+});
+
+describe("recipeConsumption", () => {
+  // A yields 100 gm from 50 gm of B and 50 gm of C.
+  const RECIPE = [
+    { rawMaterialId: "b", qtyUsed: 50 },
+    { rawMaterialId: "c", qtyUsed: 50 },
+  ];
+
+  it("draws down one batch's worth for one batch produced", () => {
+    expect(recipeConsumption(RECIPE, 100, 100)).toEqual([
+      { rawMaterialId: "b", qty: 50 },
+      { rawMaterialId: "c", qty: 50 },
+    ]);
+  });
+
+  it("scales linearly with the quantity produced", () => {
+    expect(recipeConsumption(RECIPE, 100, 250)).toEqual([
+      { rawMaterialId: "b", qty: 125 },
+      { rawMaterialId: "c", qty: 125 },
+    ]);
+    expect(recipeConsumption(RECIPE, 100, 10)).toEqual([
+      { rawMaterialId: "b", qty: 5 },
+      { rawMaterialId: "c", qty: 5 },
+    ]);
+  });
+
+  it("sums a material named twice in one recipe", () => {
+    expect(
+      recipeConsumption(
+        [
+          { rawMaterialId: "b", qtyUsed: 30 },
+          { rawMaterialId: "b", qtyUsed: 20 },
+        ],
+        100,
+        100,
+      ),
+    ).toEqual([{ rawMaterialId: "b", qty: 50 }]);
+  });
+
+  it("consumes nothing without a batch yield to scale from", () => {
+    expect(recipeConsumption(RECIPE, 0, 100)).toEqual([]);
+    expect(recipeConsumption(RECIPE, Number.NaN, 100)).toEqual([]);
+  });
+
+  it("consumes nothing for a non-positive quantity", () => {
+    expect(recipeConsumption(RECIPE, 100, 0)).toEqual([]);
+    expect(recipeConsumption(RECIPE, 100, -50)).toEqual([]);
+  });
+
+  it("skips lines with no material or no quantity", () => {
+    expect(
+      recipeConsumption(
+        [
+          { rawMaterialId: "", qtyUsed: 10 },
+          { rawMaterialId: "b", qtyUsed: 0 },
+          { rawMaterialId: "c", qtyUsed: 50 },
+        ],
+        100,
+        100,
+      ),
+    ).toEqual([{ rawMaterialId: "c", qty: 50 }]);
+  });
+
+  it("handles an empty recipe", () => {
+    expect(recipeConsumption([], 100, 100)).toEqual([]);
   });
 });

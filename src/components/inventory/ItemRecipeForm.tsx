@@ -41,15 +41,19 @@ const TYPE_LABEL: Record<ComponentType, string> = {
  */
 export default function ItemRecipeForm({
   recipe,
+  initialName = "",
 }: {
   /** null = create mode. */
   recipe: ItemRecipe | null;
+  /** Create mode only: pre-fills the name, e.g. from the menu item being
+   *  mapped. Ignored when editing, where the stored name wins. */
+  initialName?: string;
 }) {
   const router = useRouter();
   const [messageApi, messageContextHolder] = message.useMessage();
   const { options, optionsByKey, costsByKey, loading } = useRecipeComponents();
 
-  const [name, setName] = useState(recipe?.name ?? "");
+  const [name, setName] = useState(recipe?.name ?? initialName);
   const [lines, setLines] = useState<DraftLine[]>(
     recipe?.lines.map((l) => ({
       refType: l.refType,

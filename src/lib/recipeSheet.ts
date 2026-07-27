@@ -181,7 +181,7 @@ export async function buildProductionTemplateWorkbook(
     ["8. Alert Qty is optional — leave it blank for no low-stock threshold."],
     ["9. 'Price (calculated)' is ignored on upload. The price is always derived"],
     ["   from the recipe, so editing it has no effect."],
-    ["10. Stock on hand is never touched by an upload — use the Adjustment page."],
+    ["10. Stock on hand is never touched by an upload — use the Audit page."],
   ]);
   notes.getRow(1).font = { bold: true, size: 14 };
   addValidNames(

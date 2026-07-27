@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Modal, Table, message } from "antd";
+import { Collapse, Modal, Table, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   PlusOutlined,
@@ -12,18 +12,42 @@ import {
   DeleteOutlined,
   SearchOutlined,
   UnorderedListOutlined,
+  EyeInvisibleOutlined,
 } from "@ant-design/icons";
 import ViewItemRecipeModal from "@/components/inventory/ViewItemRecipeModal";
 import RecipeImportModal from "@/components/inventory/RecipeImportModal";
 import type { ItemRecipe } from "@/lib/itemRecipes";
+import {
+  groupMenuItems,
+  orphanRecipes,
+  type MenuItemSummary,
+  type MenuRecipeRow,
+} from "@/lib/menuRecipes";
 import { formatCurrency } from "@/lib/rawMaterials";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const BASE_PATH = "/inventory-management/setup/item-recipe";
 
+/** Recipes with no menu item behind them ride in the same table shape. */
+function orphanRow(recipe: ItemRecipe): MenuRecipeRow {
+  return {
+    menuItem: {
+      _id: `orphan:${recipe._id}`,
+      name: recipe.name,
+      categoryId: "",
+      categoryName: "",
+      type: "",
+      hidden: false,
+    },
+    recipe,
+    mapped: recipe.lines.length > 0,
+  };
+}
+
 export default function ItemRecipesPage() {
   const router = useRouter();
   const [recipes, setRecipes] = useState<ItemRecipe[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
@@ -42,26 +66,56 @@ export default function ItemRecipesPage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const loadRecipes = useCallback(async () => {
+  /**
+   * Both lists, unfiltered.
+   *
+   * The search filters in the browser here, unlike the flat list this screen
+   * used to be: a menu item with no recipe has nothing for the recipes
+   * endpoint to match on, so server-side search would hide exactly the rows
+   * this view exists to surface.
+   */
+  const load = useCallback(async () => {
     try {
-      const query = appliedSearch.trim()
-        ? `?search=${encodeURIComponent(appliedSearch.trim())}`
-        : "";
-      const res = await fetch(`/api/inventory/item-recipes${query}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (data.success) setRecipes(data.recipes ?? []);
+      const [rRes, mRes] = await Promise.all([
+        fetch("/api/inventory/item-recipes", { cache: "no-store" }),
+        fetch("/api/inventory/menu-items", { cache: "no-store" }),
+      ]);
+      const [rData, mData] = await Promise.all([rRes.json(), mRes.json()]);
+      if (rData.success) setRecipes(rData.recipes ?? []);
+      if (mData.success) setMenuItems(mData.items ?? []);
     } catch {
       // Leave the previous list on screen rather than blanking it on a blip.
     } finally {
       setLoading(false);
     }
-  }, [appliedSearch]);
+  }, []);
 
   useEffect(() => {
-    loadRecipes();
-  }, [loadRecipes]);
+    load();
+  }, [load]);
+
+  const term = appliedSearch.trim().toLowerCase();
+
+  const groups = useMemo(() => {
+    const matching = term
+      ? menuItems.filter((item) => item.name.toLowerCase().includes(term))
+      : menuItems;
+    return groupMenuItems(matching, recipes);
+  }, [menuItems, recipes, term]);
+
+  const orphans = useMemo(() => {
+    const loose = orphanRecipes(menuItems, recipes);
+    return (term
+      ? loose.filter((r) => r.name.toLowerCase().includes(term))
+      : loose
+    ).map(orphanRow);
+  }, [menuItems, recipes, term]);
+
+  const totals = useMemo(() => {
+    const mapped = groups.reduce((sum, g) => sum + g.mapped, 0);
+    const unmapped = groups.reduce((sum, g) => sum + g.unmapped, 0);
+    return { mapped, unmapped, total: mapped + unmapped };
+  }, [groups]);
 
   const handleDelete = (recipe: ItemRecipe) => {
     modal.confirm({
@@ -69,7 +123,7 @@ export default function ItemRecipesPage() {
       content: (
         <span>
           <strong>{recipe.name}</strong> and its components will be removed
-          permanently.
+          permanently. The menu item itself is untouched.
         </span>
       ),
       okText: "Delete",
@@ -86,7 +140,7 @@ export default function ItemRecipesPage() {
             return;
           }
           messageApi.success("Item recipe deleted");
-          loadRecipes();
+          load();
         } catch {
           messageApi.error("Network error — please try again");
         }
@@ -125,71 +179,144 @@ export default function ItemRecipesPage() {
   const handleImported = (text: string) => {
     setImportOpen(false);
     messageApi.success(`Import complete — ${text}`);
-    loadRecipes();
+    load();
   };
 
-  const columns: ColumnsType<ItemRecipe> = [
+  const columns: ColumnsType<MenuRecipeRow> = [
     {
-      title: "Name",
-      dataIndex: "name",
-      render: (value: string, row) => (
-        <span className="font-medium text-gray-900">
-          {value}
-          <span className="ml-2 text-xs font-normal text-gray-500">
-            {row.lines.length} component{row.lines.length === 1 ? "" : "s"}
-          </span>
+      title: "Item",
+      key: "name",
+      render: (_: unknown, row) => (
+        <span className="inline-flex items-center gap-2">
+          <span className="font-medium text-gray-900">{row.menuItem.name}</span>
+          {row.menuItem.hidden && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600"
+              title="Hidden on the storefront"
+            >
+              <EyeInvisibleOutlined /> Hidden
+            </span>
+          )}
         </span>
       ),
     },
     {
-      title: "Costing",
-      dataIndex: "totalCost",
+      title: "Status",
+      key: "status",
+      width: 200,
+      render: (_: unknown, row) =>
+        row.mapped ? (
+          <span className="inline-flex items-center rounded-md border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+            Mapped
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800"
+            title={
+              row.recipe
+                ? "A recipe exists but lists no components"
+                : "No recipe has been written for this item"
+            }
+          >
+            {row.recipe ? "Unmapped · empty recipe" : "Unmapped"}
+          </span>
+        ),
+    },
+    {
+      title: "Components",
+      key: "components",
       align: "right",
-      width: 180,
-      sorter: (a, b) => a.totalCost - b.totalCost,
-      render: (value: number) => (
-        <span className="whitespace-nowrap tabular-nums text-gray-900">
-          {formatCurrency(value)}
-        </span>
-      ),
+      width: 140,
+      render: (_: unknown, row) =>
+        row.recipe ? (
+          <span className="tabular-nums text-gray-700">
+            {row.recipe.lines.length}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">—</span>
+        ),
+    },
+    {
+      title: "Costing",
+      key: "totalCost",
+      align: "right",
+      width: 160,
+      render: (_: unknown, row) =>
+        row.recipe ? (
+          <span className="whitespace-nowrap tabular-nums text-gray-900">
+            {formatCurrency(row.recipe.totalCost)}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">—</span>
+        ),
     },
     {
       title: "Actions",
       key: "actions",
       align: "right",
-      width: 140,
-      render: (_, row) => (
-        <div className="flex items-center justify-end gap-1">
+      width: 170,
+      render: (_: unknown, row) =>
+        row.recipe ? (
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={() => router.push(`${BASE_PATH}/${row.recipe!._id}/edit`)}
+              aria-label={`Edit recipe for ${row.menuItem.name}`}
+              title="Edit"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#024731] transition-colors"
+            >
+              <EditOutlined />
+            </button>
+            <button
+              onClick={() => setViewing(row.recipe)}
+              aria-label={`View components in ${row.menuItem.name}`}
+              title="View components"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#024731] transition-colors"
+            >
+              <UnorderedListOutlined />
+            </button>
+            <button
+              onClick={() => handleDelete(row.recipe!)}
+              aria-label={`Delete recipe for ${row.menuItem.name}`}
+              title="Delete"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <DeleteOutlined />
+            </button>
+          </div>
+        ) : (
+          // Straight into the form with the menu item's name filled in, so the
+          // recipe matches back to it without anyone retyping it.
           <button
-            onClick={() => router.push(`${BASE_PATH}/${row._id}/edit`)}
-            aria-label={`Edit ${row.name}`}
-            title="Edit"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#024731] transition-colors"
+            onClick={() =>
+              router.push(
+                `${BASE_PATH}/new?name=${encodeURIComponent(row.menuItem.name)}`,
+              )
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#024731] transition-colors"
           >
-            <EditOutlined />
+            <PlusOutlined />
+            Map recipe
           </button>
-          <button
-            onClick={() => setViewing(row)}
-            aria-label={`View components in ${row.name}`}
-            title="View components"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#024731] transition-colors"
-          >
-            <UnorderedListOutlined />
-          </button>
-          <button
-            onClick={() => handleDelete(row)}
-            aria-label={`Delete ${row.name}`}
-            title="Delete"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-          >
-            <DeleteOutlined />
-          </button>
-        </div>
-      ),
+        ),
     },
   ];
 
-  const filtersActive = !!appliedSearch.trim();
+  const renderTable = (rows: MenuRecipeRow[]) => (
+    <Table<MenuRecipeRow>
+      rowKey={(row) => row.menuItem._id}
+      columns={columns}
+      dataSource={rows}
+      size="small"
+      scroll={{ x: "max-content" }}
+      pagination={
+        rows.length > 25
+          ? { pageSize: 25, showSizeChanger: false }
+          : false
+      }
+    />
+  );
+
+  const filtersActive = !!term;
 
   return (
     <div>
@@ -202,8 +329,9 @@ export default function ItemRecipesPage() {
             Item Recipe
           </h1>
           <p className="mt-1 text-sm text-gray-600">
-            What each menu item is made of — raw materials, production items, or
-            both. Costing is calculated from the components.
+            Every menu item from the admin console, by category. Mapped means
+            the item has a recipe listing the raw materials and production items
+            it is made of; costing is calculated from those components.
           </p>
         </div>
         <button
@@ -215,14 +343,29 @@ export default function ItemRecipesPage() {
         </button>
       </div>
 
+      {!loading && totals.total > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="inline-flex items-center rounded-md border border-green-200 bg-green-50 px-2.5 py-1 font-semibold text-green-700">
+            {totals.mapped} mapped
+          </span>
+          <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">
+            {totals.unmapped} unmapped
+          </span>
+          <span className="text-gray-500">
+            of {totals.total} menu item{totals.total === 1 ? "" : "s"}
+            {filtersActive ? " matching that search" : ""}
+          </span>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[220px] max-w-md">
           <SearchOutlined className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name…"
-            aria-label="Search item recipes by name"
+            placeholder="Search by item name…"
+            aria-label="Search menu items by name"
             className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]"
           />
         </div>
@@ -247,50 +390,87 @@ export default function ItemRecipesPage() {
 
       {filtersActive && !loading && (
         <p className="mt-3 text-xs text-gray-500">
-          Showing {recipes.length} filtered result
-          {recipes.length === 1 ? "" : "s"} — Download Excel exports this view.
+          Download Excel exports the recipes matching this search, not the menu.
         </p>
       )}
 
-      <div className="mt-4 rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <Table<ItemRecipe>
-          rowKey={(row) => String(row._id)}
-          columns={columns}
-          dataSource={recipes}
-          loading={loading}
-          scroll={{ x: "max-content" }}
-          pagination={{
-            pageSize: 20,
-            showSizeChanger: true,
-            pageSizeOptions: ["10", "20", "50", "100"],
-            showTotal: (total, range) => `${range[0]}–${range[1]} of ${total}`,
-          }}
-          locale={{
-            emptyText: (
-              <div className="py-10 text-center">
-                <p className="text-sm font-medium text-gray-900">
-                  {filtersActive
-                    ? "No item recipes match that search"
-                    : "No item recipes yet"}
-                </p>
-                <p className="mt-1 text-sm text-gray-500">
-                  {filtersActive
-                    ? "Try a different name."
-                    : "Add one and build it from raw materials and production items."}
-                </p>
-                {!filtersActive && (
-                  <button
-                    onClick={() => router.push(`${BASE_PATH}/new`)}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#1c1c1c] px-4 py-2 text-sm font-medium text-white hover:bg-[#024731] transition-colors"
-                  >
-                    <PlusOutlined />
-                    Add Item Recipe
-                  </button>
-                )}
-              </div>
-            ),
-          }}
-        />
+      <div className="mt-4">
+        {loading ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
+            Loading menu…
+          </div>
+        ) : groups.length === 0 && orphans.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white py-10 text-center">
+            <p className="text-sm font-medium text-gray-900">
+              {filtersActive
+                ? "No menu items match that search"
+                : "No menu items yet"}
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              {filtersActive
+                ? "Try a different name."
+                : "Add items under Menu in the admin console, then map each one here."}
+            </p>
+          </div>
+        ) : (
+          <Collapse
+            // Everything open by default: the point of the screen is seeing at
+            // a glance what is still unmapped, which a collapsed list hides.
+            defaultActiveKey={[
+              ...groups.map((g) => g.categoryId || g.categoryName),
+              "orphans",
+            ]}
+            items={[
+              ...groups.map((group) => ({
+                key: group.categoryId || group.categoryName,
+                label: (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-gray-900">
+                      {group.categoryName}
+                    </span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                      {group.rows.length}
+                    </span>
+                    {group.mapped > 0 && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">
+                        {group.mapped} mapped
+                      </span>
+                    )}
+                    {group.unmapped > 0 && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        {group.unmapped} unmapped
+                      </span>
+                    )}
+                  </span>
+                ),
+                children: renderTable(group.rows),
+              })),
+              // Recipes whose menu item was renamed or removed. Listed so they
+              // stay reachable instead of vanishing from a menu-shaped view.
+              ...(orphans.length > 0
+                ? [
+                    {
+                      key: "orphans",
+                      label: (
+                        <span className="inline-flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-gray-900">
+                            Not on the menu
+                          </span>
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                            {orphans.length}
+                          </span>
+                          <span className="text-xs font-normal text-gray-500">
+                            recipes with no matching menu item
+                          </span>
+                        </span>
+                      ),
+                      children: renderTable(orphans),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        )}
       </div>
 
       <ViewItemRecipeModal

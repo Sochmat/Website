@@ -125,6 +125,53 @@ export function computeCost(
   };
 }
 
+/** How much of one raw material a quantity of a production item draws down. */
+export interface ConsumedMaterial {
+  rawMaterialId: string;
+  /** In that raw material's consumptionUnit. */
+  qty: number;
+}
+
+/**
+ * Raw material consumed by producing `producedQty` of an item.
+ *
+ * A recipe yields `batchYieldQty` of the item (in its consumptionUnit) from
+ * the listed quantities, so scaling is linear:
+ *
+ *   consumed = qtyUsed × (producedQty ÷ batchYieldQty)
+ *
+ * e.g. a recipe yielding 100 gm from 50 gm each of B and C, produced 100 gm,
+ * consumes 50 gm of each.
+ *
+ * Returns exact numbers — the caller decides how to round them. A zero or
+ * missing batch yield cannot be scaled from, and a non-positive produced
+ * quantity consumes nothing; both yield an empty list rather than Infinity or
+ * a negative draw-down. Lines are summed per material, so a recipe naming the
+ * same material twice draws down once.
+ */
+export function recipeConsumption(
+  recipe: ProductionRecipeLine[],
+  batchYieldQty: number,
+  producedQty: number,
+): ConsumedMaterial[] {
+  if (!Number.isFinite(batchYieldQty) || batchYieldQty <= 0) return [];
+  if (!Number.isFinite(producedQty) || producedQty <= 0) return [];
+
+  const factor = producedQty / batchYieldQty;
+  const byMaterial = new Map<string, number>();
+
+  for (const line of recipe) {
+    const qtyUsed = Number.isFinite(line.qtyUsed) ? line.qtyUsed : 0;
+    if (!line.rawMaterialId || qtyUsed <= 0) continue;
+    byMaterial.set(
+      line.rawMaterialId,
+      (byMaterial.get(line.rawMaterialId) ?? 0) + qtyUsed * factor,
+    );
+  }
+
+  return [...byMaterial].map(([rawMaterialId, qty]) => ({ rawMaterialId, qty }));
+}
+
 export interface ProductionItemInput {
   name?: unknown;
   consumptionUnit?: unknown;

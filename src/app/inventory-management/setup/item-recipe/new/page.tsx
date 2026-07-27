@@ -1,8 +1,21 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import ItemRecipeForm from "@/components/inventory/ItemRecipeForm";
+
+/**
+ * Reads the `name` the list screen passes when mapping a menu item.
+ *
+ * Split out behind Suspense because useSearchParams opts the whole route out
+ * of prerendering unless the read is isolated like this.
+ */
+function NewItemRecipeForm() {
+  const initialName = useSearchParams().get("name") ?? "";
+  return <ItemRecipeForm recipe={null} initialName={initialName} />;
+}
 
 export default function NewItemRecipePage() {
   return (
@@ -20,10 +33,13 @@ export default function NewItemRecipePage() {
       </h1>
       <p className="mt-1 text-sm text-gray-600">
         Name the item, then add its components — the cost is calculated for you.
+        A recipe is matched to its menu item by name, so keep the two identical.
       </p>
 
       <div className="mt-5">
-        <ItemRecipeForm recipe={null} />
+        <Suspense fallback={null}>
+          <NewItemRecipeForm />
+        </Suspense>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
   ArrowLeftOutlined,
   DashboardOutlined,
   SlidersOutlined,
+  PlusSquareOutlined,
   DatabaseOutlined,
   SettingOutlined,
   DownOutlined,
@@ -51,8 +52,13 @@ const NAV_ITEMS: {
   },
   {
     href: "/inventory-management/adjustment",
-    label: "Adjustment",
+    label: "Audit",
     icon: <SlidersOutlined />,
+  },
+  {
+    href: "/inventory-management/add-stock",
+    label: "Add Stock",
+    icon: <PlusSquareOutlined />,
   },
   {
     href: "/inventory-management/stocks",
