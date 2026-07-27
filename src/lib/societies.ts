@@ -60,6 +60,7 @@ export const SOCIETIES: Society[] = [
       { orderBefore: "12:30", getTill: "13:00" },
       { orderBefore: "13:30", getTill: "14:00" },
       { orderBefore: "14:30", getTill: "15:00" },
+      { orderBefore: "15:00", getTill: "15:30" },
     ],
     offersFirstOrderDiscount: true,
   },
