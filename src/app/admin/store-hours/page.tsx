@@ -1,23 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { parseHHMM, toHHMM, formatMinutesLabel } from "@/lib/ist";
-import { Button, DatePicker, Tag, message } from "antd";
+import { toHHMM, weekdayName } from "@/lib/ist";
+import {
+  emptyWeek,
+  DAYS_IN_WEEK,
+  type StoreWindow,
+  type WeeklyHours,
+} from "@/lib/storeHours";
+import { Button, DatePicker, Switch, Tag, message } from "antd";
+import { Plus, Trash2, Copy } from "lucide-react";
 
 interface ScheduleState {
   scheduleEnabled: boolean;
-  openMinutes: number;
-  closeMinutes: number;
+  weeklyHours: WeeklyHours;
   effectiveOpen: boolean;
   overrideActive: boolean;
+  opensAtLabel: string | null;
+}
+
+/** "HH:MM" → minutes, accepting "24:00" for a window that runs to midnight. */
+function toMinutes(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const mins = Number(m[1]) * 60 + Number(m[2]);
+  return mins >= 0 && mins <= 1440 ? mins : null;
 }
 
 export default function StoreHoursPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [enabled, setEnabled] = useState(true);
-  const [openTime, setOpenTime] = useState("11:00");
-  const [closeTime, setCloseTime] = useState("22:30");
+  const [week, setWeek] = useState<WeeklyHours>(emptyWeek);
   const [live, setLive] = useState<ScheduleState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -29,8 +43,11 @@ export default function StoreHoursPage() {
   // runs its fetch in an inline async IIFE and calls this only after awaiting.
   const applyData = useCallback((data: ScheduleState) => {
     setEnabled(data.scheduleEnabled);
-    setOpenTime(toHHMM(data.openMinutes));
-    setCloseTime(toHHMM(data.closeMinutes));
+    setWeek(
+      Array.isArray(data.weeklyHours) && data.weeklyHours.length === DAYS_IN_WEEK
+        ? data.weeklyHours.map((day) => day.map((w) => ({ ...w })))
+        : emptyWeek(),
+    );
     setLive(data);
   }, []);
 
@@ -83,28 +100,60 @@ export default function StoreHoursPage() {
     }
   };
 
+  // Day-row mutators. Each rebuilds the week immutably so React sees the change.
+  const editDay = (dayIndex: number, fn: (windows: StoreWindow[]) => StoreWindow[]) =>
+    setWeek((prev) => prev.map((day, i) => (i === dayIndex ? fn(day) : day)));
+
+  const addWindow = (dayIndex: number) => {
+    const windows = week[dayIndex];
+    // Start where the last one ended, so the new window never overlaps on sight.
+    const lastClose = windows.length ? windows[windows.length - 1].close : 11 * 60;
+    if (lastClose >= 1440) {
+      message.info("That day already runs to midnight.");
+      return;
+    }
+    editDay(dayIndex, (prev) => [
+      ...prev,
+      { open: lastClose, close: Math.min(lastClose + 120, 1440) },
+    ]);
+  };
+
+  const removeWindow = (dayIndex: number, at: number) =>
+    editDay(dayIndex, (windows) => windows.filter((_, i) => i !== at));
+
+  const setWindowTime = (
+    dayIndex: number,
+    at: number,
+    field: "open" | "close",
+    value: string,
+  ) => {
+    const parsed = toMinutes(value);
+    if (parsed === null) return;
+    // <input type="time"> cannot express 24:00, so a close of 23:59 is taken to
+    // mean midnight. Storing 1439 instead would shut the store a minute early
+    // and make the value fail to round-trip through the box it was typed into.
+    const mins = field === "close" && parsed === 1439 ? 1440 : parsed;
+    editDay(dayIndex, (windows) =>
+      windows.map((w, i) => (i === at ? { ...w, [field]: mins } : w)),
+    );
+  };
+
+  const setDayClosed = (dayIndex: number, closed: boolean) =>
+    editDay(dayIndex, (windows) =>
+      closed ? [] : windows.length ? windows : [{ open: 11 * 60, close: 22 * 60 + 30 }],
+    );
+
+  const copyToAllDays = (dayIndex: number) =>
+    setWeek((prev) => prev.map(() => prev[dayIndex].map((w) => ({ ...w }))));
+
   const save = async () => {
-    const openMinutes = parseHHMM(openTime);
-    const closeMinutes = parseHHMM(closeTime);
-    if (openMinutes === null || closeMinutes === null) {
-      setError("Please enter valid times.");
-      return;
-    }
-    if (enabled && openMinutes === closeMinutes) {
-      setError("Open and close times can't be identical.");
-      return;
-    }
     setError(null);
     setSaving(true);
     try {
       const res = await fetch("/api/admin/store-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduleEnabled: enabled,
-          openMinutes,
-          closeMinutes,
-        }),
+        body: JSON.stringify({ scheduleEnabled: enabled, weeklyHours: week }),
       });
       const data = await res.json();
       if (data?.success) {
@@ -140,16 +189,14 @@ export default function StoreHoursPage() {
     setSavingHolidays(false);
   };
 
-  const openMin = parseHHMM(openTime);
-  const closeMin = parseHHMM(closeTime);
-
   return (
     <div className="p-6 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold text-[#111] mb-1">Store hours</h1>
       <p className="text-sm text-gray-500 mb-6">
-        Automatically open and close the store on a daily schedule. The manual
-        Store ON/OFF button still works — it overrides the schedule until the
-        next open or close time.
+        Automatically open and close the store on a weekly schedule. Each day
+        can hold several windows — a lunch and a dinner service, say — or none
+        at all to shut for the day. The manual Store ON/OFF button still works:
+        it overrides the schedule until the next open or close time.
       </p>
 
       {loading ? (
@@ -170,7 +217,8 @@ export default function StoreHoursPage() {
                 {!live.overrideActive &&
                   live.scheduleEnabled &&
                   !live.effectiveOpen &&
-                  ` — opens at ${formatMinutesLabel(live.openMinutes)}`}
+                  live.opensAtLabel &&
+                  ` — opens ${live.opensAtLabel}`}
               </div>
             )}
 
@@ -186,37 +234,86 @@ export default function StoreHoursPage() {
               </span>
             </label>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  Opens at
-                </label>
-                <input
-                  type="time"
-                  value={openTime}
-                  onChange={(e) => setOpenTime(e.target.value)}
-                  disabled={!enabled}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  Closes at
-                </label>
-                <input
-                  type="time"
-                  value={closeTime}
-                  onChange={(e) => setCloseTime(e.target.value)}
-                  disabled={!enabled}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50"
-                />
-              </div>
+            <div
+              className={`divide-y divide-gray-100 ${enabled ? "" : "opacity-50 pointer-events-none"}`}
+            >
+              {week.map((windows, dayIndex) => {
+                const closed = windows.length === 0;
+                return (
+                  <div key={dayIndex} className="py-3 first:pt-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[#111] font-medium w-24 shrink-0">
+                        {weekdayName(dayIndex)}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          size="small"
+                          checked={!closed}
+                          onChange={(on) => setDayClosed(dayIndex, !on)}
+                        />
+                        <span className="text-sm text-gray-500 w-12">
+                          {closed ? "Closed" : "Open"}
+                        </span>
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Copy size={14} />}
+                          title="Copy this day to all days"
+                          onClick={() => copyToAllDays(dayIndex)}
+                        />
+                      </div>
+                    </div>
+
+                    {!closed && (
+                      <div className="mt-2 space-y-2 pl-24">
+                        {windows.map((w, at) => (
+                          <div key={at} className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={toHHMM(w.open)}
+                              onChange={(e) =>
+                                setWindowTime(dayIndex, at, "open", e.target.value)
+                              }
+                              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <span className="text-gray-400 text-sm">to</span>
+                            <input
+                              type="time"
+                              value={w.close === 1440 ? "23:59" : toHHMM(w.close)}
+                              onChange={(e) =>
+                                setWindowTime(dayIndex, at, "close", e.target.value)
+                              }
+                              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm"
+                            />
+                            <Button
+                              size="small"
+                              type="text"
+                              danger
+                              icon={<Trash2 size={14} />}
+                              onClick={() => removeWindow(dayIndex, at)}
+                            />
+                          </div>
+                        ))}
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<Plus size={14} />}
+                          onClick={() => addWindow(dayIndex)}
+                          className="!px-0"
+                        >
+                          Add window
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            {enabled && openMin !== null && closeMin !== null && (
+            {enabled && (
               <p className="text-xs text-gray-500">
-                Open daily from {formatMinutesLabel(openMin)} to{" "}
-                {formatMinutesLabel(closeMin)} (IST).
+                All times are IST. A window is open from its start time up to,
+                but not including, its end time.
               </p>
             )}
 

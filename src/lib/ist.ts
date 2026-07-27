@@ -71,10 +71,20 @@ export function istMonth(date: string): string {
   return date.slice(0, 7);
 }
 
+/** 0 = Sunday … 6 = Saturday for an IST calendar date, matching `getUTCDay`. */
+export function istWeekdayIndex(date: string): number {
+  const [y, m, d] = parts(date);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
 /** "Monday" … "Sunday" for an IST calendar date. */
 export function istWeekday(date: string): string {
-  const [y, m, d] = parts(date);
-  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return WEEKDAYS[istWeekdayIndex(date)];
+}
+
+/** "Sunday" … "Saturday", indexed the same way as `istWeekdayIndex`. */
+export function weekdayName(index: number): string {
+  return WEEKDAYS[((index % 7) + 7) % 7];
 }
 
 /** Current IST time-of-day as minutes since midnight (0–1439). */

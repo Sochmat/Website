@@ -6,6 +6,7 @@ import {
   DEFAULT_CLOSE_MINUTES,
   type StoreSettingsDoc,
 } from "@/lib/storeState";
+import { normalizeWeeklyHours, uniformWeek } from "@/lib/storeHours";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,18 @@ export async function GET() {
         scheduleEnabled: store?.scheduleEnabled === true,
         openMinutes: store?.openMinutes ?? DEFAULT_OPEN_MINUTES,
         closeMinutes: store?.closeMinutes ?? DEFAULT_CLOSE_MINUTES,
+        // Never null: an installation still on the legacy pair gets seven
+        // copies of it, purely so the editor opens on today's real hours.
+        weeklyHours:
+          store?.weeklyHours ??
+          uniformWeek(
+            store?.openMinutes ?? DEFAULT_OPEN_MINUTES,
+            store?.closeMinutes ?? DEFAULT_CLOSE_MINUTES,
+          ),
+        usingWeeklyHours: Array.isArray(store?.weeklyHours),
         effectiveOpen: eff.open,
         overrideActive: eff.overrideActive,
+        opensAtLabel: eff.opensAtLabel,
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -37,11 +48,7 @@ export async function GET() {
   }
 }
 
-function isMinute(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1439;
-}
-
-/** Update the auto-hours config. Body: { scheduleEnabled, openMinutes, closeMinutes }. */
+/** Update the auto-hours config. Body: { scheduleEnabled, weeklyHours }. */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -51,12 +58,13 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    if (!isMinute(body.openMinutes) || !isMinute(body.closeMinutes)) {
+
+    // The single validation gate: sorts each day and rejects overlaps, so the
+    // read-side helpers can assume a sorted, non-overlapping week.
+    const parsed = normalizeWeeklyHours(body.weeklyHours);
+    if (!parsed.ok) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "openMinutes/closeMinutes must be integers 0–1439",
-        },
+        { success: false, message: parsed.message },
         { status: 400 },
       );
     }
@@ -68,8 +76,7 @@ export async function POST(request: NextRequest) {
         $set: {
           key: "store",
           scheduleEnabled: body.scheduleEnabled,
-          openMinutes: body.openMinutes,
-          closeMinutes: body.closeMinutes,
+          weeklyHours: parsed.value,
           updatedAt: new Date(),
         },
       },
