@@ -1,0 +1,178 @@
+// Petpooja item lists — what was sold on the POS, uploaded as a sheet.
+//
+// Orders placed on the website arrive one at a time and carry their own items.
+// Petpooja is the other counter: it keeps its own record, and what it sold
+// reaches us as a spreadsheet of item names and quantities. Each upload is
+// kept whole, as one dated entry, rather than merged into a running total —
+// so an upload can always be read back exactly as it was given.
+//
+// Pure logic — no ExcelJS, no Mongo. See petpoojaUpload.test.ts.
+
+import { normalizeMaterialName } from "./rawMaterials";
+
+/** Sheet headers, in order. Both are required. */
+export const PETPOOJA_SHEET_COLUMNS = ["Item Name", "Qty"] as const;
+
+/** One document per entry, uploaded or typed in. */
+export const PETPOOJA_UPLOADS_COLLECTION = "petpoojaUploads";
+
+/**
+ * How an entry was recorded.
+ *
+ * "upload" — a sheet dropped on the Petpooja tab.
+ * "manual" — items picked and quantities typed in Bulk Orders Update.
+ *
+ * Both mean the same thing (these items sold, this many times) and spend stock
+ * identically; the source is kept only so the table can say where it came from.
+ * Entries written before manual entry existed carry no source and are uploads.
+ */
+export type PetpoojaEntrySource = "upload" | "manual";
+
+/** One row as it came off the sheet, header-keyed. */
+export type PetpoojaSheetRow = Record<string, unknown>;
+
+/** An item and how many of it were sold. */
+export interface PetpoojaItem {
+  name: string;
+  /** normalizeMaterialName(name) — the key everything else matches on. */
+  nameKey: string;
+  qty: number;
+}
+
+/** A row that could not be used, and why. */
+export interface PetpoojaRowError {
+  /** 1-indexed worksheet row, so the user can go straight to it. */
+  rowNumber: number;
+  name: string;
+  reason: string;
+}
+
+export interface ParsedPetpoojaUpload {
+  items: PetpoojaItem[];
+  errors: PetpoojaRowError[];
+  /** Data rows read, before merging duplicates or dropping bad ones. */
+  rowsRead: number;
+}
+
+/** Accepts "1,000" and " 12.5 "; rejects "" and "abc". */
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/,/g, "").trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Kill float noise (0.30000000000000004) without truncating real decimals. */
+function roundQty(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Turn sheet rows into the item list an upload records.
+ *
+ * The same item listed twice is SUMMED, not rejected: a POS export routinely
+ * repeats an item across the day, and two lines for it are two sales, not a
+ * contradiction. Matching uses the same normalized name as everything else in
+ * the inventory console, so "Dal Rice", "dal  rice" and "Dal Rice." are one
+ * item — recorded under the first spelling seen.
+ *
+ * Bad rows are collected rather than thrown: one blank quantity in a hundred
+ * rows should not cost the user the whole upload. The caller decides what to
+ * do with them.
+ */
+export function parsePetpoojaRows(
+  rows: PetpoojaSheetRow[],
+  rowNumberOf: (row: PetpoojaSheetRow, index: number) => number,
+): ParsedPetpoojaUpload {
+  const byKey = new Map<string, PetpoojaItem>();
+  const errors: PetpoojaRowError[] = [];
+
+  rows.forEach((row, index) => {
+    const rowNumber = rowNumberOf(row, index);
+    const name = String(row["Item Name"] ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!name) {
+      errors.push({ rowNumber, name: "", reason: "Item name is required" });
+      return;
+    }
+
+    const qty = toNumber(row["Qty"]);
+    if (qty === null) {
+      errors.push({ rowNumber, name, reason: "Qty must be a number" });
+      return;
+    }
+    // Zero is a valid stock level but not a valid sale — a row saying nothing
+    // was sold carries no information worth recording.
+    if (qty <= 0) {
+      errors.push({ rowNumber, name, reason: "Qty must be greater than 0" });
+      return;
+    }
+
+    const nameKey = normalizeMaterialName(name);
+    const existing = byKey.get(nameKey);
+    if (existing) existing.qty = roundQty(existing.qty + qty);
+    else byKey.set(nameKey, { name, nameKey, qty: roundQty(qty) });
+  });
+
+  return { items: [...byKey.values()], errors, rowsRead: rows.length };
+}
+
+/** An upload without its items — what the list view needs. */
+export interface PetpoojaUploadSummary {
+  _id: string;
+  /** ISO instant. */
+  uploadedAt: string;
+  /** The session role that recorded it; the console has no per-user identity. */
+  uploadedByRole: string;
+  source: PetpoojaEntrySource;
+  /** The uploaded file's name; blank on a manual entry. */
+  fileName: string;
+  /** Distinct items, after duplicates were summed. */
+  totalItems: number;
+  totalQty: number;
+  /** Rows the parser refused; 0 on a clean file. */
+  skippedRows: number;
+  /** Stock rows this upload deducted, across both kinds. */
+  stockRows: number;
+  /** Deducted rows the shelf could not cover in full. */
+  shortfallRows: number;
+  /** Uploaded items with no item recipe — nothing was deducted for these. */
+  unmapped: string[];
+  /** Set when the deduction failed; the item list was still recorded. */
+  consumptionError?: string;
+}
+
+/**
+ * A stock row this upload moved, as the details view shows it.
+ *
+ * A projection of stockAudits' AuditLine, which is what the deduction actually
+ * writes — only the fields worth reading back are carried across the wire.
+ */
+export interface PetpoojaStockLine {
+  id: string;
+  name: string;
+  unit: string;
+  /** null = nothing was on record; the whole draw-down is a shortfall. */
+  previousStock: number | null;
+  closingStock: number;
+  consumedQty: number;
+  /** How much of consumedQty the shelf could not cover. 0 when it was fine. */
+  shortfall: number;
+}
+
+/** An upload with everything it recorded — what the details view shows. */
+export interface PetpoojaUploadDetail extends PetpoojaUploadSummary {
+  items: PetpoojaItem[];
+  errors: PetpoojaRowError[];
+  productionLines: PetpoojaStockLine[];
+  rawLines: PetpoojaStockLine[];
+}
+
+/** Total quantity across an upload, for the list view's headline figure. */
+export function totalQty(items: PetpoojaItem[]): number {
+  return roundQty(items.reduce((sum, item) => sum + item.qty, 0));
+}

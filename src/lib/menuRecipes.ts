@@ -27,6 +27,15 @@ export interface MenuItemSummary {
 /** Shown when a menu item names no category, or one that no longer exists. */
 export const UNCATEGORISED = "Uncategorised";
 
+/** Something that can be recorded as sold — see /api/admin/sellable-items. */
+export interface SellableItem {
+  name: string;
+  /** normalizeMaterialName(name) — matches the recipe a deduction would use. */
+  nameKey: string;
+  /** False when no recipe backs it: recording it deducts nothing. */
+  mapped: boolean;
+}
+
 /** A menu item paired with the recipe that defines it, if there is one. */
 export interface MenuRecipeRow {
   menuItem: MenuItemSummary;
@@ -48,7 +57,9 @@ export interface MenuRecipeGroup {
  * A recipe that exists but lists nothing is NOT mapped: an empty shell says
  * only that someone opened the form, not what the item is made of.
  */
-export function isMapped(recipe: ItemRecipe | null | undefined): boolean {
+export function isMapped(
+  recipe: ItemRecipe | null | undefined,
+): recipe is ItemRecipe {
   return !!recipe && recipe.lines.length > 0;
 }
 

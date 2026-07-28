@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   ObjectId,
   type AnyBulkWriteOperation,
-  type Db,
   type Document,
 } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
@@ -10,6 +9,7 @@ import {
   PRODUCTION_ITEMS_COLLECTION,
   RAW_MATERIALS_COLLECTION,
   STOCK_AUDITS_COLLECTION,
+  drawDownStock,
   isValidId,
 } from "@/lib/inventoryDb";
 import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
@@ -17,7 +17,6 @@ import { pricePerConsumptionUnit } from "@/lib/rawMaterials";
 import { parseStockQty } from "@/lib/stockAdjustment";
 import {
   buildAdditionLine,
-  buildConsumptionLine,
   summarizeAuditLines,
   type AuditKind,
   type AuditLine,
@@ -39,74 +38,6 @@ const COLLECTION: Record<AuditKind, string> = {
 interface UpdateInput {
   id?: unknown;
   addQty?: unknown;
-}
-
-/**
- * Take `owed` off the raw materials, and report what that did.
- *
- * Written with a computed $set rather than $inc because the quantity is
- * floored at zero: a draw-down bigger than what is on record means the
- * material was under-counted, and the shelf cannot go negative. The read and
- * the write are therefore not atomic — acceptable here, where the alternative
- * is storing a quantity nobody could ever have had.
- *
- * Ids that no longer exist are skipped: a recipe pointing at a deleted
- * material has nothing to spend.
- */
-async function consumeRawMaterials(
-  db: Db,
-  owed: Map<string, number>,
-  now: Date,
-): Promise<AuditLine[]> {
-  const ids = [...owed.keys()].filter(isValidId);
-  if (ids.length === 0) return [];
-
-  const collection = db.collection(RAW_MATERIALS_COLLECTION);
-  const docs = await collection
-    .find(
-      { _id: { $in: ids.map((id) => new ObjectId(id)) } },
-      {
-        projection: {
-          name: 1,
-          consumptionUnit: 1,
-          currentStock: 1,
-          pricePerPurchaseUnit: 1,
-          unitConversion: 1,
-        },
-      },
-    )
-    .toArray();
-
-  const lines = docs.map((doc) =>
-    buildConsumptionLine({
-      id: String(doc._id),
-      name: String(doc.name ?? ""),
-      unit: String(doc.consumptionUnit ?? ""),
-      previousStock:
-        typeof doc.currentStock === "number" ? doc.currentStock : null,
-      consumedQty: owed.get(String(doc._id)) ?? 0,
-      unitCost: pricePerConsumptionUnit({
-        pricePerPurchaseUnit: Number(doc.pricePerPurchaseUnit ?? 0),
-        unitConversion: Number(doc.unitConversion ?? 0),
-      }),
-    }),
-  );
-
-  if (lines.length > 0) {
-    await collection.bulkWrite(
-      lines.map((line) => ({
-        updateOne: {
-          filter: { _id: new ObjectId(line.id) },
-          update: {
-            $set: { currentStock: line.closingStock, updatedAt: now },
-          },
-        },
-      })),
-      { ordered: false },
-    );
-  }
-
-  return lines;
 }
 
 /**
@@ -296,7 +227,12 @@ export async function POST(request: NextRequest) {
     // Spend the ingredients. Done after the production write, so a failure
     // here leaves stock added but not deducted — recoverable by hand, unlike
     // the reverse, which would take stock away for something never recorded.
-    const consumedLines = await consumeRawMaterials(db, owed, now);
+    const consumedLines = await drawDownStock(
+      db,
+      RAW_MATERIALS_COLLECTION,
+      owed,
+      now,
+    );
 
     const session = await verifySession(request.cookies.get(ADMIN_COOKIE)?.value);
     // Written after the stock, so a failed write is never recorded as history.

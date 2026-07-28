@@ -3,6 +3,7 @@ import { Db, ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
+import { consumeStockForOrder, type OrderStockResult } from "@/lib/orderStock";
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID!,
@@ -348,11 +349,32 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    // Delivery is when the food actually leaves, so it is when the inventory
+    // is spent: every item's recipe draws down the production items and raw
+    // materials behind it. Runs once per order — see consumeStockForOrder.
+    //
+    // Never allowed to fail the status update: the order IS delivered, and
+    // saying otherwise would have the admin click again. A failure is logged,
+    // marked on the order, and reported alongside the success.
+    let stockConsumption: OrderStockResult | undefined;
+    let stockConsumptionError: string | undefined;
+    if (update.status === "delivered") {
+      try {
+        stockConsumption = await consumeStockForOrder(db, _id);
+      } catch (err) {
+        console.error("Stock deduction failed for order", id, err);
+        stockConsumptionError =
+          "Order marked delivered, but stock could not be deducted";
+      }
+    }
+
     return NextResponse.json({
       success: true,
       kotNumber,
       billNumber,
       confirmedAt,
+      stockConsumption,
+      stockConsumptionError,
     });
   } catch (error) {
     console.error("Error updating order:", error);

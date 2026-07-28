@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Table, Select, Button, Popconfirm, Tag, message } from "antd";
+import { Table, Select, Button, Popconfirm, Tabs, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import PetpoojaUploads from "@/components/admin/PetpoojaUploads";
 import { SOCIETIES } from "@/lib/societies";
 import { REFERRAL_REWARD } from "@/lib/walletMath";
 
@@ -24,6 +25,36 @@ function formatElapsed(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** What the PATCH response reports about the stock a delivery spent. */
+interface StockConsumption {
+  rawRows?: number;
+  productionRows?: number;
+  shortfallRows?: number;
+  unmapped?: string[];
+}
+
+/**
+ * The tail of the "Updated" toast for a delivered order.
+ *
+ * Names the two things worth knowing at that moment: an item nobody has
+ * written a recipe for (so nothing came off the shelf for it), and stock the
+ * shelf could not cover (so the count was already wrong).
+ */
+function stockNote(consumption: StockConsumption): string {
+  const rows = (consumption.rawRows ?? 0) + (consumption.productionRows ?? 0);
+  const parts: string[] = [];
+  if (rows > 0) {
+    parts.push(`${rows} stock row${rows === 1 ? "" : "s"} deducted`);
+  }
+  if (consumption.shortfallRows) {
+    parts.push(`${consumption.shortfallRows} short of stock`);
+  }
+  if (consumption.unmapped?.length) {
+    parts.push(`no recipe for ${consumption.unmapped.join(", ")}`);
+  }
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
 }
 
 const ORDER_STATUSES = [
@@ -304,7 +335,15 @@ export default function AdminOrdersPage() {
               : o,
           ),
         );
-        message.success("Updated successfully");
+        // Marking an order delivered spends its inventory. Say what that did,
+        // so a recipe nobody has written is noticed rather than assumed.
+        if (data.stockConsumptionError) {
+          message.warning(data.stockConsumptionError);
+        } else if (data.stockConsumption) {
+          message.success(`Updated successfully${stockNote(data.stockConsumption)}`);
+        } else {
+          message.success("Updated successfully");
+        }
       } else {
         message.error(data.message || "Update failed");
       }
@@ -803,25 +842,44 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
-      <h2 className="text-lg font-bold text-gray-800 mb-4">
-        Orders ({orders.length})
-      </h2>
-      <Table
-        columns={columns}
-        dataSource={orders}
-        loading={loading}
-        size="small"
-        rowClassName={(record) => (record.isSlotOrder ? "zomato-order-row" : "")}
-        expandable={{
-          expandedRowRender,
-          rowExpandable: (record) => record.items.length > 0,
-        }}
-        pagination={{
-          pageSize: 10,
-          showSizeChanger: true,
-          showTotal: (t) => `Total ${t} orders`,
-        }}
-        scroll={{ x: isShop ? 2230 : 2310 }}
+      <h2 className="text-lg font-bold text-gray-800 mb-4">Orders</h2>
+      {/* Both counters live under one tab. The website table stays mounted
+          either way — its polling and delay reminders belong to this component,
+          so switching to Petpooja must not silence a new-order ring. */}
+      <Tabs
+        defaultActiveKey="website"
+        items={[
+          {
+            key: "website",
+            label: `Website (${orders.length})`,
+            children: (
+              <Table
+                columns={columns}
+                dataSource={orders}
+                loading={loading}
+                size="small"
+                rowClassName={(record) =>
+                  record.isSlotOrder ? "zomato-order-row" : ""
+                }
+                expandable={{
+                  expandedRowRender,
+                  rowExpandable: (record) => record.items.length > 0,
+                }}
+                pagination={{
+                  pageSize: 10,
+                  showSizeChanger: true,
+                  showTotal: (t) => `Total ${t} orders`,
+                }}
+                scroll={{ x: isShop ? 2230 : 2310 }}
+              />
+            ),
+          },
+          {
+            key: "petpooja",
+            label: "Petpooja",
+            children: <PetpoojaUploads />,
+          },
+        ]}
       />
       <style jsx global>{`
         /* Tint orders placed to a slot-based location (e.g. Zomato office). */

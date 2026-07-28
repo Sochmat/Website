@@ -4,14 +4,16 @@
 // /api/inventory/*. Mirrors /api/admin/*: fetch-based CRUD, no server actions,
 // no validation library.
 
-import { ObjectId } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import {
   DEFAULT_CATEGORIES,
+  pricePerConsumptionUnit,
   type RawMaterial,
   type RawMaterialBrand,
   type RawMaterialCategory,
 } from "@/lib/rawMaterials";
+import { buildConsumptionLine, type AuditLine } from "@/lib/stockAudits";
 import {
   computeCost,
   type CostingMaterial,
@@ -358,6 +360,79 @@ export async function recalcProductionItemPrices(
   if (ops.length === 0) return 0;
   await col.bulkWrite(ops, { ordered: false });
   return ops.length;
+}
+
+/**
+ * Take `owed` off a stock-carrying collection, and report what that did.
+ *
+ * Shared by everything that spends stock: producing a batch draws down its raw
+ * material, delivering an order draws down whatever its recipes name. Both
+ * kinds of row carry the same fields, so one function covers either collection.
+ *
+ * Written with a computed $set rather than $inc because the quantity is
+ * floored at zero: a draw-down bigger than what is on record means the item
+ * was under-counted, and the shelf cannot go negative. The read and the write
+ * are therefore not atomic — acceptable here, where the alternative is storing
+ * a quantity nobody could ever have had. The uncovered part survives as the
+ * line's `shortfall` instead of being lost.
+ *
+ * Ids that no longer exist are skipped: a recipe pointing at a deleted item
+ * has nothing to spend.
+ */
+export async function drawDownStock(
+  db: Db,
+  collectionName: string,
+  owed: ReadonlyMap<string, number>,
+  now: Date,
+): Promise<AuditLine[]> {
+  const ids = [...owed.keys()].filter(isValidId);
+  if (ids.length === 0) return [];
+
+  const collection = db.collection(collectionName);
+  const docs = await collection
+    .find(
+      { _id: { $in: ids.map((id) => new ObjectId(id)) } },
+      {
+        projection: {
+          name: 1,
+          consumptionUnit: 1,
+          currentStock: 1,
+          pricePerPurchaseUnit: 1,
+          unitConversion: 1,
+        },
+      },
+    )
+    .toArray();
+
+  const lines = docs.map((doc) =>
+    buildConsumptionLine({
+      id: String(doc._id),
+      name: String(doc.name ?? ""),
+      unit: String(doc.consumptionUnit ?? ""),
+      previousStock:
+        typeof doc.currentStock === "number" ? doc.currentStock : null,
+      consumedQty: owed.get(String(doc._id)) ?? 0,
+      // Priced here, at save time — see AuditLine.unitCost.
+      unitCost: pricePerConsumptionUnit({
+        pricePerPurchaseUnit: Number(doc.pricePerPurchaseUnit ?? 0),
+        unitConversion: Number(doc.unitConversion ?? 0),
+      }),
+    }),
+  );
+
+  if (lines.length > 0) {
+    await collection.bulkWrite(
+      lines.map((line) => ({
+        updateOne: {
+          filter: { _id: new ObjectId(line.id) },
+          update: { $set: { currentStock: line.closingStock, updatedAt: now } },
+        },
+      })),
+      { ordered: false },
+    );
+  }
+
+  return lines;
 }
 
 /** Item recipes, optionally name-filtered. */
