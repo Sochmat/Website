@@ -10,6 +10,7 @@ import {
   SlidersOutlined,
   PlusSquareOutlined,
   DatabaseOutlined,
+  TagsOutlined,
   SettingOutlined,
   DownOutlined,
   RightOutlined,
@@ -64,6 +65,11 @@ const NAV_ITEMS: {
     href: "/inventory-management/stocks",
     label: "Stocks",
     icon: <DatabaseOutlined />,
+  },
+  {
+    href: "/inventory-management/price-comparison",
+    label: "Price Comparison",
+    icon: <TagsOutlined />,
   },
   {
     label: "Setup",

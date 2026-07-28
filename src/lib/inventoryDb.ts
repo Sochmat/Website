@@ -33,6 +33,8 @@ export const BRANDS_COLLECTION = "inventoryBrands";
 export const RAW_MATERIALS_COLLECTION = "inventoryRawMaterials";
 export const PRODUCTION_ITEMS_COLLECTION = "inventoryProductionItems";
 export const ITEM_RECIPES_COLLECTION = "inventoryItemRecipes";
+/** Selling prices per channel, keyed by item nameKey — see priceComparison.ts. */
+export const ITEM_PRICES_COLLECTION = "inventoryItemPrices";
 /** One document per Audit-screen save — see src/lib/stockAudits.ts. */
 export const STOCK_AUDITS_COLLECTION = "inventoryStockAudits";
 
