@@ -1,9 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Db, ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { findUserIdByReferralCode } from "@/lib/referral";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getCustomerUserId } from "@/lib/customerSession";
 import { normalizePhone } from "@/lib/phone";
 import { claimPhoneForUser, PHONE_TAKEN_MESSAGE } from "@/lib/userPhone";
+
+/**
+ * Attribute the caller to a referrer, for a code typed during Google signup.
+ *
+ * Best-effort and heavily guarded, because this endpoint is callable directly:
+ * `referredBy` is set once and never rewritten, a self-referral is refused, and
+ * an account that has already paid for an order can no longer be attributed —
+ * without that last one a dormant account could claim a referral long after the
+ * fact. An unrecognised code is ignored rather than erroring, matching
+ * otp/register, so a typo never blocks the signup it rides along with.
+ */
+async function applyReferralIfEligible(
+  db: Db,
+  userId: ObjectId,
+  rawRef: unknown,
+): Promise<void> {
+  const ref = String(rawRef ?? "").trim().toUpperCase();
+  if (!ref) return;
+
+  const user = await db
+    .collection("users")
+    .findOne({ _id: userId }, { projection: { referredBy: 1 } });
+  if (!user || user.referredBy) return;
+
+  const paid = await db
+    .collection("orders")
+    .findOne({ userId, paymentStatus: "paid" }, { projection: { _id: 1 } });
+  if (paid) return;
+
+  const referrerId = await findUserIdByReferralCode(db, ref);
+  if (!referrerId || referrerId.equals(userId)) return;
+
+  await db
+    .collection("users")
+    .updateOne(
+      { _id: userId, referredBy: { $exists: false } },
+      { $set: { referredBy: referrerId, updatedAt: new Date() } },
+    );
+}
 
 /**
  * Set the phone number on the signed-in account.
@@ -42,6 +83,8 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       );
     }
+
+    await applyReferralIfEligible(db, userId, body.ref);
 
     const user = await db.collection("users").findOne({ _id: userId });
     return NextResponse.json({

@@ -56,6 +56,8 @@ export default function LoginPopup() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
   const [googleReady, setGoogleReady] = useState(true);
+  /** Only a brand-new account can still be attributed to a referrer. */
+  const [googleIsNewUser, setGoogleIsNewUser] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
@@ -85,6 +87,7 @@ export default function LoginPopup() {
       setLoading(false);
       setGoogleLoading(false);
       setGoogleReady(true);
+      setGoogleIsNewUser(false);
       setPendingSession(null);
     } else {
       // Prefill the referral box from a `?ref=` link the user arrived through.
@@ -96,6 +99,12 @@ export default function LoginPopup() {
       }
     }
   }, [isOpen]);
+
+  /** Typed code wins; otherwise a code captured from a `?ref=` link. */
+  const capturedRef = (): string | undefined =>
+    referralCode.trim().toUpperCase() ||
+    localStorage.getItem("sochmat_ref") ||
+    undefined;
 
   const persistSession = (data: { token: string; user: unknown }) => {
     localStorage.setItem("userToken", data.token);
@@ -116,11 +125,7 @@ export default function LoginPopup() {
               email: email.trim().toLowerCase(),
               name: name.trim(),
               phone,
-              // Typed code wins; otherwise use a code captured from a ?ref= link.
-              ref:
-                referralCode.trim().toUpperCase() ||
-                localStorage.getItem("sochmat_ref") ||
-                undefined,
+              ref: capturedRef(),
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -173,7 +178,13 @@ export default function LoginPopup() {
       const res = await fetch("/api/users/phone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        // Only a brand-new account may be attributed. Sending this
+        // unconditionally would let a stale `?ref=` code in localStorage
+        // attach itself to an existing account that simply lacked a phone.
+        body: JSON.stringify({
+          phone,
+          ref: googleIsNewUser ? capturedRef() : undefined,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -203,11 +214,7 @@ export default function LoginPopup() {
               email: email.trim().toLowerCase(),
               name: name.trim(),
               phone,
-              // Typed code wins; otherwise use a code captured from a ?ref= link.
-              ref:
-                referralCode.trim().toUpperCase() ||
-                localStorage.getItem("sochmat_ref") ||
-                undefined,
+              ref: capturedRef(),
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -282,7 +289,9 @@ export default function LoginPopup() {
       const res = await fetch("/api/users/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential }),
+        // A code captured from a `?ref=` link attributes the signup without the
+        // user typing anything; the phone step below collects one otherwise.
+        body: JSON.stringify({ credential, ref: capturedRef() }),
       });
       const data = await res.json();
 
@@ -290,6 +299,7 @@ export default function LoginPopup() {
         // Signed in, but Google gave us no number. The cookie is already
         // set — collect the phone before handing over the UI.
         setPendingSession({ token: data.token, user: data.user });
+        setGoogleIsNewUser(Boolean(data.isNewUser));
         setStep("phone");
         setError("");
       } else if (data.success) {
@@ -406,6 +416,27 @@ export default function LoginPopup() {
                   One account per number.
                 </p>
               </div>
+              {/* Only a brand-new account can still be attributed. An existing
+                  phoneless account reaches this step too, and `referredBy`'s
+                  set-once rule would silently discard anything it typed. */}
+              {googleIsNewUser && (
+                <div>
+                  <label htmlFor="login-popup-google-ref" className="sr-only">
+                    Referral code (optional)
+                  </label>
+                  <input
+                    id="login-popup-google-ref"
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) =>
+                      setReferralCode(e.target.value.toUpperCase())
+                    }
+                    placeholder="Referral code (optional)"
+                    autoCapitalize="characters"
+                    className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] uppercase tracking-wide text-[#171717] placeholder:text-[#a3a3a3] placeholder:normal-case placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                  />
+                </div>
+              )}
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button
                 type="submit"
