@@ -93,17 +93,13 @@ export default function MenuItem({
             {!hasOptions && quantity > 0 ? (
               <div className="relative z-[1] bg-[#f56215] text-white text-[16px] font-semibold uppercase rounded-[6px] flex items-center justify-between w-[84px] px-[12px] py-[6px] mb-[9px] mr-0 ml-auto mt-[11px]">
                 <button
-                  onClick={() =>
-                    updateQuantity(plainCartItemId, quantity - 1)
-                  }
+                  onClick={() => updateQuantity(plainCartItemId, quantity - 1)}
                 >
                   -
                 </button>
                 <span className="text-[14px]">{quantity}</span>
                 <button
-                  onClick={() =>
-                    updateQuantity(plainCartItemId, quantity + 1)
-                  }
+                  onClick={() => updateQuantity(plainCartItemId, quantity + 1)}
                 >
                   +
                 </button>
@@ -190,14 +186,16 @@ export default function MenuItem({
           <span className="text-[#111] text-[16px] font-semibold leading-[18px]">
             ₹{product.price}/-
           </span>
-          <span className="text-[#666] text-[12px] line-through leading-[16px]">
-            ₹{product.originalPrice}/-
-          </span>
-          {product.discount && (
+          {product.price !== product.originalPrice && (
+            <span className="text-[#666] text-[12px] line-through leading-[16px]">
+              ₹{product.originalPrice}/-
+            </span>
+          )}
+          {Number(product.discount) ? (
             <span className="border border-[#00a86e] text-[#00a86e] text-[11px] font-semibold px-[8px] py-[2px] rounded-[24px] leading-[14px]">
               {product.discount}% off
             </span>
-          )}
+          ) : null}
         </div>
       </div>
 
