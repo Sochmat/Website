@@ -3,6 +3,7 @@ import {
   brandIdsByName,
   categoryIdsByName,
   existingIdsByNameKey,
+  listUnits,
 } from "@/lib/inventoryDb";
 import { parseRawMaterialWorkbook } from "@/lib/rawMaterialSheet";
 import { planImport } from "@/lib/rawMaterials";
@@ -53,12 +54,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [byName, byNameKey, brandsByName] = await Promise.all([
+    const [byName, byNameKey, brandsByName, units] = await Promise.all([
       categoryIdsByName(),
       existingIdsByNameKey(),
       brandIdsByName(),
+      listUnits(),
     ]);
-    const plan = planImport(rows, byName, byNameKey, brandsByName);
+    // Lowercased, because the sheet's casing is the user's business — "KG" and
+    // "kg" are the same unit.
+    const knownUnits = {
+      consumption: new Set(
+        units.filter((u) => u.kind === "consumption").map((u) => u.name.toLowerCase()),
+      ),
+      purchase: new Set(
+        units.filter((u) => u.kind === "purchase").map((u) => u.name.toLowerCase()),
+      ),
+    };
+
+    const plan = planImport(rows, byName, byNameKey, brandsByName, knownUnits);
 
     return NextResponse.json({
       success: true,
@@ -67,10 +80,18 @@ export async function POST(request: NextRequest) {
         toCreate: plan.creates.length,
         toUpdate: plan.updates.length,
         errors: plan.errors.length,
+        // Nothing is written here — this says what committing WOULD add, so
+        // the preview can show it before the user decides.
+        newCategories: plan.newCategories.length,
+        newBrands: plan.newBrands.length,
+        newUnits: plan.newUnits.length,
       },
       creates: plan.creates,
       updates: plan.updates,
       errors: plan.errors,
+      newCategories: plan.newCategories,
+      newBrands: plan.newBrands,
+      newUnits: plan.newUnits,
     });
   } catch (error) {
     console.error("Error parsing raw material import:", error);

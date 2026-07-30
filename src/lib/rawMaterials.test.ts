@@ -260,14 +260,17 @@ describe("planImport", () => {
     expect(plan.creates[0].categoryId).toBe("cat-veg");
   });
 
-  it("names the offending category in the error message", () => {
+  it("adds a category the sheet introduces rather than failing the row", () => {
     const plan = planImport(
       [sheetRow({ Category: "Frozen" })],
       categoryIdsByName,
       new Map(),
     );
-    expect(plan.errors[0].message).toBe('Unknown category "Frozen"');
-    expect(plan.creates).toHaveLength(0);
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.creates).toHaveLength(1);
+    expect(plan.newCategories).toEqual(["Frozen"]);
+    // The row carries the name; the commit resolves the real id from it.
+    expect(plan.creates[0].categoryName).toBe("Frozen");
   });
 
   it("reports a blank category as missing, not unknown", () => {
@@ -329,15 +332,17 @@ describe("planImport", () => {
     expect(plan.creates[0].brandId).toBe("brand-amul");
   });
 
-  it("names the offending brand rather than silently unbranding the row", () => {
+  it("adds a brand the sheet introduces rather than failing the row", () => {
     const plan = planImport(
       [sheetRow({ Brand: "Nestle" })],
       categoryIdsByName,
       new Map(),
       brandIdsByName,
     );
-    expect(plan.errors[0].message).toBe('Unknown brand "Nestle"');
-    expect(plan.creates).toHaveLength(0);
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.creates).toHaveLength(1);
+    expect(plan.newBrands).toEqual(["Nestle"]);
+    expect(plan.creates[0].brandName).toBe("Nestle");
   });
 
   it("splits a mixed sheet into creates, updates and errors", () => {
@@ -346,7 +351,9 @@ describe("planImport", () => {
       [
         sheetRow(),
         sheetRow({ Name: "Ghee", Category: "Dairy" }),
-        sheetRow({ Name: "Bad", Category: "Nope" }),
+        // An unknown category is no longer an error — it is added. This row
+        // fails on something the importer genuinely cannot resolve.
+        sheetRow({ Name: "Bad", "Unit Conversion": "abc" }),
       ],
       categoryIdsByName,
       existing,
@@ -354,5 +361,133 @@ describe("planImport", () => {
     expect(plan.updates).toHaveLength(1);
     expect(plan.creates).toHaveLength(1);
     expect(plan.errors).toHaveLength(1);
+  });
+});
+
+describe("planImport adds the lookups a sheet introduces", () => {
+  const categoryIdsByName = new Map([["vegetables", "cat-veg"]]);
+  const brandIdsByName = new Map([["amul", "brand-amul"]]);
+  const knownUnits = {
+    consumption: new Set(["gm"]),
+    purchase: new Set(["kg"]),
+  };
+
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    Name: "Toor Dal",
+    Category: "Vegetables",
+    "Consumption Unit": "gm",
+    "Purchase Unit": "kg",
+    "Unit Conversion": 1000,
+    "Price per Purchase Unit": 120,
+    "Alert Qty": 500,
+    ...overrides,
+  });
+
+  const plan = (rows: Record<string, unknown>[]) =>
+    planImport(rows, categoryIdsByName, new Map(), brandIdsByName, knownUnits);
+
+  it("reports nothing new when the sheet only uses what exists", () => {
+    const result = plan([row()]);
+    expect(result.newCategories).toEqual([]);
+    expect(result.newBrands).toEqual([]);
+    expect(result.newUnits).toEqual([]);
+  });
+
+  it("collects a new unit per kind", () => {
+    const result = plan([
+      row({ "Consumption Unit": "leaf", "Purchase Unit": "crate" }),
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.newUnits).toEqual([
+      { name: "leaf", kind: "consumption" },
+      { name: "crate", kind: "purchase" },
+    ]);
+  });
+
+  it("keeps the two unit lists apart", () => {
+    // "kg" is a known purchase unit but not a consumption one, so using it as
+    // a consumption unit adds it to that list rather than reading as known.
+    const result = plan([row({ "Consumption Unit": "kg" })]);
+    expect(result.newUnits).toEqual([{ name: "kg", kind: "consumption" }]);
+  });
+
+  it("matches existing names case-insensitively rather than duplicating", () => {
+    const result = plan([
+      row({ Category: "VEGETABLES", Brand: "amul", "Purchase Unit": "KG" }),
+    ]);
+    expect(result.newCategories).toEqual([]);
+    expect(result.newBrands).toEqual([]);
+    expect(result.newUnits).toEqual([]);
+    expect(result.creates[0].categoryId).toBe("cat-veg");
+    expect(result.creates[0].brandId).toBe("brand-amul");
+  });
+
+  it("adds one entry for a name the sheet spells in two cases", () => {
+    const result = plan([
+      row({ Name: "A", Category: "Frozen" }),
+      row({ Name: "B", Category: "FROZEN" }),
+    ]);
+    expect(result.creates).toHaveLength(2);
+    expect(result.newCategories).toEqual(["Frozen"]);
+  });
+
+  it("gives both rows the same placeholder id for one new category", () => {
+    const result = plan([
+      row({ Name: "A", Category: "Frozen" }),
+      row({ Name: "B", Category: "Frozen" }),
+    ]);
+    expect(result.creates[0].categoryId).toBe(result.creates[1].categoryId);
+  });
+
+  it("still rejects a blank category — that row forgot to say what it is", () => {
+    const result = plan([row({ Category: "" })]);
+    expect(result.creates).toHaveLength(0);
+    expect(result.errors[0].message).toBe("Category is required");
+    expect(result.newCategories).toEqual([]);
+  });
+
+  it("does not add lookups for a row that fails for another reason", () => {
+    // The conversion is junk, so this row never imports — and must not drag a
+    // new category, brand or unit into existence on its way out.
+    const result = plan([
+      row({
+        Category: "Frozen",
+        Brand: "Nestle",
+        "Consumption Unit": "leaf",
+        "Unit Conversion": "abc",
+      }),
+    ]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.newCategories).toEqual([]);
+    expect(result.newBrands).toEqual([]);
+    expect(result.newUnits).toEqual([]);
+  });
+
+  it("does not add a lookup only a duplicate row referenced", () => {
+    const result = plan([
+      row({ Name: "Toor Dal" }),
+      row({ Name: "Toor Dal", Category: "Frozen" }),
+    ]);
+    expect(result.errors[0].message).toBe("Duplicate name in this file");
+    expect(result.newCategories).toEqual([]);
+  });
+
+  it("treats a blank brand as unbranded, not as a new brand", () => {
+    const result = plan([row({ Brand: "   " })]);
+    expect(result.newBrands).toEqual([]);
+    expect(result.creates[0].brandId).toBe("");
+    expect(result.creates[0].brandName).toBe("");
+  });
+
+  it("collects everything new across a mixed sheet", () => {
+    const result = plan([
+      row({ Name: "A", Category: "Frozen", Brand: "Nestle" }),
+      row({ Name: "B", Category: "Bakery", "Purchase Unit": "crate" }),
+      row({ Name: "C" }),
+    ]);
+    expect(result.creates).toHaveLength(3);
+    expect(result.newCategories).toEqual(["Frozen", "Bakery"]);
+    expect(result.newBrands).toEqual(["Nestle"]);
+    expect(result.newUnits).toEqual([{ name: "crate", kind: "purchase" }]);
   });
 });

@@ -205,6 +205,11 @@ export default function RawMaterialPage() {
     setImportOpen(false);
     messageApi.success(`Import complete — ${text}`);
     loadMaterials();
+    // A sheet can introduce categories and brands as well as materials, so the
+    // filters and the form's dropdowns are out of date until these re-read.
+    // (Units are re-read by the form itself when it opens — see useUnits.)
+    loadCategories();
+    loadBrands();
   };
 
   /**

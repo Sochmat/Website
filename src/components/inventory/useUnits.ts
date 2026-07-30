@@ -10,28 +10,32 @@ import type { InventoryUnit, UnitKind } from "@/lib/rawMaterials";
  * and a unit added in one must appear in the other's list the moment it is
  * relevant. New units are folded into local state rather than refetched, so
  * the dropdown you are standing in does not flicker.
+ *
+ * `reload` matters because the form modal is mounted for the whole life of the
+ * page: a spreadsheet import can add units after this hook first ran, and
+ * without re-reading, the dropdown would keep serving the list as it stood
+ * when the page loaded. Callers refresh when the form opens.
  */
 export function useUnits() {
   const [units, setUnits] = useState<InventoryUnit[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/inventory/units", { cache: "no-store" });
-        const data = await res.json();
-        if (!cancelled && data.success) setUnits(data.units ?? []);
-      } catch {
-        // The dropdowns simply stay empty; the field is still typeable.
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/inventory/units", { cache: "no-store" });
+      const data = await res.json();
+      if (data.success) setUnits(data.units ?? []);
+    } catch {
+      // Keep whatever is on screen rather than blanking the dropdowns on a
+      // blip; the field is still typeable either way.
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const byKind = useMemo(
     () => ({
@@ -71,5 +75,5 @@ export function useUnits() {
     [],
   );
 
-  return { units, unitsByKind: byKind, addUnit, loading };
+  return { units, unitsByKind: byKind, addUnit, reload, loading };
 }

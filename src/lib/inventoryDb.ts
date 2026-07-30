@@ -137,6 +137,132 @@ export async function listBrands(): Promise<RawMaterialBrand[]> {
   return docs.map((d) => ({ _id: String(d._id), name: String(d.name) }));
 }
 
+/** Distinct, non-blank, trimmed — one entry per name however it was cased. */
+function distinctNames(names: readonly string[]): string[] {
+  const byLower = new Map<string, string>();
+  for (const raw of names) {
+    const name = String(raw ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (name && !byLower.has(name.toLowerCase())) {
+      byLower.set(name.toLowerCase(), name);
+    }
+  }
+  return [...byLower.values()];
+}
+
+/**
+ * Create any of `names` that a lookup collection does not already hold, and
+ * return the whole list keyed by lowercased name.
+ *
+ * Used by the spreadsheet importer, where a category or brand the sheet
+ * introduces is added rather than failing the row. Matching is
+ * case-insensitive, so a sheet saying "dairy" reuses the stored "Dairy"
+ * instead of creating a near-duplicate.
+ *
+ * The insert is ordered:false and the map is re-read afterwards, so a
+ * concurrent import racing us loses only its duplicates and still sees the
+ * winner's ids.
+ */
+async function ensureLookups(
+  collectionName: string,
+  names: readonly string[],
+  read: () => Promise<{ _id?: string; name: string }[]>,
+): Promise<EnsuredLookups> {
+  const existing = await read();
+  const byLower = new Map(
+    existing.map((e) => [e.name.toLowerCase(), String(e._id)]),
+  );
+
+  const missing = distinctNames(names).filter(
+    (name) => !byLower.has(name.toLowerCase()),
+  );
+  if (missing.length === 0) return { ids: byLower, added: [] };
+
+  const { db } = await connectToDatabase();
+  try {
+    await db
+      .collection(collectionName)
+      .insertMany(missing.map((name) => ({ name })), { ordered: false });
+  } catch {
+    // Someone else created the same name first — the re-read below picks up
+    // whichever record won.
+  }
+
+  const after = await read();
+  return {
+    ids: new Map(after.map((e) => [e.name.toLowerCase(), String(e._id)])),
+    added: missing,
+  };
+}
+
+/** Lookup ids keyed by lowercased name, plus what had to be created. */
+export interface EnsuredLookups {
+  ids: Map<string, string>;
+  /** Display names created by this call. Empty when everything existed. */
+  added: string[];
+}
+
+/** Categories, creating any the importer introduced. */
+export function ensureCategories(
+  names: readonly string[],
+): Promise<EnsuredLookups> {
+  return ensureLookups(CATEGORIES_COLLECTION, names, listCategories);
+}
+
+/** Brands, creating any the importer introduced. */
+export function ensureBrands(
+  names: readonly string[],
+): Promise<EnsuredLookups> {
+  return ensureLookups(BRANDS_COLLECTION, names, listBrands);
+}
+
+/**
+ * Add any unit names the importer introduced to their kind's list.
+ *
+ * Unlike categories and brands, a material stores its units by NAME, not by
+ * id — so nothing here has to be resolved back onto the row. This exists purely
+ * so a unit that arrived in a spreadsheet shows up in the dropdowns afterwards
+ * instead of being a value only that one material knows about.
+ *
+ * Returns how many were added, so the import can report it.
+ */
+export async function ensureUnits(
+  units: readonly { name: string; kind: UnitKind }[],
+): Promise<number> {
+  if (units.length === 0) return 0;
+
+  const { db } = await connectToDatabase();
+  const col = db.collection(UNITS_COLLECTION);
+  let added = 0;
+
+  for (const kind of ["consumption", "purchase"] as UnitKind[]) {
+    const wanted = distinctNames(
+      units.filter((u) => u.kind === kind).map((u) => u.name),
+    );
+    if (wanted.length === 0) continue;
+
+    // Seeds the defaults on first touch, so an imported unit never lands in an
+    // otherwise empty list.
+    const existing = await listUnits(kind);
+    const have = new Set(existing.map((u) => u.name.toLowerCase()));
+    const missing = wanted.filter((name) => !have.has(name.toLowerCase()));
+    if (missing.length === 0) continue;
+
+    try {
+      await col.insertMany(
+        missing.map((name) => ({ name, kind })),
+        { ordered: false },
+      );
+      added += missing.length;
+    } catch {
+      // A concurrent import added the same unit — harmless.
+    }
+  }
+
+  return added;
+}
+
 /** Valid ObjectId hex string? Guards findOne/updateOne from throwing on junk. */
 export function isValidId(id: string): boolean {
   return ObjectId.isValid(id) && String(new ObjectId(id)) === id;

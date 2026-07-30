@@ -132,7 +132,12 @@ export default function RawMaterialFormModal({
 }) {
   // The unit lists are stored, not hard-coded, so a unit invented here is
   // there for the next material too — see UnitSelect.
-  const { unitsByKind, addUnit, loading: loadingUnits } = useUnits();
+  const {
+    unitsByKind,
+    addUnit,
+    reload: reloadUnits,
+    loading: loadingUnits,
+  } = useUnits();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -145,7 +150,11 @@ export default function RawMaterialFormModal({
     setForm(material ? toForm(material) : EMPTY);
     setErrors({});
     setServerError(null);
-  }, [open, material]);
+    // This component stays mounted for the life of the page, so the unit lists
+    // it read on first render can be stale by now — a spreadsheet import adds
+    // units without the page ever reloading. Re-read them on every open.
+    reloadUnits();
+  }, [open, material, reloadUnits]);
 
   const set = (key: keyof FormState) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));

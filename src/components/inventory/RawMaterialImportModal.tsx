@@ -17,6 +17,10 @@ interface ImportPreview {
   creates: unknown[];
   updates: unknown[];
   errors: ImportRowError[];
+  /** Lookup names the sheet introduces — added when the import is committed. */
+  newCategories: string[];
+  newBrands: string[];
+  newUnits: { name: string; kind: string }[];
 }
 
 type Stage = "choose" | "preview" | "committing";
@@ -80,6 +84,9 @@ export default function RawMaterialImportModal({
         creates: data.creates ?? [],
         updates: data.updates ?? [],
         errors: data.errors ?? [],
+        newCategories: data.newCategories ?? [],
+        newBrands: data.newBrands ?? [],
+        newUnits: data.newUnits ?? [],
       });
       setStage("preview");
     } catch {
@@ -112,7 +119,24 @@ export default function RawMaterialImportModal({
       // Rows the server refused after the preview passed them — surfaced
       // rather than swallowed, since it means the two disagreed.
       if (data.rejected?.length) parts.push(`${data.rejected.length} rejected`);
-      onCommitted(parts.join(", "));
+      // What the sheet added to the lookup lists. Reported from the server's
+      // own count, so this says what actually happened rather than what the
+      // preview predicted.
+      const added: string[] = [];
+      if (data.addedCategories?.length) {
+        added.push(`${data.addedCategories.length} new categor${data.addedCategories.length === 1 ? "y" : "ies"}`);
+      }
+      if (data.addedBrands?.length) {
+        added.push(`${data.addedBrands.length} new brand${data.addedBrands.length === 1 ? "" : "s"}`);
+      }
+      if (data.addedUnits) {
+        added.push(`${data.addedUnits} new unit${data.addedUnits === 1 ? "" : "s"}`);
+      }
+      onCommitted(
+        added.length
+          ? `${parts.join(", ")} · added ${added.join(", ")}`
+          : parts.join(", "),
+      );
     } catch {
       setError("Network error — please try again");
       setStage("preview");
@@ -237,6 +261,52 @@ export default function RawMaterialImportModal({
             <Stat label="Will be updated" value={summary.toUpdate} tone="blue" />
             <Stat label="Have errors" value={summary.errors} tone="red" />
           </div>
+
+          {/* Categories, brands and units the sheet brings with it. Named
+              rather than counted: adding a list entry by accident (a typo in
+              one cell) is worth catching before the import, not after. */}
+          {preview &&
+            (preview.newCategories.length > 0 ||
+              preview.newBrands.length > 0 ||
+              preview.newUnits.length > 0) && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <h4 className="text-sm font-semibold text-amber-900">
+                  Will also be added to your lists
+                </h4>
+                <dl className="mt-1.5 space-y-1 text-sm">
+                  {preview.newCategories.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-amber-800">Categories:</dt>
+                      <dd className="font-medium text-amber-900">
+                        {preview.newCategories.join(", ")}
+                      </dd>
+                    </div>
+                  )}
+                  {preview.newBrands.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-amber-800">Brands:</dt>
+                      <dd className="font-medium text-amber-900">
+                        {preview.newBrands.join(", ")}
+                      </dd>
+                    </div>
+                  )}
+                  {preview.newUnits.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2">
+                      <dt className="text-amber-800">Units:</dt>
+                      <dd className="font-medium text-amber-900">
+                        {preview.newUnits
+                          .map((u) => `${u.name} (${u.kind})`)
+                          .join(", ")}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                <p className="mt-1.5 text-xs text-amber-700">
+                  Check for typos — each of these becomes a new entry you can
+                  pick from later.
+                </p>
+              </div>
+            )}
 
           {summary.errors > 0 && preview && (
             <div className="mt-4">

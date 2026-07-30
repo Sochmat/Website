@@ -308,11 +308,55 @@ export interface ImportRowError {
   message: string;
 }
 
+/**
+ * A planned row, carrying the lookup NAMES its sheet gave alongside the ids.
+ *
+ * A category or brand the sheet introduces has no id yet — it is created when
+ * the import is committed. The name is what survives the round trip through
+ * the browser, so the commit resolves ids from these rather than trusting the
+ * placeholder ids the preview issued.
+ */
+export type PlannedRawMaterial = SanitizedRawMaterial & {
+  categoryName: string;
+  /** "" when the sheet left Brand blank — unbranded is normal. */
+  brandName: string;
+};
+
+/** A unit name the sheet introduced, and which of the two fields used it. */
+export interface PlannedUnit {
+  name: string;
+  kind: UnitKind;
+}
+
 export interface ImportPlan {
-  creates: SanitizedRawMaterial[];
+  creates: PlannedRawMaterial[];
   /** Existing `_id` plus the new field values. */
-  updates: (SanitizedRawMaterial & { _id: string })[];
+  updates: (PlannedRawMaterial & { _id: string })[];
   errors: ImportRowError[];
+  /** Category names the sheet introduces, in first-seen order. */
+  newCategories: string[];
+  /** Brand names the sheet introduces. */
+  newBrands: string[];
+  /** Unit names the sheet introduces, per kind. */
+  newUnits: PlannedUnit[];
+}
+
+/**
+ * Stand-in id for a lookup the sheet introduces.
+ *
+ * The row still has to validate at preview time, which means presenting an id
+ * that is in the valid set — but the real id does not exist until the commit
+ * creates the record. This marker satisfies the check and is replaced by name
+ * on commit; it is never stored.
+ */
+export function pendingLookupId(name: string): string {
+  return `pending:${name.toLowerCase()}`;
+}
+
+/** Unit lists the importer checks against, to spot the ones it must add. */
+export interface KnownUnits {
+  consumption: ReadonlySet<string>;
+  purchase: ReadonlySet<string>;
 }
 
 /**
@@ -320,8 +364,14 @@ export interface ImportPlan {
  *
  * Matching is by normalized name (there is no stable id in the sheet), so a
  * renamed material imports as a new record rather than silently rewriting an
- * unrelated one. Categories arrive as names in the sheet and are mapped to ids
- * here; an unknown category fails its row instead of the whole import.
+ * unrelated one.
+ *
+ * Categories, brands and units arrive as NAMES. A name the console has not
+ * seen before is added to its list rather than failing the row: a sheet is how
+ * a kitchen describes what it actually buys, and making someone pre-create
+ * every category before their spreadsheet will load is busywork that produces
+ * no different an outcome. What is new is reported on the plan, so the preview
+ * can say what the import will add before anything is written.
  *
  * Duplicate names *within one sheet* are an error on the later row — otherwise
  * the last one silently wins and the user never learns their sheet was wrong.
@@ -331,33 +381,75 @@ export function planImport(
   categoryIdsByName: ReadonlyMap<string, string>,
   existingIdsByNameKey: ReadonlyMap<string, string>,
   brandIdsByName: ReadonlyMap<string, string> = new Map(),
+  knownUnits: KnownUnits = { consumption: new Set(), purchase: new Set() },
 ): ImportPlan {
-  const plan: ImportPlan = { creates: [], updates: [], errors: [] };
+  const plan: ImportPlan = {
+    creates: [],
+    updates: [],
+    errors: [],
+    newCategories: [],
+    newBrands: [],
+    newUnits: [],
+  };
   const validCategoryIds = new Set(categoryIdsByName.values());
   const validBrandIds = new Set(brandIdsByName.values());
   const seenInSheet = new Set<string>();
+
+  // Lowercased name -> display name, so "TOOR DAL" and "Toor Dal" in one sheet
+  // add a single category rather than two that differ only in case.
+  const pendingCategories = new Map<string, string>();
+  const pendingBrands = new Map<string, string>();
+  const pendingUnits = new Map<string, PlannedUnit>();
+
+  /** Resolve a lookup name to an id, queueing it for creation if it is new. */
+  const resolveLookup = (
+    name: string,
+    known: ReadonlyMap<string, string>,
+    pending: Map<string, string>,
+    validIds: Set<string>,
+  ): string => {
+    const existing = known.get(name.toLowerCase());
+    if (existing) return existing;
+    const id = pendingLookupId(name);
+    if (!pending.has(name.toLowerCase())) pending.set(name.toLowerCase(), name);
+    // The placeholder has to pass sanitize's existence check — the real id is
+    // assigned when the commit creates the record.
+    validIds.add(id);
+    return id;
+  };
+
+  /** Queue a unit for creation if this kind's list does not have it yet. */
+  const notePendingUnit = (raw: unknown, kind: UnitKind) => {
+    const name = normalizeUnitName(String(raw ?? ""));
+    if (!name) return;
+    if (knownUnits[kind].has(name.toLowerCase())) return;
+    const key = `${kind}:${name.toLowerCase()}`;
+    if (!pendingUnits.has(key)) pendingUnits.set(key, { name, kind });
+  };
 
   rows.forEach((row, index) => {
     // +2: one for the header row, one to make it 1-indexed like Excel.
     const rowNumber = index + 2;
     const rawName = String(row["Name"] ?? "").trim();
 
+    // A blank Category is still an error — that is a row that forgot to say
+    // what it is, not a row introducing a new category.
     const categoryName = String(row["Category"] ?? "").trim();
-    const categoryId = categoryIdsByName.get(categoryName.toLowerCase()) ?? "";
+    const categoryId = categoryName
+      ? resolveLookup(
+          categoryName,
+          categoryIdsByName,
+          pendingCategories,
+          validCategoryIds,
+        )
+      : "";
 
-    // Brand is optional, so a blank cell is fine. A non-blank name that
-    // matches nothing must fail rather than silently import as unbranded —
-    // a typo'd brand would otherwise vanish without a word.
+    // Brand is optional, so a blank cell is fine; a name the console has not
+    // seen is added rather than failing the row.
     const brandName = String(row["Brand"] ?? "").trim();
-    const brandId = brandIdsByName.get(brandName.toLowerCase()) ?? "";
-    if (brandName && !brandId) {
-      plan.errors.push({
-        rowNumber,
-        name: rawName,
-        message: `Unknown brand "${brandName}"`,
-      });
-      return;
-    }
+    const brandId = brandName
+      ? resolveLookup(brandName, brandIdsByName, pendingBrands, validBrandIds)
+      : "";
 
     const { doc, error } = sanitizeRawMaterial(
       {
@@ -375,17 +467,18 @@ export function planImport(
     );
 
     if (error || !doc) {
-      // Distinguish "you left Category blank" from "that category doesn't
-      // exist" — the second one is the common spreadsheet mistake. An unknown
-      // name resolves to an empty id, so sanitize reports it as *missing*;
-      // having the sheet's own text here is what lets us tell the two apart.
-      const message =
-        error === "Category is required" && categoryName
-          ? `Unknown category "${categoryName}"`
-          : (error ?? "Invalid row");
-      plan.errors.push({ rowNumber, name: rawName, message });
+      plan.errors.push({
+        rowNumber,
+        name: rawName,
+        message: error ?? "Invalid row",
+      });
       return;
     }
+
+    // Only after the row has validated: a row that is going to be rejected
+    // must not drag a new category into existence with it.
+    notePendingUnit(doc.consumptionUnit, "consumption");
+    notePendingUnit(doc.purchaseUnit, "purchase");
 
     if (seenInSheet.has(doc.nameKey)) {
       plan.errors.push({
@@ -397,10 +490,30 @@ export function planImport(
     }
     seenInSheet.add(doc.nameKey);
 
+    // The names travel with the row: the ids for anything new are placeholders
+    // until the commit creates the records and resolves them by name.
+    const planned: PlannedRawMaterial = { ...doc, categoryName, brandName };
+
     const existingId = existingIdsByNameKey.get(doc.nameKey);
-    if (existingId) plan.updates.push({ ...doc, _id: existingId });
-    else plan.creates.push(doc);
+    if (existingId) plan.updates.push({ ...planned, _id: existingId });
+    else plan.creates.push(planned);
   });
+
+  // Only what surviving rows actually referenced — see notePendingUnit's
+  // placement. A sheet whose every row failed adds nothing to any list.
+  const referenced = [...plan.creates, ...plan.updates];
+  const usedCategories = new Set(
+    referenced.map((r) => r.categoryName.toLowerCase()),
+  );
+  const usedBrands = new Set(referenced.map((r) => r.brandName.toLowerCase()));
+
+  plan.newCategories = [...pendingCategories]
+    .filter(([key]) => usedCategories.has(key))
+    .map(([, name]) => name);
+  plan.newBrands = [...pendingBrands]
+    .filter(([key]) => usedBrands.has(key))
+    .map(([, name]) => name);
+  plan.newUnits = [...pendingUnits.values()];
 
   return plan;
 }
