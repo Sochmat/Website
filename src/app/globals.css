@@ -215,4 +215,10 @@ html {
   scroll-behavior: smooth;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* No page ever scrolls sideways: `clip` (not `hidden`) so this stays a
+     non-scrolling box and the `sticky` headers keep pinning to the viewport,
+     and `overscroll-behavior-x` so a sideways drag can't rubber-band the page
+     or chain out of the horizontal category strips. */
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }

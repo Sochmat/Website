@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import MenuItem from "./MenuItem";
+import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
 import { Product } from "@/context/CartContext";
 import { Category, MenuVariant } from "@/lib/types";
@@ -40,7 +41,12 @@ type MenuProduct = Product & {
   type?: string;
   showOnHomePage?: boolean;
   isAddOn?: boolean;
+  isRecommended?: boolean;
 };
+
+const RECENT_SEARCHES_KEY = "sochmat:recent-searches";
+const MAX_RECENT_SEARCHES = 6;
+const MAX_SEARCH_RECOMMENDATIONS = 10;
 
 function mapApiItemToProduct(item: {
   id: string;
@@ -66,6 +72,7 @@ function mapApiItemToProduct(item: {
   addOns?: string[];
   variants?: MenuVariant[];
   isAddOn?: boolean;
+  isRecommended?: boolean;
 }): MenuProduct {
   return {
     id: item.id,
@@ -91,6 +98,7 @@ function mapApiItemToProduct(item: {
     addOns: item.addOns ?? [],
     variants: item.variants ?? [],
     isAddOn: item.isAddOn ?? false,
+    isRecommended: item.isRecommended ?? false,
   };
 }
 
@@ -98,7 +106,6 @@ interface MenuProps {
   showTitle?: boolean;
   linkCategoriesToMenu?: boolean;
   showOnHomePage?: boolean;
-  initialCategory?: "food" | "beverages";
   initialActiveCategory?: string | null;
   hideHeader?: boolean;
 }
@@ -107,35 +114,79 @@ export default function Menu({
   showTitle = true,
   linkCategoriesToMenu = false,
   showOnHomePage = false,
-  initialCategory = "food",
   initialActiveCategory = null,
   hideHeader = false,
 }: MenuProps) {
-  const [activeTab, setActiveTab] = useState<"food" | "beverages">(
-    initialCategory,
-  );
   const [activeCategory, setActiveCategory] = useState<string | null>(
-    initialActiveCategory,
+    initialActiveCategory
   );
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Focusing the search field takes over the pane: everything else is dropped
+  // and the field moves to the top, over recents + recommendations.
+  const [searchMode, setSearchMode] = useState(false);
+  const [vegOnly, setVegOnly] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setActiveTab(initialCategory);
-  }, [initialCategory]);
-
-  // When switching tabs, ensure the active category belongs to the new tab
-  useEffect(() => {
-    if (categories.length === 0) return;
-    const currentCat = categories.find((c) => c.id === activeCategory);
-    if (!currentCat || currentCat.type !== activeTab) {
-      const firstForTab = categories.find((c) => c.type === activeTab);
-      setActiveCategory(firstForTab?.id ?? null);
+    try {
+      const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return;
+      setRecentSearches(
+        parsed
+          .filter((term): term is string => typeof term === "string")
+          .slice(0, MAX_RECENT_SEARCHES)
+      );
+    } catch {
+      // A malformed or unavailable store just means no history to show.
     }
-  }, [activeTab, categories, activeCategory]);
+  }, []);
+
+  // Entering search mode remounts the field in the new layout position, so the
+  // caret has to be put back explicitly.
+  useEffect(() => {
+    if (searchMode) searchInputRef.current?.focus();
+  }, [searchMode]);
+
+  // Recording every keystroke would fill the list with prefixes of one word, so
+  // a term is only kept once the user acts on it or leaves the search.
+  const rememberSearch = useCallback((raw: string) => {
+    const term = raw.trim();
+    if (term.length < 2) return;
+    setRecentSearches((prev) => {
+      const next = [
+        term,
+        ...prev.filter((t) => t.toLowerCase() !== term.toLowerCase()),
+      ].slice(0, MAX_RECENT_SEARCHES);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+      } catch {
+        // Persistence is best-effort; the in-memory list still updates.
+      }
+      return next;
+    });
+  }, []);
+
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_KEY);
+    } catch {
+      // Ignore — the list is already cleared for this session.
+    }
+  };
+
+  const exitSearch = () => {
+    rememberSearch(search);
+    setSearch("");
+    setSearchMode(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -154,22 +205,7 @@ export default function Menu({
             type: c.type,
           }));
           setCategories(cats);
-          if (initialActiveCategory) {
-            // Set the correct tab based on the category's type
-            const matchedCat = cats.find(
-              (c: Category) => c.id === initialActiveCategory,
-            );
-            if (matchedCat) {
-              setActiveTab(matchedCat.type);
-            }
-            setActiveCategory(initialActiveCategory);
-          } else {
-            // Default to the first category of the active tab
-            const firstForTab = cats.find(
-              (c: Category) => c.type === initialCategory,
-            );
-            setActiveCategory(firstForTab?.id ?? cats[0]?.id ?? null);
-          }
+          setActiveCategory(initialActiveCategory ?? cats[0]?.id ?? null);
         }
       } catch {
         if (!cancelled) setError("Failed to load menu");
@@ -191,14 +227,14 @@ export default function Menu({
       .map((id) => addOnsById.get(id))
       .filter((p): p is MenuProduct => Boolean(p));
 
-  // While searching, match by name/description across the whole active tab and
-  // ignore the selected category; otherwise filter by the chosen category.
+  // While searching, match by name/description across the whole menu and ignore
+  // the selected category; otherwise filter by the chosen category.
   const query = search.trim().toLowerCase();
   const listProducts = products.filter((p) => {
     // Add-on items are only offered inside the add-to-cart sheet, never as
     // standalone menu cards.
     if (p.isAddOn) return false;
-    if ((p.type ?? "food") !== activeTab) return false;
+    if (vegOnly && !p.isVeg) return false;
     if (query) {
       return `${p.name} ${p.description ?? ""}`.toLowerCase().includes(query);
     }
@@ -209,11 +245,279 @@ export default function Menu({
 
   const displayProducts = listProducts;
 
+  const orderable = products.filter((p) => !p.isAddOn);
+
+  // Recent terms are plain strings, so a thumbnail is borrowed from whichever
+  // dish the term still matches; older terms may no longer match anything.
+  const thumbnailForTerm = (term: string) => {
+    const t = term.trim().toLowerCase();
+    if (!t) return null;
+    const match = orderable.find((p) => p.name.toLowerCase().includes(t));
+    return match?.image ?? null;
+  };
+
+  const curated = orderable.filter((p) => p.isRecommended);
+  const searchRecommendations = (curated.length ? curated : orderable).slice(
+    0,
+    MAX_SEARCH_RECOMMENDATIONS
+  );
+
+  const searchField = (
+    <div className="flex items-center gap-2 px-3 bg-white border border-[#d9d9d9] rounded-[12px]">
+      {searchMode ? (
+        <button
+          type="button"
+          onClick={exitSearch}
+          aria-label="Close search"
+          className="shrink-0 -ml-1 p-1 text-[#333]"
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+        </button>
+      ) : (
+        <svg
+          className="w-5 h-5 shrink-0 text-[#9a9a9a]"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+          />
+        </svg>
+      )}
+      <input
+        ref={searchInputRef}
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        onFocus={() => setSearchMode(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            rememberSearch(search);
+            searchInputRef.current?.blur();
+          } else if (e.key === "Escape") {
+            exitSearch();
+          }
+        }}
+        placeholder="Search for dishes"
+        className="flex-1 min-w-0 py-2 bg-transparent text-[#111] placeholder:text-[#9a9a9a] focus:outline-none"
+      />
+      {search && (
+        <button
+          type="button"
+          onClick={() => {
+            setSearch("");
+            searchInputRef.current?.focus();
+          }}
+          aria-label="Clear search"
+          className="shrink-0 text-[#9a9a9a] hover:text-[#555] transition-colors"
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+
+  const searchRow = (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 min-w-0">{searchField}</div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={vegOnly}
+        aria-label="Veg only"
+        onClick={() => setVegOnly((prev) => !prev)}
+        className={`relative shrink-0 w-[64px] h-[26px] rounded-full transition-colors ${
+          vegOnly ? "bg-green-600" : "bg-[#d9d9d9]"
+        }`}
+      >
+        {/* Label sits opposite the knob, so it swaps sides when toggled. */}
+        <span
+          className={`absolute inset-0 flex items-center text-[11px] font-semibold ${
+            vegOnly
+              ? "justify-start pl-[12px] text-white"
+              : "justify-end pr-[12px] text-[#666]"
+          }`}
+        >
+          Veg
+        </span>
+        <span
+          className={`absolute top-[3px] left-[3px] w-[20px] h-[20px] bg-white rounded-full shadow-sm transition-transform ${
+            vegOnly ? "translate-x-[38px]" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+
+  const productList = (
+    // Cards carry their own vertical padding so each divider sits centred in
+    // the space between two of them.
+    <div className="py-0 flex flex-col divide-y divide-[#e6e6e6]">
+      {loading ? (
+        <p className="text-center text-gray-500 py-8">Loading menu...</p>
+      ) : error ? (
+        <p className="text-center text-red-500 py-8">{error}</p>
+      ) : (
+        (() => {
+          const visible = displayProducts.filter((product) =>
+            showOnHomePage ? product.showOnHomePage : true
+          );
+          if (visible.length === 0) {
+            return (
+              <p className="text-center text-gray-500 py-8">
+                {query
+                  ? `No dishes found for "${search.trim()}"`
+                  : "No items available"}
+              </p>
+            );
+          }
+          return visible.map((product) => (
+            <div key={product.id} className="shrink-0 py-[22px]">
+              <MenuItem
+                product={product}
+                addOnProducts={resolveAddOns(product)}
+              />
+            </div>
+          ));
+        })()
+      )}
+    </div>
+  );
+
+  if (searchMode) {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide flex flex-col">
+          <div className="sticky top-0 z-10 bg-white pt-1 pb-2">
+            {searchRow}
+          </div>
+
+          {query ? (
+            productList
+          ) : (
+            <div className="flex flex-col gap-7 py-5">
+              {recentSearches.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[#111] text-base font-semibold">
+                      Recent searches
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={clearRecentSearches}
+                      className="text-[#f56215] text-sm font-medium"
+                    >
+                      clear
+                    </button>
+                  </div>
+                  <div className="flex flex-col items-start gap-2">
+                    {recentSearches.map((term) => {
+                      const thumbnail = thumbnailForTerm(term);
+                      return (
+                        <button
+                          key={term}
+                          type="button"
+                          onClick={() => {
+                            setSearch(term);
+                            rememberSearch(term);
+                          }}
+                          className="max-w-full flex items-center gap-3 pl-2 pr-4 py-2 bg-white border border-[#d9d9d9] rounded-[16px] text-left"
+                        >
+                          {thumbnail ? (
+                            <Image
+                              src={thumbnail}
+                              alt=""
+                              width={32}
+                              height={32}
+                              className="w-8 h-8 shrink-0 rounded-[8px] object-cover"
+                              unoptimized
+                            />
+                          ) : (
+                            <span className="w-8 h-8 shrink-0 rounded-[8px] bg-[#f0f0f0] flex items-center justify-center">
+                              <svg
+                                className="w-4 h-4 text-[#9a9a9a]"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                                />
+                              </svg>
+                            </span>
+                          )}
+                          <span className="text-[#111] text-sm font-medium truncate">
+                            {term}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {searchRecommendations.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="text-[#111] text-base font-semibold">
+                    Recommended for you
+                  </h3>
+                  <div className="flex gap-3 overflow-x-auto scrollbar-hide">
+                    {searchRecommendations.map((product) => (
+                      <RecommendedItem key={product.id} product={product} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {recentSearches.length === 0 &&
+                searchRecommendations.length === 0 && (
+                  <p className="text-center text-gray-500 py-8">
+                    Start typing to find a dish.
+                  </p>
+                )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide flex flex-col">
         {!hideHeader && showTitle && (
-          <div className="text-center mb-2">
+          <div className="text-center mb-6">
             <h2 className="font-squada text-[48px] text-[#1c1c1c] uppercase tracking-tight">
               Menu
             </h2>
@@ -225,77 +529,10 @@ export default function Menu({
 
         {!hideHeader && (
           <div className="sticky top-0 z-10 bg-white">
-            <div className="bg-[#f0f0f0] p-0.5 rounded-lg flex mt-6">
-              <button
-                onClick={() => setActiveTab("food")}
-                className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-                  activeTab === "food"
-                    ? "bg-[#1c1c1c] text-white"
-                    : "text-[#111]"
-                }`}
-              >
-                Food
-              </button>
-              <button
-                onClick={() => setActiveTab("beverages")}
-                className={`flex-1 py-2 px-5 rounded-lg font-medium transition-colors ${
-                  activeTab === "beverages"
-                    ? "bg-[#1c1c1c] text-white"
-                    : "text-[#111]"
-                }`}
-              >
-                Beverages
-              </button>
-            </div>
-
-            <div className="relative mt-3">
-              <svg
-                className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
-                />
-              </svg>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search for dishes"
-                className="w-full pl-10 pr-9 py-2.5 bg-[#f0f0f0] rounded-lg text-[#111] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1c1c1c]"
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch("")}
-                  aria-label="Clear search"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              )}
-            </div>
+            {searchRow}
 
             {!query && (
               <CategoryFilter
-                activeTab={activeTab}
                 categories={categories}
                 activeCategory={activeCategory}
                 onCategoryChange={setActiveCategory}
@@ -304,36 +541,7 @@ export default function Menu({
           </div>
         )}
 
-        <div className="py-4 flex flex-col gap-5">
-          {loading ? (
-            <p className="text-center text-gray-500 py-8">Loading menu...</p>
-          ) : error ? (
-            <p className="text-center text-red-500 py-8">{error}</p>
-          ) : (
-            (() => {
-              const visible = displayProducts.filter((product) =>
-                showOnHomePage ? product.showOnHomePage : true,
-              );
-              if (visible.length === 0) {
-                return (
-                  <p className="text-center text-gray-500 py-8">
-                    {query
-                      ? `No dishes found for "${search.trim()}"`
-                      : "No items available"}
-                  </p>
-                );
-              }
-              return visible.map((product) => (
-                <div key={product.id} className="shrink-0">
-                  <MenuItem
-                    product={product}
-                    addOnProducts={resolveAddOns(product)}
-                  />
-                </div>
-              ));
-            })()
-          )}
-        </div>
+        {productList}
       </div>
     </div>
   );
