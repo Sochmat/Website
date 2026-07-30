@@ -10,11 +10,9 @@ import {
   type RawMaterialBrand,
   type RawMaterialCategory,
 } from "@/lib/rawMaterials";
+import UnitSelect from "./UnitSelect";
+import { useUnits } from "./useUnits";
 
-/** Common units, offered as suggestions without restricting free text — a
- *  kitchen will invent units we didn't think of (bunch, packet, tray). */
-const CONSUMPTION_UNITS = ["gm", "ml", "pcs"];
-const PURCHASE_UNITS = ["kg", "litre", "box", "packet", "pcs"];
 
 interface FormState {
   name: string;
@@ -47,7 +45,9 @@ function toForm(material: RawMaterial): FormState {
     purchaseUnit: material.purchaseUnit,
     unitConversion: String(material.unitConversion),
     pricePerPurchaseUnit: String(material.pricePerPurchaseUnit),
-    alertQty: String(material.alertQty),
+    // 0 means "no threshold", so it opens blank rather than as a literal 0 —
+    // matching what the production-item form does with the same field.
+    alertQty: material.alertQty ? String(material.alertQty) : "",
   };
 }
 
@@ -76,10 +76,13 @@ function validate(form: FormState): Partial<Record<keyof FormState, string>> {
   else if (!Number.isFinite(price)) errors.pricePerPurchaseUnit = "Must be a number";
   else if (price < 0) errors.pricePerPurchaseUnit = "Cannot be negative";
 
-  const alert = Number(form.alertQty.replace(/,/g, ""));
-  if (!form.alertQty.trim()) errors.alertQty = "Required";
-  else if (!Number.isFinite(alert)) errors.alertQty = "Must be a number";
-  else if (alert < 0) errors.alertQty = "Cannot be negative";
+  // Optional — only checked when something was actually typed. Blank means
+  // "no low-stock threshold", which is a normal thing to want.
+  if (form.alertQty.trim()) {
+    const alert = Number(form.alertQty.replace(/,/g, ""));
+    if (!Number.isFinite(alert)) errors.alertQty = "Must be a number";
+    else if (alert < 0) errors.alertQty = "Cannot be negative";
+  }
 
   return errors;
 }
@@ -127,6 +130,9 @@ export default function RawMaterialFormModal({
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
+  // The unit lists are stored, not hard-coded, so a unit invented here is
+  // there for the next material too — see UnitSelect.
+  const { unitsByKind, addUnit, loading: loadingUnits } = useUnits();
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [serverError, setServerError] = useState<string | null>(null);
@@ -261,18 +267,15 @@ export default function RawMaterialFormModal({
           hint="Unit used in recipes"
           error={errors.consumptionUnit}
         >
-          <Select
-            className="w-full mt-0.5"
-            value={form.consumptionUnit || undefined}
-            onChange={(v) => set("consumptionUnit")(v)}
+          <UnitSelect
+            kind="consumption"
+            value={form.consumptionUnit}
+            onChange={set("consumptionUnit")}
+            units={unitsByKind.consumption}
+            loading={loadingUnits}
+            onAdd={addUnit}
             placeholder="gm"
-            options={CONSUMPTION_UNITS.map((u) => ({ value: u, label: u }))}
-            showSearch
-            // Free text: a kitchen unit we didn't anticipate should not be
-            // blocked by our suggestion list.
-            mode="tags"
-            maxCount={1}
-            onSelect={(v: string) => set("consumptionUnit")(v)}
+            ariaLabel="Consumption unit"
           />
         </Field>
 
@@ -281,16 +284,15 @@ export default function RawMaterialFormModal({
           hint="Unit bought from vendors"
           error={errors.purchaseUnit}
         >
-          <Select
-            className="w-full mt-0.5"
-            value={form.purchaseUnit || undefined}
-            onChange={(v) => set("purchaseUnit")(v)}
+          <UnitSelect
+            kind="purchase"
+            value={form.purchaseUnit}
+            onChange={set("purchaseUnit")}
+            units={unitsByKind.purchase}
+            loading={loadingUnits}
+            onAdd={addUnit}
             placeholder="kg"
-            options={PURCHASE_UNITS.map((u) => ({ value: u, label: u }))}
-            showSearch
-            mode="tags"
-            maxCount={1}
-            onSelect={(v: string) => set("purchaseUnit")(v)}
+            ariaLabel="Purchase unit"
           />
         </Field>
 
@@ -324,14 +326,14 @@ export default function RawMaterialFormModal({
 
         <Field
           label="Alert qty"
-          hint={`Low-stock threshold, in ${form.consumptionUnit || "consumption units"}`}
+          hint={`Optional low-stock threshold, in ${form.consumptionUnit || "consumption units"}`}
           error={errors.alertQty}
         >
           <input
             className={inputClass}
             value={form.alertQty}
             onChange={(e) => set("alertQty")(e.target.value)}
-            placeholder="500"
+            placeholder="Leave blank for none"
             inputMode="decimal"
           />
         </Field>

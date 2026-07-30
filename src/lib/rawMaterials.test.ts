@@ -3,6 +3,7 @@ import {
   normalizeMaterialName,
   formatUnitConversion,
   pricePerConsumptionUnit,
+  isBelowAlert,
   isLowStock,
   sanitizeRawMaterial,
   planImport,
@@ -144,6 +145,22 @@ describe("sanitizeRawMaterial", () => {
       CATEGORIES,
     );
     expect(error).toBeUndefined();
+  });
+
+  it.each([
+    ["blank", ""],
+    ["whitespace", "   "],
+    ["absent", undefined],
+  ])("treats a %s alert qty as no threshold rather than an error", (_l, value) => {
+    const { doc, error } = sanitizeRawMaterial(
+      input({ alertQty: value }),
+      CATEGORIES,
+    );
+    expect(error).toBeUndefined();
+    // 0 is what isBelowAlert reads as "no threshold set", so nothing is
+    // flagged low for a material that never asked to be.
+    expect(doc?.alertQty).toBe(0);
+    expect(isBelowAlert(0, doc?.alertQty)).toBe(false);
   });
 });
 

@@ -16,11 +16,7 @@ import {
 import ViewRecipeModal from "@/components/inventory/ViewRecipeModal";
 import RecipeImportModal from "@/components/inventory/RecipeImportModal";
 import type { ProductionItem } from "@/lib/productionItems";
-import {
-  formatCurrency,
-  formatUnitConversion,
-  type RawMaterial,
-} from "@/lib/rawMaterials";
+import { formatCurrency, formatUnitConversion } from "@/lib/rawMaterials";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const BASE_PATH = "/inventory-management/setup/production";
@@ -28,7 +24,6 @@ const BASE_PATH = "/inventory-management/setup/production";
 export default function ProductionItemsPage() {
   const router = useRouter();
   const [items, setItems] = useState<ProductionItem[]>([]);
-  const [materials, setMaterials] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -68,25 +63,6 @@ export default function ProductionItemsPage() {
   useEffect(() => {
     loadItems();
   }, [loadItems]);
-
-  // Raw materials back the recipe modal's names and cost breakdown.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/inventory/raw-materials", {
-          cache: "no-store",
-        });
-        const data = await res.json();
-        if (!cancelled && data.success) setMaterials(data.materials ?? []);
-      } catch {
-        /* the modal falls back to "(deleted raw material)" labels */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const handleDelete = (item: ProductionItem) => {
     modal.confirm({
@@ -213,8 +189,8 @@ export default function ProductionItemsPage() {
           </button>
           <button
             onClick={() => setViewing(row)}
-            aria-label={`View raw materials in ${row.name}`}
-            title="View raw materials"
+            aria-label={`View recipe for ${row.name}`}
+            title="View recipe"
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#024731] transition-colors"
           >
             <UnorderedListOutlined />
@@ -339,7 +315,6 @@ export default function ProductionItemsPage() {
       <ViewRecipeModal
         open={!!viewing}
         item={viewing}
-        materials={materials}
         onClose={() => setViewing(null)}
       />
 

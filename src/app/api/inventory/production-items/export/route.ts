@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { listProductionItems, rawMaterialNamesById } from "@/lib/inventoryDb";
+import { componentNamesByKey, listProductionItems } from "@/lib/inventoryDb";
 import { buildProductionWorkbook } from "@/lib/recipeSheet";
 
 // Admin-only; enforced by the admin session check in src/middleware.ts.
@@ -16,12 +16,14 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const search = request.nextUrl.searchParams.get("search") ?? undefined;
-    const [items, materialNameById] = await Promise.all([
+    // Keyed `type:id`: a recipe line may name a raw material or another
+    // production item, and both have to resolve to a name in the sheet.
+    const [items, componentNameByKey] = await Promise.all([
       listProductionItems(search),
-      rawMaterialNamesById(),
+      componentNamesByKey(),
     ]);
 
-    const buffer = await buildProductionWorkbook(items, materialNameById);
+    const buffer = await buildProductionWorkbook(items, componentNameByKey);
     const stamp = new Date().toISOString().slice(0, 10);
 
     return new Response(new Uint8Array(buffer), {

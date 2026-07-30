@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import {
   PRODUCTION_ITEMS_COLLECTION,
-  costingMaterialsById,
+  componentCostsByKey,
   listProductionItems,
 } from "@/lib/inventoryDb";
 import { sanitizeProductionItem } from "@/lib/productionItems";
@@ -42,11 +42,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const materials = await costingMaterialsById();
+    // Keyed `type:id`, so a recipe line may name a raw material or another
+    // production item and each is costed from its own collection.
+    const components = await componentCostsByKey();
 
+    // No graph: a create has no id yet, so its recipe cannot close a loop.
     const { doc, error } = sanitizeProductionItem(
       body,
-      materials,
+      components,
       normalizeMaterialName,
     );
     if (error || !doc) {

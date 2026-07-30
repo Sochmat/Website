@@ -26,9 +26,12 @@ interface StockRow {
 /**
  * Quantity cell.
  *
- * Red only when stock is genuinely tracked AND at or below a threshold that
- * was actually set. Untracked stock reads "Not tracked" in grey rather than
- * rendering as a red zero — an unknown quantity is not a critical one.
+ * Red when stock is genuinely tracked AND either below zero or at/below a
+ * threshold that was actually set. A negative quantity is real — stock went
+ * out that the books did not have — and shows as the debt it is rather than
+ * being rounded up to nothing. Untracked stock reads "Not tracked" in grey
+ * rather than rendering as a red zero: an unknown quantity is not a critical
+ * one.
  */
 function QtyCell({ row }: { row: StockRow }) {
   if (typeof row.currentStock !== "number") {

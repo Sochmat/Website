@@ -60,9 +60,33 @@ export const PRODUCTION_ITEM_REQUIRED_COLUMNS = [
   "Batch Yield Qty",
 ] as const;
 
+/**
+ * Written by the export and the template.
+ *
+ * A recipe line names a Type as well as a Component, exactly as the item-recipe
+ * sheet does, because a recipe may now be built on another production item and
+ * the two lists are looked up separately.
+ */
 export const PRODUCTION_RECIPE_COLUMNS = [
   "Item Name",
+  "Type",
+  "Component",
+  "Qty Used",
+] as const;
+
+/**
+ * Accepted when reading. "Raw Material" is what the Component column used to
+ * be called, back when that was the only thing a recipe could name — sheets
+ * exported before this still upload, reading as raw material throughout.
+ */
+export const PRODUCTION_RECIPE_READ_COLUMNS = [
+  ...PRODUCTION_RECIPE_COLUMNS,
   "Raw Material",
+] as const;
+
+/** Type defaults to Raw Material, and the component may sit in either column. */
+export const PRODUCTION_RECIPE_REQUIRED_COLUMNS = [
+  "Item Name",
   "Qty Used",
 ] as const;
 
@@ -145,6 +169,54 @@ export interface ProductionImportPlan {
 }
 
 /**
+ * Every name caught in a loop of production items, in the graph an import
+ * would leave behind.
+ *
+ * Keyed by nameKey rather than id because a sheet's new items have no id yet,
+ * and nameKey is what the importer matches on anyway. `sheetDeps` wins over
+ * `storedDeps` for the items the sheet touches: an upload REPLACES a recipe,
+ * so the stored one says nothing about where the item will point afterwards.
+ *
+ * Standard three-colour walk. Anything on the stack when an edge points back
+ * into it is part of a cycle, and so is everything else on that stack above
+ * it — all of them are rejected, since no one of them is more at fault.
+ */
+export function loopedNameKeys(
+  storedDeps: ReadonlyMap<string, readonly string[]>,
+  sheetDeps: ReadonlyMap<string, readonly string[]>,
+): Set<string> {
+  const deps = (key: string): readonly string[] =>
+    sheetDeps.get(key) ?? storedDeps.get(key) ?? [];
+
+  const looped = new Set<string>();
+  const done = new Set<string>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+
+  const walk = (key: string) => {
+    if (done.has(key)) return;
+    if (onStack.has(key)) {
+      // Everything from where this name sits on the stack, upward, is in it.
+      for (let i = stack.lastIndexOf(key); i < stack.length; i++) {
+        looped.add(stack[i]);
+      }
+      return;
+    }
+    stack.push(key);
+    onStack.add(key);
+    for (const next of deps(key)) walk(next);
+    stack.pop();
+    onStack.delete(key);
+    done.add(key);
+  };
+
+  for (const key of new Set([...storedDeps.keys(), ...sheetDeps.keys()])) {
+    walk(key);
+  }
+  return looped;
+}
+
+/**
  * Reconcile a production-item workbook against what's stored.
  *
  * Matching is by normalized name, as for raw materials: a renamed item imports
@@ -154,24 +226,36 @@ export interface ProductionImportPlan {
  * imported short. A partially-read recipe would cost out to a plausible-looking
  * number that is simply wrong, and nothing downstream would flag it.
  *
- * @param rawMaterialIdsByNameKey normalizeMaterialName(name) -> raw material id
- * @param existingIdsByNameKey    nameKey -> existing production item id
- * @param materialsById           costing inputs, also the set of valid ids
+ * A recipe may name another production item, so the same loop rule the form
+ * enforces applies here: an item that ends up made from itself, directly or
+ * through a chain, is rejected along with everything else in that loop.
+ *
+ * @param rawMaterialIdsByNameKey     nameKey -> raw material id
+ * @param productionItemIdsByNameKey  nameKey -> production item id
+ * @param existingIdsByNameKey        nameKey -> existing production item id
+ * @param componentsByKey             costing inputs keyed `type:id`
+ * @param storedDepsByNameKey         nameKey -> production nameKeys it is
+ *                                    already made from, for items the sheet
+ *                                    does not touch
  */
 export function planProductionImport(
   itemRows: SheetRow[],
   recipeRows: SheetRow[],
   rawMaterialIdsByNameKey: ReadonlyMap<string, string>,
+  productionItemIdsByNameKey: ReadonlyMap<string, string>,
   existingIdsByNameKey: ReadonlyMap<string, string>,
-  materialsById: ReadonlyMap<string, CostingMaterial>,
+  componentsByKey: ReadonlyMap<string, CostingMaterial>,
+  storedDepsByNameKey: ReadonlyMap<string, readonly string[]> = new Map(),
 ): ProductionImportPlan {
   const plan: ProductionImportPlan = { creates: [], updates: [], errors: [] };
 
   const groups = new Map<string, LineGroup<ProductionRecipeLine>>();
   const brokenItems = new Set<string>();
-  // `${itemKey}|${rawMaterialId}` — one line per material per item, or the
+  // `${itemKey}|${type}:${refId}` — one line per component per item, or the
   // quantity is ambiguous.
   const seenLine = new Set<string>();
+  // itemKey -> the production nameKeys its sheet rows name, for the loop check.
+  const sheetDeps = new Map<string, string[]>();
 
   recipeRows.forEach((row, index) => {
     const rowNumber = rowNumberOf(row, index);
@@ -191,22 +275,36 @@ export function planProductionImport(
 
     if (!itemName) return fail("Item Name is required");
 
-    const materialName = text(row["Raw Material"]);
-    if (!materialName) return fail("Raw Material is required");
-    const rawMaterialId = rawMaterialIdsByNameKey.get(
-      normalizeMaterialName(materialName),
-    );
-    if (!rawMaterialId) {
-      return fail(`Unknown raw material "${materialName}"`);
+    // Blank Type means Raw Material: that is all a recipe line could name
+    // before, so a sheet that omits the column means what it always meant.
+    const typeCell = text(row["Type"]);
+    const refType = typeCell ? parseComponentType(typeCell) : "raw";
+    if (!refType) {
+      return fail(
+        `Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}"`,
+      );
+    }
+
+    // "Raw Material" is the column's old name — see PRODUCTION_RECIPE_READ_COLUMNS.
+    const componentName = text(row["Component"]) || text(row["Raw Material"]);
+    if (!componentName) return fail("Component is required");
+    const componentNameKey = normalizeMaterialName(componentName);
+    const lookup =
+      refType === "raw" ? rawMaterialIdsByNameKey : productionItemIdsByNameKey;
+    const refId = lookup.get(componentNameKey);
+    if (!refId) {
+      return fail(
+        `Unknown ${COMPONENT_TYPE_LABELS[refType].toLowerCase()} "${componentName}"`,
+      );
     }
 
     const qtyUsed = toNumber(row["Qty Used"]);
     if (qtyUsed === null) return fail("Qty Used is required");
     if (qtyUsed <= 0) return fail("Qty Used must be greater than 0");
 
-    const lineKey = `${itemKey}|${rawMaterialId}`;
+    const lineKey = `${itemKey}|${componentKey(refType, refId)}`;
     if (seenLine.has(lineKey)) {
-      return fail(`"${materialName}" is listed twice for this item`);
+      return fail(`"${componentName}" is listed twice for this item`);
     }
     seenLine.add(lineKey);
 
@@ -215,9 +313,20 @@ export function planProductionImport(
       rowNumber,
       name: itemName,
     };
-    group.lines.push({ rawMaterialId, qtyUsed });
+    group.lines.push({ refType, refId, qtyUsed });
     groups.set(itemKey, group);
+
+    if (refType === "production") {
+      sheetDeps.set(itemKey, [
+        ...(sheetDeps.get(itemKey) ?? []),
+        componentNameKey,
+      ]);
+    }
   });
+
+  // The graph the finished import would leave behind: what the sheet says for
+  // the items it touches, what is already stored for everything else.
+  const looped = loopedNameKeys(storedDepsByNameKey, sheetDeps);
 
   const claimed = new Set<string>();
   const seenItem = new Set<string>();
@@ -245,6 +354,12 @@ export function planProductionImport(
       return fail(`Skipped — it has bad rows on the ${PRODUCTION_RECIPE_SHEET} sheet`);
     }
 
+    if (looped.has(key)) {
+      return fail(
+        "Skipped — this item would end up made from itself, through the production items in its recipe",
+      );
+    }
+
     const recipe = groups.get(key)?.lines ?? [];
     if (recipe.length === 0) {
       return fail(`No rows for "${name}" on the ${PRODUCTION_RECIPE_SHEET} sheet`);
@@ -261,8 +376,10 @@ export function planProductionImport(
         alertQty: row["Alert Qty"],
         recipe,
       },
-      materialsById,
+      componentsByKey,
       normalizeMaterialName,
+      // Loops are checked above, across the whole batch — a per-row graph
+      // could not see the one the sheet is about to create.
     );
     if (error || !doc) return fail(error ?? "Invalid row");
 

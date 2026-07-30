@@ -1,19 +1,39 @@
 import { describe, it, expect } from "vitest";
 import {
   computeCost,
+  productionDependencies,
   recipeConsumption,
   roundCurrency,
   sanitizeProductionItem,
+  toRecipeLines,
   type CostingMaterial,
+  type ProductionRecipeLine,
 } from "./productionItems";
 import { normalizeMaterialName } from "./rawMaterials";
 
 // Toor Dal: ₹120 per kg, 1000 gm per kg  -> ₹0.12 per gm
 // Ghee:     ₹650 per litre, 1000 ml      -> ₹0.65 per ml
+// Masala Base: a production item costed like any other component, from its
+// own stored price — ₹80 per kg over 1000 gm -> ₹0.08 per gm.
 const MATERIALS = new Map<string, CostingMaterial>([
-  ["dal", { pricePerPurchaseUnit: 120, unitConversion: 1000 }],
-  ["ghee", { pricePerPurchaseUnit: 650, unitConversion: 1000 }],
+  ["raw:dal", { pricePerPurchaseUnit: 120, unitConversion: 1000 }],
+  ["raw:ghee", { pricePerPurchaseUnit: 650, unitConversion: 1000 }],
+  ["production:base", { pricePerPurchaseUnit: 80, unitConversion: 1000 }],
 ]);
+
+/** A raw-material recipe line, spelled out once. */
+const raw = (refId: string, qtyUsed: unknown) => ({
+  refType: "raw" as const,
+  refId,
+  qtyUsed: qtyUsed as number,
+});
+
+/** A nested production-item line. */
+const made = (refId: string, qtyUsed: number) => ({
+  refType: "production" as const,
+  refId,
+  qtyUsed,
+});
 
 describe("roundCurrency", () => {
   it("rounds to paise", () => {
@@ -29,11 +49,11 @@ describe("roundCurrency", () => {
 
 describe("computeCost", () => {
   const recipe = [
-    { rawMaterialId: "dal", qtyUsed: 2000 }, // 2000 × 0.12 = ₹240
-    { rawMaterialId: "ghee", qtyUsed: 100 }, // 100  × 0.65 = ₹65
+    raw("dal", 2000), // 2000 × 0.12 = ₹240
+    raw("ghee", 100), // 100  × 0.65 = ₹65
   ];
 
-  it("costs each line from the raw material's per-consumption-unit price", () => {
+  it("costs each line from the component's per-consumption-unit price", () => {
     const { lines } = computeCost(recipe, 5000, 1000, MATERIALS);
     expect(lines[0].unitCost).toBeCloseTo(0.12);
     expect(lines[0].cost).toBeCloseTo(240);
@@ -69,10 +89,10 @@ describe("computeCost", () => {
 
   it("gives every line a zero share when nothing costs anything", () => {
     const free = new Map<string, CostingMaterial>([
-      ["dal", { pricePerPurchaseUnit: 0, unitConversion: 1000 }],
+      ["raw:dal", { pricePerPurchaseUnit: 0, unitConversion: 1000 }],
     ]);
     const { lines, totalRecipeCost } = computeCost(
-      [{ rawMaterialId: "dal", qtyUsed: 10 }],
+      [raw("dal", 10)],
       100,
       1000,
       free,
@@ -89,9 +109,9 @@ describe("computeCost", () => {
     expect(result.pricePerPurchaseUnit).toBe(0);
   });
 
-  it("costs a missing raw material as zero and flags it", () => {
+  it("costs a missing component as zero and flags it", () => {
     const { lines, totalRecipeCost } = computeCost(
-      [{ rawMaterialId: "ghost", qtyUsed: 100 }],
+      [raw("ghost", 100)],
       100,
       1,
       MATERIALS,
@@ -104,8 +124,8 @@ describe("computeCost", () => {
   it("treats a NaN quantity as zero instead of poisoning the total", () => {
     const { totalRecipeCost } = computeCost(
       [
-        { rawMaterialId: "dal", qtyUsed: Number.NaN },
-        { rawMaterialId: "ghee", qtyUsed: 100 },
+        raw("dal", Number.NaN),
+        raw("ghee", 100),
       ],
       100,
       1,
@@ -130,8 +150,8 @@ describe("sanitizeProductionItem", () => {
       unitConversion: 1000,
       batchYieldQty: 5000,
       recipe: [
-        { rawMaterialId: "dal", qtyUsed: 2000 },
-        { rawMaterialId: "ghee", qtyUsed: 100 },
+        raw("dal", 2000),
+        raw("ghee", 100),
       ],
       ...overrides,
     };
@@ -174,15 +194,15 @@ describe("sanitizeProductionItem", () => {
   });
 
   it("requires at least one recipe line", () => {
-    expect(sanitize({ recipe: [] }).error).toBe("Add at least one raw material");
+    expect(sanitize({ recipe: [] }).error).toBe("Add at least one component");
     expect(sanitize({ recipe: undefined }).error).toBe(
-      "Add at least one raw material",
+      "Add at least one component",
     );
   });
 
   it("rejects an unknown raw material", () => {
     expect(
-      sanitize({ recipe: [{ rawMaterialId: "ghost", qtyUsed: 1 }] }).error,
+      sanitize({ recipe: [raw("ghost", 1)] }).error,
     ).toBe("Unknown raw material in recipe");
   });
 
@@ -190,11 +210,11 @@ describe("sanitizeProductionItem", () => {
     expect(
       sanitize({
         recipe: [
-          { rawMaterialId: "dal", qtyUsed: 100 },
-          { rawMaterialId: "dal", qtyUsed: 200 },
+          raw("dal", 100),
+          raw("dal", 200),
         ],
       }).error,
-    ).toBe("The same raw material is listed twice");
+    ).toBe("The same component is listed twice");
   });
 
   it.each([
@@ -202,58 +222,58 @@ describe("sanitizeProductionItem", () => {
     [-5, "Recipe quantities must be greater than 0"],
   ])("rejects a qty of %s", (qty, expected) => {
     expect(
-      sanitize({ recipe: [{ rawMaterialId: "dal", qtyUsed: qty }] }).error,
+      sanitize({ recipe: [raw("dal", qty)] }).error,
     ).toBe(expected);
   });
 
   it("rejects a missing quantity", () => {
     expect(
-      sanitize({ recipe: [{ rawMaterialId: "dal" }] }).error,
+      sanitize({ recipe: [{ refType: "raw", refId: "dal" }] }).error,
     ).toBe("Every recipe row needs a quantity");
   });
 
   it("stores the recipe in the order given", () => {
     const { doc } = sanitize();
-    expect(doc?.recipe.map((r) => r.rawMaterialId)).toEqual(["dal", "ghee"]);
+    expect(doc?.recipe.map((r) => r.refId)).toEqual(["dal", "ghee"]);
   });
 });
 
 describe("recipeConsumption", () => {
   // A yields 100 gm from 50 gm of B and 50 gm of C.
   const RECIPE = [
-    { rawMaterialId: "b", qtyUsed: 50 },
-    { rawMaterialId: "c", qtyUsed: 50 },
+    raw("b", 50),
+    raw("c", 50),
   ];
 
   it("draws down one batch's worth for one batch produced", () => {
     expect(recipeConsumption(RECIPE, 100, 100)).toEqual([
-      { rawMaterialId: "b", qty: 50 },
-      { rawMaterialId: "c", qty: 50 },
+      { refType: "raw", refId: "b", qty: 50 },
+      { refType: "raw", refId: "c", qty: 50 },
     ]);
   });
 
   it("scales linearly with the quantity produced", () => {
     expect(recipeConsumption(RECIPE, 100, 250)).toEqual([
-      { rawMaterialId: "b", qty: 125 },
-      { rawMaterialId: "c", qty: 125 },
+      { refType: "raw", refId: "b", qty: 125 },
+      { refType: "raw", refId: "c", qty: 125 },
     ]);
     expect(recipeConsumption(RECIPE, 100, 10)).toEqual([
-      { rawMaterialId: "b", qty: 5 },
-      { rawMaterialId: "c", qty: 5 },
+      { refType: "raw", refId: "b", qty: 5 },
+      { refType: "raw", refId: "c", qty: 5 },
     ]);
   });
 
-  it("sums a material named twice in one recipe", () => {
+  it("sums a component named twice in one recipe", () => {
     expect(
       recipeConsumption(
         [
-          { rawMaterialId: "b", qtyUsed: 30 },
-          { rawMaterialId: "b", qtyUsed: 20 },
+          raw("b", 30),
+          raw("b", 20),
         ],
         100,
         100,
       ),
-    ).toEqual([{ rawMaterialId: "b", qty: 50 }]);
+    ).toEqual([{ refType: "raw", refId: "b", qty: 50 }]);
   });
 
   it("consumes nothing without a batch yield to scale from", () => {
@@ -266,21 +286,198 @@ describe("recipeConsumption", () => {
     expect(recipeConsumption(RECIPE, 100, -50)).toEqual([]);
   });
 
-  it("skips lines with no material or no quantity", () => {
+  it("skips lines with no component or no quantity", () => {
     expect(
       recipeConsumption(
         [
-          { rawMaterialId: "", qtyUsed: 10 },
-          { rawMaterialId: "b", qtyUsed: 0 },
-          { rawMaterialId: "c", qtyUsed: 50 },
+          raw("", 10),
+          raw("b", 0),
+          raw("c", 50),
         ],
         100,
         100,
       ),
-    ).toEqual([{ rawMaterialId: "c", qty: 50 }]);
+    ).toEqual([{ refType: "raw", refId: "c", qty: 50 }]);
   });
 
   it("handles an empty recipe", () => {
     expect(recipeConsumption([], 100, 100)).toEqual([]);
+  });
+});
+
+describe("toRecipeLines", () => {
+  it("reads a line stored before recipes could name production items", () => {
+    expect(toRecipeLines([{ rawMaterialId: "dal", qtyUsed: 100 }])).toEqual([
+      { refType: "raw", refId: "dal", qtyUsed: 100 },
+    ]);
+  });
+
+  it("reads a current line unchanged", () => {
+    expect(toRecipeLines([made("base", 250)])).toEqual([
+      { refType: "production", refId: "base", qtyUsed: 250 },
+    ]);
+  });
+
+  it("treats an unknown type as raw rather than dropping the line", () => {
+    expect(toRecipeLines([{ refType: "junk", refId: "dal", qtyUsed: 5 }])).toEqual(
+      [{ refType: "raw", refId: "dal", qtyUsed: 5 }],
+    );
+  });
+
+  it("reads anything that is not an array as no recipe", () => {
+    expect(toRecipeLines(undefined)).toEqual([]);
+    expect(toRecipeLines("nonsense")).toEqual([]);
+  });
+});
+
+describe("productionDependencies", () => {
+  // A is made from B, B from C. C is made from raw material only.
+  const GRAPH = new Map<string, ProductionRecipeLine[]>([
+    ["a", [made("b", 1), raw("dal", 1)]],
+    ["b", [made("c", 1)]],
+    ["c", [raw("ghee", 1)]],
+  ]);
+
+  it("follows the chain, not just the first hop", () => {
+    expect(productionDependencies("a", GRAPH)).toEqual(new Set(["b", "c"]));
+  });
+
+  it("does not include the item itself", () => {
+    expect(productionDependencies("c", GRAPH)).toEqual(new Set());
+  });
+
+  it("terminates on data that already contains a loop", () => {
+    const looped = new Map<string, ProductionRecipeLine[]>([
+      ["a", [made("b", 1)]],
+      ["b", [made("a", 1)]],
+    ]);
+    expect(productionDependencies("a", looped)).toEqual(new Set(["a", "b"]));
+  });
+});
+
+describe("sanitizeProductionItem with nested production items", () => {
+  const base = {
+    name: "Dal Tadka Base",
+    consumptionUnit: "gm",
+    purchaseUnit: "kg",
+    unitConversion: 1000,
+    batchYieldQty: 5000,
+  };
+
+  it("accepts a production item as a component and costs it", () => {
+    // 2000 gm dal (₹240) + 1000 gm of the base (₹0.08 × 1000 = ₹80) = ₹320,
+    // over a 5000 gm yield, × 1000 = ₹64 per kg.
+    const { doc, error } = sanitizeProductionItem(
+      { ...base, recipe: [raw("dal", 2000), made("base", 1000)] },
+      MATERIALS,
+      normalizeMaterialName,
+    );
+    expect(error).toBeUndefined();
+    expect(doc?.pricePerPurchaseUnit).toBe(64);
+    expect(doc?.recipe[1]).toEqual({
+      refType: "production",
+      refId: "base",
+      qtyUsed: 1000,
+    });
+  });
+
+  it("rejects an unknown production item by name, not as a raw material", () => {
+    expect(
+      sanitizeProductionItem(
+        { ...base, recipe: [made("ghost", 1)] },
+        MATERIALS,
+        normalizeMaterialName,
+      ).error,
+    ).toBe("Unknown production item in recipe");
+  });
+
+  it("tells a raw material and a production item of the same id apart", () => {
+    // "base" exists only as a production item, so naming it as raw fails.
+    expect(
+      sanitizeProductionItem(
+        { ...base, recipe: [raw("base", 1)] },
+        MATERIALS,
+        normalizeMaterialName,
+      ).error,
+    ).toBe("Unknown raw material in recipe");
+  });
+
+  it("reads a body written in the raw-material-only shape", () => {
+    const { doc, error } = sanitizeProductionItem(
+      { ...base, recipe: [{ rawMaterialId: "dal", qtyUsed: 2000 }] },
+      MATERIALS,
+      normalizeMaterialName,
+    );
+    expect(error).toBeUndefined();
+    expect(doc?.recipe).toEqual([
+      { refType: "raw", refId: "dal", qtyUsed: 2000 },
+    ]);
+  });
+
+  it("rejects an item made from itself", () => {
+    expect(
+      sanitizeProductionItem(
+        { ...base, recipe: [made("base", 1)] },
+        MATERIALS,
+        normalizeMaterialName,
+        { selfId: "base", recipesById: new Map() },
+      ).error,
+    ).toBe("A production item cannot be made from itself");
+  });
+
+  it("rejects a loop closed through another production item", () => {
+    // "base" is already made from "self", so "self" may not be made from it.
+    const recipesById = new Map<string, ProductionRecipeLine[]>([
+      ["base", [made("self", 1)]],
+    ]);
+    expect(
+      sanitizeProductionItem(
+        { ...base, recipe: [made("base", 1)] },
+        MATERIALS,
+        normalizeMaterialName,
+        { selfId: "self", recipesById },
+      ).error,
+    ).toMatch(/loop/);
+  });
+
+  it("allows a chain that does not close", () => {
+    const recipesById = new Map<string, ProductionRecipeLine[]>([
+      ["base", [raw("dal", 1)]],
+    ]);
+    expect(
+      sanitizeProductionItem(
+        { ...base, recipe: [made("base", 1)] },
+        MATERIALS,
+        normalizeMaterialName,
+        { selfId: "self", recipesById },
+      ).error,
+    ).toBeUndefined();
+  });
+});
+
+describe("recipeConsumption with nested production items", () => {
+  it("draws a nested item off its own shelf, tagged as production", () => {
+    expect(
+      recipeConsumption([raw("dal", 50), made("base", 20)], 100, 200),
+    ).toEqual([
+      { refType: "raw", refId: "dal", qty: 100 },
+      { refType: "production", refId: "base", qty: 40 },
+    ]);
+  });
+
+  it("does not expand a nested item into what IT is made from", () => {
+    // The base was already paid for in raw material when its own batch was
+    // recorded; expanding here would deduct that twice.
+    const consumed = recipeConsumption([made("base", 20)], 100, 100);
+    expect(consumed).toEqual([
+      { refType: "production", refId: "base", qty: 20 },
+    ]);
+  });
+
+  it("keeps a raw material and a production item of the same id apart", () => {
+    expect(recipeConsumption([raw("x", 10), made("x", 10)], 100, 100)).toEqual([
+      { refType: "raw", refId: "x", qty: 10 },
+      { refType: "production", refId: "x", qty: 10 },
+    ]);
   });
 });

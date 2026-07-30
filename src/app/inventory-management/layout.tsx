@@ -10,6 +10,7 @@ import {
   SlidersOutlined,
   PlusSquareOutlined,
   DatabaseOutlined,
+  DeleteOutlined,
   TagsOutlined,
   SettingOutlined,
   DownOutlined,
@@ -60,6 +61,11 @@ const NAV_ITEMS: {
     href: "/inventory-management/add-stock",
     label: "Add Stock",
     icon: <PlusSquareOutlined />,
+  },
+  {
+    href: "/inventory-management/wastage",
+    label: "Wastage",
+    icon: <DeleteOutlined />,
   },
   {
     href: "/inventory-management/stocks",

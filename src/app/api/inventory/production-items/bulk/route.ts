@@ -3,9 +3,9 @@ import { ObjectId, type AnyBulkWriteOperation, type Document } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import {
   PRODUCTION_ITEMS_COLLECTION,
-  costingMaterialsById,
+  componentCostsByKey,
   isValidId,
-  recalcItemRecipeCosts,
+  recalcDerivedCosts,
 } from "@/lib/inventoryDb";
 import {
   sanitizeProductionItem,
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const materialsById = await costingMaterialsById();
+    const componentsByKey = await componentCostsByKey();
 
     const now = new Date();
     const ops: AnyBulkWriteOperation<Document>[] = [];
@@ -66,9 +66,11 @@ export async function POST(request: NextRequest) {
     const seen = new Set<string>();
 
     const build = (raw: unknown, id?: string) => {
+      // No loop graph here: the importer has already checked the batch it is
+      // committing as a whole — see planProductionImport.
       const { doc, error } = sanitizeProductionItem(
         raw as ProductionItemInput,
-        materialsById,
+        componentsByKey,
         normalizeMaterialName,
       );
       if (error || !doc) {
@@ -127,15 +129,17 @@ export async function POST(request: NextRequest) {
       .collection(PRODUCTION_ITEMS_COLLECTION)
       .bulkWrite(ops, { ordered: false });
 
-    // Production prices feed item-recipe costs, so an import here can move
-    // numbers a level up. Recompute rather than working out which ids moved.
-    const repricedItemRecipes = await recalcItemRecipeCosts();
+    // An imported recipe may be built on another production item, so a price
+    // written here can move other production prices before it reaches the
+    // item recipes above them. Settle both levels, in that order.
+    const repriced = await recalcDerivedCosts();
 
     return NextResponse.json({
       success: true,
       created: result.upsertedCount,
       updated: result.modifiedCount,
-      repricedItemRecipes,
+      repricedProductionItems: repriced.productionItems,
+      repricedItemRecipes: repriced.itemRecipes,
       // Rows that passed the preview but failed re-validation. Non-empty here
       // means the client and server disagreed — worth surfacing, not hiding.
       rejected,

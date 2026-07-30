@@ -6,33 +6,36 @@ import { Modal, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { EditOutlined, WarningOutlined } from "@ant-design/icons";
 import { computeCost, type ProductionItem } from "@/lib/productionItems";
-import { formatCurrency, type RawMaterial } from "@/lib/rawMaterials";
+import { componentKey, type ComponentType } from "@/lib/itemRecipes";
+import { formatCurrency } from "@/lib/rawMaterials";
+import { useRecipeComponents } from "./useRecipeComponents";
+
+const TYPE_LABEL: Record<ComponentType, string> = {
+  raw: "Raw material",
+  production: "Production item",
+};
 
 /**
  * Read-only view of a production item's recipe.
  *
- * Costs are recomputed here from the current raw-material prices rather than
- * read from a stored figure, so the breakdown always reconciles with what the
- * form would show. The footer's Edit is a shortcut into the full edit page —
- * nothing is editable inline.
+ * Costs are recomputed here from current component prices rather than read
+ * from a stored figure, so the breakdown always reconciles with what the form
+ * would show. Components resolve through the same hook the forms use, so a
+ * recipe built on another production item names it rather than showing a gap.
+ * The footer's Edit is a shortcut into the full edit page — nothing is
+ * editable inline.
  */
 export default function ViewRecipeModal({
   open,
   item,
-  materials,
   onClose,
 }: {
   open: boolean;
   item: ProductionItem | null;
-  materials: RawMaterial[];
   onClose: () => void;
 }) {
   const router = useRouter();
-
-  const materialsById = useMemo(
-    () => new Map(materials.map((m) => [String(m._id), m])),
-    [materials],
-  );
+  const { optionsByKey, costsByKey } = useRecipeComponents();
 
   const breakdown = useMemo(() => {
     if (!item) return null;
@@ -40,40 +43,34 @@ export default function ViewRecipeModal({
       item.recipe,
       item.batchYieldQty,
       item.unitConversion,
-      new Map(
-        materials.map((m) => [
-          String(m._id),
-          {
-            pricePerPurchaseUnit: m.pricePerPurchaseUnit,
-            unitConversion: m.unitConversion,
-          },
-        ]),
-      ),
+      costsByKey,
     );
-  }, [item, materials]);
+  }, [item, costsByKey]);
 
   const rows = useMemo(() => {
     if (!item || !breakdown) return [];
     return breakdown.lines.map((line) => {
-      const material = materialsById.get(line.rawMaterialId);
+      const key = componentKey(line.refType, line.refId);
+      const option = optionsByKey.get(key);
       return {
-        key: line.rawMaterialId,
-        name: material?.name ?? "(deleted raw material)",
-        categoryName: material?.categoryName ?? "",
+        key,
+        refType: line.refType,
+        name: option?.name ?? "(deleted component)",
+        categoryName: option?.categoryName ?? "",
         qtyUsed: line.qtyUsed,
-        unit: material?.consumptionUnit ?? "",
+        unit: option?.consumptionUnit ?? "",
         cost: line.cost,
         share: line.share,
         found: line.found,
       };
     });
-  }, [item, breakdown, materialsById]);
+  }, [item, breakdown, optionsByKey]);
 
   type Row = (typeof rows)[number];
 
   const columns: ColumnsType<Row> = [
     {
-      title: "Raw Material",
+      title: "Component",
       dataIndex: "name",
       render: (value: string, row) => (
         <span className="font-medium text-gray-900">
@@ -83,6 +80,22 @@ export default function ViewRecipeModal({
               <WarningOutlined /> missing
             </span>
           )}
+        </span>
+      ),
+    },
+    {
+      title: "Type",
+      dataIndex: "refType",
+      width: 150,
+      render: (value: ComponentType) => (
+        <span
+          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+            value === "production"
+              ? "bg-[#024731]/10 text-[#024731]"
+              : "bg-gray-100 text-gray-700"
+          }`}
+        >
+          {TYPE_LABEL[value]}
         </span>
       ),
     },
@@ -137,11 +150,10 @@ export default function ViewRecipeModal({
       title={
         item ? (
           <span>
-            Raw materials in{" "}
-            <span className="font-bold">{item.name}</span>
+            Recipe for <span className="font-bold">{item.name}</span>
           </span>
         ) : (
-          "Raw materials"
+          "Recipe"
         )
       }
       footer={[
@@ -198,15 +210,15 @@ export default function ViewRecipeModal({
               summary={() =>
                 rows.length > 0 ? (
                   <Table.Summary.Row className="bg-gray-50 font-semibold">
-                    <Table.Summary.Cell index={0} colSpan={3}>
+                    <Table.Summary.Cell index={0} colSpan={4}>
                       <span className="text-gray-700">Total cost</span>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={3} align="right">
+                    <Table.Summary.Cell index={4} align="right">
                       <span className="tabular-nums text-gray-900">
                         {formatCurrency(breakdown.totalRecipeCost)}
                       </span>
                     </Table.Summary.Cell>
-                    <Table.Summary.Cell index={4} align="right">
+                    <Table.Summary.Cell index={5} align="right">
                       <span className="tabular-nums text-gray-600">100.0%</span>
                     </Table.Summary.Cell>
                   </Table.Summary.Row>

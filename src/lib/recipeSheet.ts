@@ -16,6 +16,8 @@ import {
   PRODUCTION_ITEM_REQUIRED_COLUMNS,
   PRODUCTION_ITEM_SHEET,
   PRODUCTION_RECIPE_COLUMNS,
+  PRODUCTION_RECIPE_READ_COLUMNS,
+  PRODUCTION_RECIPE_REQUIRED_COLUMNS,
   PRODUCTION_RECIPE_SHEET,
   type RecipeImportRowError,
 } from "@/lib/recipeImport";
@@ -25,7 +27,7 @@ import type { ProductionItem } from "@/lib/productionItems";
 import { componentKey, type ItemRecipe } from "@/lib/itemRecipes";
 
 const PRODUCTION_ITEM_WIDTHS = [28, 18, 16, 16, 18, 14, 20];
-const PRODUCTION_RECIPE_WIDTHS = [28, 30, 14];
+const PRODUCTION_RECIPE_WIDTHS = [28, 18, 30, 14];
 const ITEM_RECIPE_WIDTHS = [32, 20];
 const ITEM_RECIPE_COMPONENT_WIDTHS = [30, 18, 30, 14];
 
@@ -83,14 +85,17 @@ function addValidNames(
 /**
  * Export production items to xlsx.
  *
- * Raw materials are written as their *name*, not their id — the sheet has to be
+ * Components are written as their *name*, not their id — the sheet has to be
  * editable by a human, and the importer resolves names back to ids. A recipe
- * line whose raw material has since been deleted is written with a blank name,
+ * line whose component has since been deleted is written with a blank name,
  * which fails that row on re-import rather than quietly dropping it.
+ *
+ * Type is written alongside, because a raw material and a production item may
+ * share a name and are looked up in different lists.
  */
 export async function buildProductionWorkbook(
   items: ProductionItem[],
-  materialNameById: ReadonlyMap<string, string>,
+  componentNameByKey: ComponentNames,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const itemSheet = newSheet(
@@ -119,7 +124,8 @@ export async function buildProductionWorkbook(
     for (const line of item.recipe) {
       recipeSheet.addRow([
         item.name,
-        materialNameById.get(line.rawMaterialId) ?? "",
+        COMPONENT_TYPE_LABELS[line.refType],
+        componentNameByKey.get(componentKey(line.refType, line.refId)) ?? "",
         line.qtyUsed,
       ]);
     }
@@ -134,6 +140,7 @@ export async function buildProductionWorkbook(
 /** Blank upload template, with an example item and its two recipe lines. */
 export async function buildProductionTemplateWorkbook(
   materialNames: string[],
+  productionNames: string[] = [],
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const itemSheet = newSheet(
@@ -151,13 +158,31 @@ export async function buildProductionTemplateWorkbook(
 
   const exampleA = materialNames[0] ?? "Toor Dal";
   const exampleB = materialNames[1] ?? "Onion";
+  const exampleProduction = productionNames[0] ?? "Masala Base";
 
-  itemSheet.addRow(["Masala Base", "gm", "kg", 1000, 5000, 500, ""]);
+  itemSheet.addRow(["Dal Tadka Base", "gm", "kg", 1000, 5000, 500, ""]);
   itemSheet.getRow(2).font = { italic: true, color: { argb: "FF888888" } };
 
-  recipeSheet.addRow(["Masala Base", exampleA, 250]);
-  recipeSheet.addRow(["Masala Base", exampleB, 400]);
-  for (const n of [2, 3]) {
+  recipeSheet.addRow([
+    "Dal Tadka Base",
+    COMPONENT_TYPE_LABELS.raw,
+    exampleA,
+    250,
+  ]);
+  recipeSheet.addRow([
+    "Dal Tadka Base",
+    COMPONENT_TYPE_LABELS.raw,
+    exampleB,
+    400,
+  ]);
+  // A recipe may be built on something the kitchen already makes.
+  recipeSheet.addRow([
+    "Dal Tadka Base",
+    COMPONENT_TYPE_LABELS.production,
+    exampleProduction,
+    120,
+  ]);
+  for (const n of [2, 3, 4]) {
     recipeSheet.getRow(n).font = { italic: true, color: { argb: "FF888888" } };
   }
 
@@ -173,7 +198,11 @@ export async function buildProductionTemplateWorkbook(
     ["   and spacing. A match updates that item; no match creates a new one."],
     ["4. An item's recipe is REPLACED by its rows on the Recipe sheet. Every"],
     ["   item on the items sheet needs at least one recipe row."],
-    ["5. Raw Material must match one of the raw materials listed below."],
+    [`5. Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}", and Component must`],
+    ["   match a name from the matching list below. Leave Type blank and it is"],
+    [`   read as "${COMPONENT_TYPE_LABELS.raw}", so sheets exported before this column existed still upload.`],
+    ["   A production item may be built on another production item, but not on"],
+    ["   itself — directly or through a chain, which the importer rejects."],
     ["6. Unit Conversion is how many consumption units make one purchase unit."],
     ["   Example: purchase in kg, consume in gm, conversion 1000."],
     ["7. Batch Yield Qty is how much one batch of the recipe makes, in the"],
@@ -186,9 +215,15 @@ export async function buildProductionTemplateWorkbook(
   notes.getRow(1).font = { bold: true, size: 14 };
   addValidNames(
     notes,
-    "Valid raw materials:",
+    `Valid components — Type "${COMPONENT_TYPE_LABELS.raw}":`,
     materialNames,
     "(none yet — add raw materials before importing production items)",
+  );
+  addValidNames(
+    notes,
+    `Valid components — Type "${COMPONENT_TYPE_LABELS.production}":`,
+    productionNames,
+    "(none yet)",
   );
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -222,8 +257,8 @@ export async function parseProductionWorkbook(data: ArrayBuffer): Promise<{
 
   const recipe = readSheetRows(
     recipeSheet,
-    PRODUCTION_RECIPE_COLUMNS,
-    PRODUCTION_RECIPE_COLUMNS,
+    PRODUCTION_RECIPE_READ_COLUMNS,
+    PRODUCTION_RECIPE_REQUIRED_COLUMNS,
   );
   if (recipe.error) return { ...empty, error: recipe.error };
 

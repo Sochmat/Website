@@ -21,7 +21,7 @@ import {
   type AuditKind,
   type AuditLine,
 } from "@/lib/stockAudits";
-import { recipeConsumption } from "@/lib/productionItems";
+import { recipeConsumption, toRecipeLines } from "@/lib/productionItems";
 
 // Admin-only; enforced by the admin session check in src/middleware.ts.
 
@@ -152,9 +152,14 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const ops: AnyBulkWriteOperation<Document>[] = [];
     const lines: AuditLine[] = [];
-    // Raw material owed to the recipes of everything produced in this save,
-    // summed across rows so two items sharing an ingredient draw down once.
-    const owed = new Map<string, number>();
+    // What the recipes of everything produced in this save owe, summed across
+    // rows so two items sharing a component draw down once. Kept per kind: a
+    // recipe may be built on another production item, and that comes off the
+    // production shelf, not the raw-material one.
+    const owed: Record<AuditKind, Map<string, number>> = {
+      raw: new Map(),
+      production: new Map(),
+    };
 
     for (const row of accepted) {
       const doc = byId.get(row.id);
@@ -194,22 +199,15 @@ export async function POST(request: NextRequest) {
       // stored — an item with no recipe or no batch yield simply spends
       // nothing, which is the honest answer when we cannot know.
       if (kind === "production") {
-        const recipe = Array.isArray(doc.recipe)
-          ? doc.recipe.map(
-              (l: { rawMaterialId?: unknown; qtyUsed?: unknown }) => ({
-                rawMaterialId: String(l?.rawMaterialId ?? ""),
-                qtyUsed: Number(l?.qtyUsed ?? 0),
-              }),
-            )
-          : [];
         for (const consumed of recipeConsumption(
-          recipe,
+          toRecipeLines(doc.recipe),
           Number(doc.batchYieldQty ?? 0),
           row.addQty,
         )) {
-          owed.set(
-            consumed.rawMaterialId,
-            (owed.get(consumed.rawMaterialId) ?? 0) + consumed.qty,
+          const bucket = owed[consumed.refType];
+          bucket.set(
+            consumed.refId,
+            (bucket.get(consumed.refId) ?? 0) + consumed.qty,
           );
         }
       }
@@ -227,12 +225,24 @@ export async function POST(request: NextRequest) {
     // Spend the ingredients. Done after the production write, so a failure
     // here leaves stock added but not deducted — recoverable by hand, unlike
     // the reverse, which would take stock away for something never recorded.
-    const consumedLines = await drawDownStock(
+    //
+    // Nested production items are drawn down FIRST, and deliberately after the
+    // $inc above: producing a base and then the item built on it, in one save,
+    // must spend the base that was just made rather than the quantity from
+    // before it existed.
+    const consumedProduction = await drawDownStock(
       db,
-      RAW_MATERIALS_COLLECTION,
-      owed,
+      PRODUCTION_ITEMS_COLLECTION,
+      owed.production,
       now,
     );
+    const consumedRaw = await drawDownStock(
+      db,
+      RAW_MATERIALS_COLLECTION,
+      owed.raw,
+      now,
+    );
+    const consumedLines = [...consumedProduction, ...consumedRaw];
 
     const session = await verifySession(request.cookies.get(ADMIN_COOKIE)?.value);
     // Written after the stock, so a failed write is never recorded as history.
@@ -260,10 +270,15 @@ export async function POST(request: NextRequest) {
         id: line.id,
         currentStock: line.closingStock,
       })),
-      // Raw material spent on those additions, so the Raw Material tab settles
-      // to the same numbers without a refetch.
-      consumed: consumedLines.map((line) => ({
+      // Stock spent on those additions, so both tabs settle to the same
+      // numbers without a refetch. Tagged with which shelf each row came off,
+      // since a production recipe can now spend either.
+      consumed: [
+        ...consumedProduction.map((line) => ({ ...line, kind: "production" as const })),
+        ...consumedRaw.map((line) => ({ ...line, kind: "raw" as const })),
+      ].map((line) => ({
         id: line.id,
+        kind: line.kind,
         name: line.name,
         unit: line.unit,
         consumedQty: line.consumedQty,

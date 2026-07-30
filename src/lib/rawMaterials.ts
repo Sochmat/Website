@@ -25,6 +25,44 @@ export const DEFAULT_CATEGORIES = [
 ] as const;
 
 /**
+ * Which of a material's two units a unit name is offered for.
+ *
+ * They are kept apart because they mean different things: you buy in kg and
+ * consume in gm, and offering "kg" as a consumption unit would invite the
+ * conversion to be entered backwards. A name may legitimately appear in both
+ * lists ("pcs"), which is why this is a scope rather than a property of the
+ * name itself.
+ */
+export type UnitKind = "consumption" | "purchase";
+
+export interface InventoryUnit {
+  _id?: string;
+  name: string;
+  kind: UnitKind;
+  /** How many raw materials use it. Only populated by the units endpoint. */
+  materialCount?: number;
+}
+
+/**
+ * Seeded on first read, so the dropdowns open with exactly what they offered
+ * when the lists were hard-coded. The set is a starting point — units are
+ * added from the raw-material form as the kitchen needs them.
+ */
+export const DEFAULT_CONSUMPTION_UNITS = ["gm", "ml", "pcs"] as const;
+export const DEFAULT_PURCHASE_UNITS = [
+  "kg",
+  "litre",
+  "box",
+  "packet",
+  "pcs",
+] as const;
+
+/** Same normalization brands and categories use, for uniqueness checks. */
+export function normalizeUnitName(name: string): string {
+  return name.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Brands are the same shape as categories but are NOT seeded — there is no
  * sensible default set, and they are optional on a material besides.
  */
@@ -134,13 +172,18 @@ export function pricePerConsumptionUnit(
  * An absent `currentStock` means *unknown*, which must NOT read as "0 and
  * therefore critical" — untracked rows show the threshold with no badge. An
  * absent or zero `alertQty` means no threshold was set, so nothing can be
- * below it.
+ * below it — except a negative quantity, which is always flagged.
  */
 export function isBelowAlert(
   currentStock: number | undefined,
   alertQty: number | undefined,
 ): boolean {
   if (typeof currentStock !== "number") return false;
+  // Below zero is below any threshold worth setting, and it is the state that
+  // most needs looking at: stock went out that the books did not have. Checked
+  // before alertQty so an item with no threshold — the common case now that
+  // one is optional — still surfaces when it goes into the red.
+  if (currentStock < 0) return true;
   if (typeof alertQty !== "number" || alertQty <= 0) return false;
   return currentStock <= alertQty;
 }
@@ -230,8 +273,11 @@ export function sanitizeRawMaterial(
   if (pricePerPurchaseUnit === null) return { error: "Price is required" };
   if (pricePerPurchaseUnit < 0) return { error: "Price cannot be negative" };
 
-  const alertQty = toNumber(input.alertQty);
-  if (alertQty === null) return { error: "Alert qty is required" };
+  // Optional: a blank threshold simply means "don't flag this material", the
+  // same as it means on a production item. 0 is what isBelowAlert reads as no
+  // threshold set, so a blank cell and an explicit 0 land in the same place.
+  const alertRaw = toNumber(input.alertQty);
+  const alertQty = alertRaw === null ? 0 : alertRaw;
   if (alertQty < 0) return { error: "Alert qty cannot be negative" };
 
   return {

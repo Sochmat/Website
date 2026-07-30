@@ -199,13 +199,21 @@ export function buildAdditionLine(input: {
 }
 
 /**
- * Build a line for raw material drawn down by producing something.
+ * Build a line for stock drawn down by producing or selling something.
  *
- * The mirror of buildAdditionLine: adding production stock spends the recipe's
- * ingredients. Stock is floored at zero — a draw-down bigger than what is on
- * record means the raw material was under-counted, not that the kitchen now
- * holds a negative quantity — and the uncovered part is kept as `shortfall` so
- * that fact is recorded rather than silently swallowed.
+ * The mirror of buildAdditionLine: producing spends the recipe's ingredients,
+ * and delivering an order spends whatever its recipe names.
+ *
+ * The quantity is allowed to go NEGATIVE. Selling a dish whose recipe calls
+ * for 50 gm of an ingredient the books say there is none of is a real event —
+ * the food went out of the door — and a shelf that stopped at zero would say
+ * the kitchen is square when it is 50 gm in the red. Worse, the next delivery
+ * would land on that false zero and read as fully stocked, quietly absorbing
+ * the deficit. Carrying it negative keeps the count honest until someone
+ * either receives stock or corrects it on the Audit screen.
+ *
+ * `shortfall` still records how much of this draw-down was not covered, so a
+ * save can be reported on without re-deriving it from the closing figure.
  */
 export function buildConsumptionLine(input: {
   id: string;
@@ -217,11 +225,15 @@ export function buildConsumptionLine(input: {
   unitCost?: number | null;
 }): AuditLine {
   const consumedQty = roundQty(input.consumedQty);
-  // An untracked raw material is treated as empty: there is no quantity to
-  // spend, so the whole draw-down is a shortfall.
+  // An untracked item is treated as empty: there was no quantity to spend, so
+  // the whole draw-down is a shortfall and the closing figure is the debt.
   const available = input.previousStock ?? 0;
-  const closingStock = roundQty(Math.max(0, available - consumedQty));
-  const shortfall = roundQty(Math.max(0, consumedQty - available));
+  const closingStock = roundQty(available - consumedQty);
+  // How much of THIS draw-down the shelf could not cover. Stock already in the
+  // red counts as nothing available rather than as a negative to be subtracted
+  // — otherwise an item sitting at −20 would report a 70 gm shortfall on a
+  // 50 gm draw-down, blaming this sale for a debt that predates it.
+  const shortfall = roundQty(Math.max(0, consumedQty - Math.max(0, available)));
   const { diff, pctDiff } = auditVariance(input.previousStock, closingStock);
   const unitCost = input.unitCost || null;
   return {

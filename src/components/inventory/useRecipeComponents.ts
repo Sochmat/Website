@@ -5,7 +5,11 @@ import {
   componentKey,
   type ComponentType,
 } from "@/lib/itemRecipes";
-import type { CostingMaterial, ProductionItem } from "@/lib/productionItems";
+import {
+  toRecipeLines,
+  type CostingMaterial,
+  type ProductionItem,
+} from "@/lib/productionItems";
 import type { RawMaterial } from "@/lib/rawMaterials";
 
 /** Everything the item-recipe UI needs to know about one selectable component. */
@@ -99,5 +103,25 @@ export function useRecipeComponents() {
     return map;
   }, [materials, productionItems]);
 
-  return { options, optionsByKey, costsByKey, loading };
+  /**
+   * Every production item's recipe, keyed by id — mirrors
+   * productionRecipesById() on the server. The production-item form checks a
+   * candidate component against this before offering it, so a recipe that
+   * would close a loop is never even selectable.
+   */
+  const productionRecipesById = useMemo(
+    () =>
+      new Map(
+        productionItems.map((p) => [String(p._id), toRecipeLines(p.recipe)]),
+      ),
+    [productionItems],
+  );
+
+  return {
+    options,
+    optionsByKey,
+    costsByKey,
+    productionRecipesById,
+    loading,
+  };
 }

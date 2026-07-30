@@ -203,27 +203,45 @@ describe("buildConsumptionLine", () => {
     });
   });
 
-  it("floors at zero and records what it could not take", () => {
+  it("goes negative rather than stopping at zero, and says by how much", () => {
+    // The food went out of the door; the books said there were only 30.
     expect(spend(30, 50)).toMatchObject({
-      closingStock: 0,
+      closingStock: -20,
       consumedQty: 50,
       shortfall: 20,
-      diff: -30,
+      diff: -50,
     });
   });
 
-  it("treats an untracked material as empty", () => {
+  it("goes negative from an exactly-empty shelf", () => {
+    expect(spend(0, 50)).toMatchObject({
+      previousStock: 0,
+      closingStock: -50,
+      shortfall: 50,
+      diff: -50,
+    });
+  });
+
+  it("goes further negative when already in the red", () => {
+    expect(spend(-20, 50)).toMatchObject({
+      closingStock: -70,
+      shortfall: 50,
+      diff: -50,
+    });
+  });
+
+  it("treats an untracked material as empty and records the debt", () => {
     expect(spend(null, 50)).toMatchObject({
       previousStock: null,
-      closingStock: 0,
+      closingStock: -50,
       shortfall: 50,
       diff: null,
     });
   });
 
-  it("values what actually left the shelf, not what was asked for", () => {
-    // Only 30 of the 50 were there, at ₹2 each.
-    expect(spend(30, 50, 2).changeCost).toBe(-60);
+  it("values everything that left, including the uncovered part", () => {
+    // All 50 went into the dish at ₹2 each, whatever the books said.
+    expect(spend(30, 50, 2).changeCost).toBe(-100);
   });
 
   it("keeps fractional draw-downs clean", () => {

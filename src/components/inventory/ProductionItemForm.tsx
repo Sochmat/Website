@@ -7,16 +7,17 @@ import type { ColumnsType } from "antd/es/table";
 import { DeleteOutlined, PlusOutlined, WarningOutlined } from "@ant-design/icons";
 import {
   computeCost,
+  productionDependencies,
   type ProductionItem,
   type ProductionRecipeLine,
-  type CostingMaterial,
 } from "@/lib/productionItems";
+import { componentKey, type ComponentType } from "@/lib/itemRecipes";
 import {
   formatCurrency,
   formatUnitConversion,
-  type RawMaterial,
   type RawMaterialCategory,
 } from "@/lib/rawMaterials";
+import { useRecipeComponents } from "./useRecipeComponents";
 
 const CONSUMPTION_UNITS = ["gm", "ml", "pcs"];
 const PURCHASE_UNITS = ["kg", "litre", "box", "packet", "pcs"];
@@ -29,9 +30,15 @@ const inputClass =
 /** A recipe row while it's being edited — qty is a string so partial input
  *  ("1.", "") survives typing without being coerced to 0. */
 interface DraftLine {
-  rawMaterialId: string;
+  refType: ComponentType;
+  refId: string;
   qtyUsed: string;
 }
+
+const TYPE_LABEL: Record<ComponentType, string> = {
+  raw: "Raw material",
+  production: "Production item",
+};
 
 function Field({
   label,
@@ -72,9 +79,16 @@ export default function ProductionItemForm({
   const router = useRouter();
   const [messageApi, messageContextHolder] = message.useMessage();
 
-  const [materials, setMaterials] = useState<RawMaterial[]>([]);
+  // Raw materials AND production items, resolved and costed exactly as the
+  // item-recipe form does — a production recipe may now name either.
+  const {
+    options,
+    optionsByKey,
+    costsByKey,
+    productionRecipesById,
+    loading: loadingComponents,
+  } = useRecipeComponents();
   const [categories, setCategories] = useState<RawMaterialCategory[]>([]);
-  const [loadingMaterials, setLoadingMaterials] = useState(true);
 
   const [name, setName] = useState(item?.name ?? "");
   const [consumptionUnit, setConsumptionUnit] = useState(
@@ -92,11 +106,13 @@ export default function ProductionItemForm({
   );
   const [lines, setLines] = useState<DraftLine[]>(
     item?.recipe.map((r) => ({
-      rawMaterialId: r.rawMaterialId,
+      refType: r.refType,
+      refId: r.refId,
       qtyUsed: String(r.qtyUsed),
     })) ?? [],
   );
 
+  const [typeFilter, setTypeFilter] = useState<ComponentType | "">("");
   const [pickerCategory, setPickerCategory] = useState("");
   const [pickerValue, setPickerValue] = useState<string | undefined>(undefined);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -109,18 +125,13 @@ export default function ProductionItemForm({
     let cancelled = false;
     (async () => {
       try {
-        const [mRes, cRes] = await Promise.all([
-          fetch("/api/inventory/raw-materials", { cache: "no-store" }),
-          fetch("/api/inventory/categories", { cache: "no-store" }),
-        ]);
-        const [mData, cData] = await Promise.all([mRes.json(), cRes.json()]);
-        if (cancelled) return;
-        if (mData.success) setMaterials(mData.materials ?? []);
-        if (cData.success) setCategories(cData.categories ?? []);
+        const res = await fetch("/api/inventory/categories", {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!cancelled && data.success) setCategories(data.categories ?? []);
       } catch {
-        /* the picker simply stays empty */
-      } finally {
-        if (!cancelled) setLoadingMaterials(false);
+        /* the category filter simply stays empty */
       }
     })();
     return () => {
@@ -135,78 +146,66 @@ export default function ProductionItemForm({
     [],
   );
 
-  const materialsById = useMemo(
-    () => new Map(materials.map((m) => [String(m._id), m])),
-    [materials],
-  );
-
-  const costingById = useMemo<Map<string, CostingMaterial>>(
-    () =>
-      new Map(
-        materials.map((m) => [
-          String(m._id),
-          {
-            pricePerPurchaseUnit: m.pricePerPurchaseUnit,
-            unitConversion: m.unitConversion,
-          },
-        ]),
-      ),
-    [materials],
-  );
-
   /** Recomputed on every keystroke — the same function the server stores with. */
   const breakdown = useMemo(() => {
     const recipe: ProductionRecipeLine[] = lines.map((l) => ({
-      rawMaterialId: l.rawMaterialId,
+      refType: l.refType,
+      refId: l.refId,
       qtyUsed: Number(l.qtyUsed.replace(/,/g, "").trim()),
     }));
     return computeCost(
       recipe,
       Number(batchYieldQty.replace(/,/g, "").trim()),
       Number(unitConversion.replace(/,/g, "").trim()),
-      costingById,
+      costsByKey,
     );
-  }, [lines, batchYieldQty, unitConversion, costingById]);
+  }, [lines, batchYieldQty, unitConversion, costsByKey]);
 
-  const costByMaterialId = useMemo(
-    () => new Map(breakdown.lines.map((l) => [l.rawMaterialId, l])),
+  const costByKey = useMemo(
+    () =>
+      new Map(breakdown.lines.map((l) => [componentKey(l.refType, l.refId), l])),
     [breakdown],
   );
 
   const addLine = useCallback(
-    (rawMaterialId: string) => {
+    (key: string) => {
       setPickerValue(undefined);
-      const existing = lines.some((l) => l.rawMaterialId === rawMaterialId);
-      if (existing) {
-        // Re-selecting an ingredient already in the recipe flashes its row
+      const option = optionsByKey.get(key);
+      if (!option) return;
+
+      if (lines.some((l) => componentKey(l.refType, l.refId) === key)) {
+        // Re-selecting a component already in the recipe flashes its row
         // rather than silently doing nothing or creating an ambiguous double.
-        setHighlightId(rawMaterialId);
+        setHighlightId(key);
         if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
         highlightTimer.current = window.setTimeout(
           () => setHighlightId(null),
           1600,
         );
-        messageApi.info("That raw material is already in the recipe");
+        messageApi.info("That component is already in the recipe");
         return;
       }
-      setLines((current) => [...current, { rawMaterialId, qtyUsed: "" }]);
+      setLines((current) => [
+        ...current,
+        { refType: option.refType, refId: option.refId, qtyUsed: "" },
+      ]);
       setFormError(null);
     },
-    [lines, messageApi],
+    [lines, optionsByKey, messageApi],
   );
 
-  const setQty = (rawMaterialId: string, value: string) => {
+  const setQty = (key: string, value: string) => {
     setLines((current) =>
       current.map((l) =>
-        l.rawMaterialId === rawMaterialId ? { ...l, qtyUsed: value } : l,
+        componentKey(l.refType, l.refId) === key ? { ...l, qtyUsed: value } : l,
       ),
     );
     setFormError(null);
   };
 
-  const removeLine = (rawMaterialId: string) => {
+  const removeLine = (key: string) => {
     setLines((current) =>
-      current.filter((l) => l.rawMaterialId !== rawMaterialId),
+      current.filter((l) => componentKey(l.refType, l.refId) !== key),
     );
   };
 
@@ -237,7 +236,7 @@ export default function ProductionItemForm({
     setErrors(found);
 
     if (lines.length === 0) {
-      setFormError("Add at least one raw material to the recipe");
+      setFormError("Add at least one component to the recipe");
       return false;
     }
     const badQty = lines.find((l) => {
@@ -245,7 +244,9 @@ export default function ProductionItemForm({
       return !l.qtyUsed.trim() || !Number.isFinite(q) || q <= 0;
     });
     if (badQty) {
-      const label = materialsById.get(badQty.rawMaterialId)?.name ?? "a row";
+      const label =
+        optionsByKey.get(componentKey(badQty.refType, badQty.refId))?.name ??
+        "a row";
       setFormError(`Enter a quantity greater than 0 for ${label}`);
       return false;
     }
@@ -266,7 +267,8 @@ export default function ProductionItemForm({
         batchYieldQty,
         alertQty,
         recipe: lines.map((l) => ({
-          rawMaterialId: l.rawMaterialId,
+          refType: l.refType,
+          refId: l.refId,
           qtyUsed: l.qtyUsed,
         })),
       };
@@ -297,28 +299,60 @@ export default function ProductionItemForm({
     }
   };
 
+  /**
+   * Production items this one may NOT be built on: itself, and anything that
+   * is already made from it. Either would leave the two waiting on each other
+   * to be costed. The server rejects both regardless — this only keeps them
+   * out of the picker, so the rule is visible before it is hit.
+   */
+  const blockedProductionIds = useMemo(() => {
+    const blocked = new Set<string>();
+    const selfId = item?._id ? String(item._id) : "";
+    if (!selfId) return blocked;
+    blocked.add(selfId);
+    for (const id of productionRecipesById.keys()) {
+      if (productionDependencies(id, productionRecipesById).has(selfId)) {
+        blocked.add(id);
+      }
+    }
+    return blocked;
+  }, [item?._id, productionRecipesById]);
+
   const pickerOptions = useMemo(
     () =>
-      materials
-        .filter((m) => !pickerCategory || m.categoryId === pickerCategory)
-        .map((m) => ({
-          value: String(m._id),
-          label: m.name,
-          // Searched against, so typing a category name finds its materials.
-          search: `${m.name} ${m.categoryName ?? ""}`,
+      options
+        .filter((o) => !typeFilter || o.refType === typeFilter)
+        // The category filter only narrows raw materials — production items
+        // have no category, and hiding them all behind one would be a trap.
+        .filter(
+          (o) =>
+            o.refType !== "raw" ||
+            !pickerCategory ||
+            o.categoryName ===
+              categories.find((c) => String(c._id) === pickerCategory)?.name,
+        )
+        .filter(
+          (o) => o.refType !== "production" || !blockedProductionIds.has(o.refId),
+        )
+        .map((o) => ({
+          value: o.key,
+          label: o.name,
+          // Searched against, so typing a category or "production" finds rows.
+          search: `${o.name} ${o.categoryName} ${TYPE_LABEL[o.refType]}`,
         })),
-    [materials, pickerCategory],
+    [options, typeFilter, pickerCategory, categories, blockedProductionIds],
   );
 
   const recipeRows = lines.map((l) => {
-    const material = materialsById.get(l.rawMaterialId);
-    const cost = costByMaterialId.get(l.rawMaterialId);
+    const key = componentKey(l.refType, l.refId);
+    const option = optionsByKey.get(key);
+    const cost = costByKey.get(key);
     return {
-      key: l.rawMaterialId,
-      rawMaterialId: l.rawMaterialId,
-      name: material?.name ?? "(deleted raw material)",
-      categoryName: material?.categoryName ?? "",
-      consumptionUnit: material?.consumptionUnit ?? "",
+      key,
+      refType: l.refType,
+      name: option?.name ?? "(deleted component)",
+      categoryName: option?.categoryName ?? "",
+      consumptionUnit: option?.consumptionUnit ?? "",
       qtyUsed: l.qtyUsed,
       cost: cost?.cost ?? 0,
       found: cost?.found ?? false,
@@ -329,7 +363,7 @@ export default function ProductionItemForm({
 
   const recipeColumns: ColumnsType<RecipeRow> = [
     {
-      title: "Raw Material",
+      title: "Component",
       dataIndex: "name",
       render: (value: string, row) => (
         <span className="font-medium text-gray-900">
@@ -339,6 +373,22 @@ export default function ProductionItemForm({
               <WarningOutlined /> missing
             </span>
           )}
+        </span>
+      ),
+    },
+    {
+      title: "Type",
+      dataIndex: "refType",
+      width: 150,
+      render: (value: ComponentType) => (
+        <span
+          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+            value === "production"
+              ? "bg-[#024731]/10 text-[#024731]"
+              : "bg-gray-100 text-gray-700"
+          }`}
+        >
+          {TYPE_LABEL[value]}
         </span>
       ),
     },
@@ -369,7 +419,7 @@ export default function ProductionItemForm({
         <span className="inline-flex items-center justify-end gap-1.5">
           <input
             value={value}
-            onChange={(e) => setQty(row.rawMaterialId, e.target.value)}
+            onChange={(e) => setQty(row.key, e.target.value)}
             inputMode="decimal"
             aria-label={`Quantity of ${row.name}`}
             className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]"
@@ -395,7 +445,7 @@ export default function ProductionItemForm({
       render: (_, row) => (
         <button
           type="button"
-          onClick={() => removeLine(row.rawMaterialId)}
+          onClick={() => removeLine(row.key)}
           aria-label={`Remove ${row.name}`}
           title="Remove"
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -531,7 +581,7 @@ export default function ProductionItemForm({
 
           <dl className="mt-4 space-y-2 text-sm">
             <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-gray-600">Total raw material cost</dt>
+              <dt className="text-gray-600">Total component cost</dt>
               <dd className="tabular-nums font-medium text-gray-900">
                 {formatCurrency(breakdown.totalRecipeCost)}
               </dd>
@@ -590,11 +640,23 @@ export default function ProductionItemForm({
               Recipe
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Raw materials consumed to produce one batch.
+              Consumed to produce one batch — raw materials, and any production
+              item this one is built on.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Select
+              className="min-w-[180px]"
+              value={typeFilter}
+              onChange={(v) => setTypeFilter(v)}
+              aria-label="Filter components by type"
+              options={[
+                { value: "", label: "All types" },
+                { value: "raw", label: "Raw materials" },
+                { value: "production", label: "Production items" },
+              ]}
+            />
             <Select
               className="min-w-[170px]"
               value={pickerCategory || ""}
@@ -609,21 +671,19 @@ export default function ProductionItemForm({
               ]}
             />
             <Select
-              className="min-w-[240px]"
+              className="min-w-[260px]"
               value={pickerValue}
               onChange={addLine}
-              loading={loadingMaterials}
-              aria-label="Add a raw material to the recipe"
+              loading={loadingComponents}
+              aria-label="Add a component to the recipe"
               placeholder={
-                loadingMaterials
-                  ? "Loading raw materials…"
-                  : "+ Add Raw Material"
+                loadingComponents ? "Loading components…" : "+ Add Component"
               }
               showSearch
               optionFilterProp="search"
               options={pickerOptions}
               notFoundContent={
-                loadingMaterials ? "Loading…" : "No raw materials found"
+                loadingComponents ? "Loading…" : "Nothing found"
               }
               suffixIcon={<PlusOutlined />}
             />
@@ -638,18 +698,16 @@ export default function ProductionItemForm({
             size="small"
             scroll={{ x: "max-content" }}
             rowClassName={(row) =>
-              row.rawMaterialId === highlightId
-                ? "bg-amber-100 transition-colors"
-                : ""
+              row.key === highlightId ? "bg-amber-100 transition-colors" : ""
             }
             locale={{
               emptyText: (
                 <div className="py-8 text-center">
                   <p className="text-sm font-medium text-gray-900">
-                    No raw materials yet
+                    No components yet
                   </p>
                   <p className="mt-1 text-sm text-gray-500">
-                    Use “+ Add Raw Material” above to build the recipe.
+                    Use “+ Add Component” above to build the recipe.
                   </p>
                 </div>
               ),
@@ -657,15 +715,15 @@ export default function ProductionItemForm({
             summary={() =>
               recipeRows.length > 0 ? (
                 <Table.Summary.Row className="bg-gray-50 font-semibold">
-                  <Table.Summary.Cell index={0} colSpan={4}>
+                  <Table.Summary.Cell index={0} colSpan={5}>
                     <span className="text-gray-700">Total recipe cost</span>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
+                  <Table.Summary.Cell index={5} align="right">
                     <span className="tabular-nums text-gray-900">
                       {formatCurrency(breakdown.totalRecipeCost)}
                     </span>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} />
+                  <Table.Summary.Cell index={6} />
                 </Table.Summary.Row>
               ) : null
             }

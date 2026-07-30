@@ -6,12 +6,85 @@
 // the user sees before saving is the number that gets saved.
 
 import { pricePerConsumptionUnit, type RawMaterial } from "./rawMaterials";
+// Type-only for CostingMaterial in the other direction, so this pair of
+// modules has no runtime cycle: itemRecipes only reaches rawMaterials at run
+// time.
+import { componentKey, type ComponentType } from "./itemRecipes";
 
-/** One line of a recipe: how much of a raw material goes into a batch. */
+/**
+ * One line of a recipe: how much of a component goes into a batch.
+ *
+ * A component is a raw material OR another production item — the kitchen
+ * builds bases from bases, and a recipe that could only name raw materials
+ * forced those intermediate steps to be re-typed into every item that used
+ * them. Same shape as ItemRecipeLine, and keyed the same way, so the two
+ * levels of recipe resolve components through identical code.
+ */
 export interface ProductionRecipeLine {
-  rawMaterialId: string;
-  /** In that raw material's consumptionUnit. */
+  refType: ComponentType;
+  refId: string;
+  /** In the component's own consumptionUnit. */
   qtyUsed: number;
+}
+
+/**
+ * Read one stored recipe line, tolerating the shape written before recipes
+ * could name production items.
+ *
+ * Those documents carry `rawMaterialId` and no type at all; they are all raw
+ * material, so that is what they read as. Normalising on read rather than
+ * migrating keeps old and new documents working side by side — the same
+ * approach the audit history takes to records written before it had a `type`.
+ */
+export function toRecipeLine(value: unknown): ProductionRecipeLine {
+  const row = (value ?? {}) as {
+    refType?: unknown;
+    refId?: unknown;
+    rawMaterialId?: unknown;
+    qtyUsed?: unknown;
+  };
+  const legacyId = String(row.rawMaterialId ?? "");
+  return {
+    refType: row.refType === "production" ? "production" : "raw",
+    refId: String(row.refId ?? "") || legacyId,
+    qtyUsed: Number(row.qtyUsed ?? 0),
+  };
+}
+
+/** A stored `recipe` array, normalized. Anything else reads as no recipe. */
+export function toRecipeLines(value: unknown): ProductionRecipeLine[] {
+  return Array.isArray(value) ? value.map(toRecipeLine) : [];
+}
+
+/**
+ * Every production item reachable downward from `id` through its recipe.
+ *
+ * The loop guard for nested recipes: item X may not use component P when X is
+ * among P's own dependencies, because each would then be made from the other.
+ * `visited` also makes the walk safe over data that already contains a loop —
+ * this must terminate even when the thing it is looking for is present.
+ *
+ * `id` itself is not included; a self-reference is checked directly by the
+ * caller, which can say something clearer about it.
+ */
+export function productionDependencies(
+  id: string,
+  recipesById: ReadonlyMap<string, ProductionRecipeLine[]>,
+): Set<string> {
+  const seen = new Set<string>();
+  const queue = [id];
+
+  while (queue.length > 0) {
+    const current = queue.pop() as string;
+    for (const line of recipesById.get(current) ?? []) {
+      if (line.refType !== "production" || !line.refId) continue;
+      if (seen.has(line.refId)) continue;
+      seen.add(line.refId);
+      queue.push(line.refId);
+    }
+  }
+
+  return seen;
 }
 
 export interface ProductionItem {
@@ -41,15 +114,16 @@ export interface ProductionItem {
 
 /** Costing detail for one recipe line. */
 export interface CostLine {
-  rawMaterialId: string;
+  refType: ComponentType;
+  refId: string;
   qtyUsed: number;
-  /** Cost of one consumptionUnit of the raw material. */
+  /** Cost of one consumptionUnit of the component. */
   unitCost: number;
   /** qtyUsed × unitCost. */
   cost: number;
   /** Fraction of totalRecipeCost, 0–1. Zero when the total is zero. */
   share: number;
-  /** False when the raw material has gone missing — costed as 0, flagged so
+  /** False when the component has gone missing — costed as 0, flagged so
    *  the UI can say so rather than showing a silently wrong total. */
   found: boolean;
 }
@@ -91,19 +165,24 @@ export function computeCost(
   recipe: ProductionRecipeLine[],
   batchYieldQty: number,
   unitConversion: number,
-  materialsById: ReadonlyMap<string, CostingMaterial>,
+  componentsByKey: ReadonlyMap<string, CostingMaterial>,
 ): CostBreakdown {
   const lines: CostLine[] = recipe.map((line) => {
-    const material = materialsById.get(line.rawMaterialId);
-    const unitCost = material ? pricePerConsumptionUnit(material) : 0;
+    // A nested production item is priced by its own stored
+    // pricePerPurchaseUnit and unitConversion, exactly as a raw material is —
+    // the same two fields, so the same maths values either. Its price is read,
+    // not re-derived here, which is what keeps this function non-recursive.
+    const component = componentsByKey.get(componentKey(line.refType, line.refId));
+    const unitCost = component ? pricePerConsumptionUnit(component) : 0;
     const qtyUsed = Number.isFinite(line.qtyUsed) ? line.qtyUsed : 0;
     return {
-      rawMaterialId: line.rawMaterialId,
+      refType: line.refType,
+      refId: line.refId,
       qtyUsed,
       unitCost,
       cost: qtyUsed * unitCost,
       share: 0, // filled in below, once the total is known
-      found: !!material,
+      found: !!component,
     };
   });
 
@@ -125,15 +204,16 @@ export function computeCost(
   };
 }
 
-/** How much of one raw material a quantity of a production item draws down. */
-export interface ConsumedMaterial {
-  rawMaterialId: string;
-  /** In that raw material's consumptionUnit. */
+/** How much of one component a quantity of a production item draws down. */
+export interface ConsumedComponent {
+  refType: ComponentType;
+  refId: string;
+  /** In that component's consumptionUnit. */
   qty: number;
 }
 
 /**
- * Raw material consumed by producing `producedQty` of an item.
+ * Components consumed by producing `producedQty` of an item.
  *
  * A recipe yields `batchYieldQty` of the item (in its consumptionUnit) from
  * the listed quantities, so scaling is linear:
@@ -143,33 +223,45 @@ export interface ConsumedMaterial {
  * e.g. a recipe yielding 100 gm from 50 gm each of B and C, produced 100 gm,
  * consumes 50 gm of each.
  *
+ * A nested production item is drawn down as itself, NOT expanded into the raw
+ * material behind it: it is stocked in its own right, and its own ingredients
+ * were already spent when its batch was recorded. Expanding here would deduct
+ * the same ingredient twice — the same rule recipeDemand.ts follows one level
+ * further up.
+ *
  * Returns exact numbers — the caller decides how to round them. A zero or
  * missing batch yield cannot be scaled from, and a non-positive produced
  * quantity consumes nothing; both yield an empty list rather than Infinity or
- * a negative draw-down. Lines are summed per material, so a recipe naming the
- * same material twice draws down once.
+ * a negative draw-down. Lines are summed per component, so a recipe naming the
+ * same component twice draws down once.
  */
 export function recipeConsumption(
   recipe: ProductionRecipeLine[],
   batchYieldQty: number,
   producedQty: number,
-): ConsumedMaterial[] {
+): ConsumedComponent[] {
   if (!Number.isFinite(batchYieldQty) || batchYieldQty <= 0) return [];
   if (!Number.isFinite(producedQty) || producedQty <= 0) return [];
 
   const factor = producedQty / batchYieldQty;
-  const byMaterial = new Map<string, number>();
+  const byComponent = new Map<string, ConsumedComponent>();
 
   for (const line of recipe) {
     const qtyUsed = Number.isFinite(line.qtyUsed) ? line.qtyUsed : 0;
-    if (!line.rawMaterialId || qtyUsed <= 0) continue;
-    byMaterial.set(
-      line.rawMaterialId,
-      (byMaterial.get(line.rawMaterialId) ?? 0) + qtyUsed * factor,
-    );
+    if (!line.refId || qtyUsed <= 0) continue;
+    const key = componentKey(line.refType, line.refId);
+    const existing = byComponent.get(key);
+    if (existing) existing.qty += qtyUsed * factor;
+    else {
+      byComponent.set(key, {
+        refType: line.refType,
+        refId: line.refId,
+        qty: qtyUsed * factor,
+      });
+    }
   }
 
-  return [...byMaterial].map(([rawMaterialId, qty]) => ({ rawMaterialId, qty }));
+  return [...byComponent.values()];
 }
 
 export interface ProductionItemInput {
@@ -202,19 +294,42 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function isComponentType(value: unknown): value is ComponentType {
+  return value === "raw" || value === "production";
+}
+
+/** The graph and identity a recipe needs to be checked for loops. */
+export interface ProductionGraph {
+  /**
+   * The item being saved, when it already exists. A create has no id yet and
+   * so cannot be part of a loop.
+   */
+  selfId?: string;
+  /** Every production item's recipe, keyed by id — the loop is found in here. */
+  recipesById?: ReadonlyMap<string, ProductionRecipeLine[]>;
+}
+
 /**
  * Validate a production item and derive its price.
  *
- * `materialsById` doubles as the set of valid raw-material ids and the cost
+ * `componentsByKey` doubles as the set of valid components and the cost
  * source, so a recipe can't reference something that doesn't exist and the
- * price is always computed from the same data that validated it.
+ * price is always computed from the same data that validated it. It is keyed
+ * `type:id`, so a raw material and a production item may share a name and an
+ * id without ever being costed as each other.
+ *
+ * `graph` enables the loop check for nested production items. It is optional
+ * because a caller that has no graph to check against (an importer resolving
+ * names, say) still needs to validate everything else; passing nothing simply
+ * skips that one rule.
  *
  * Returns the first error found, matching sanitizeRawMaterial's contract.
  */
 export function sanitizeProductionItem(
   input: ProductionItemInput,
-  materialsById: ReadonlyMap<string, CostingMaterial>,
+  componentsByKey: ReadonlyMap<string, CostingMaterial>,
   normalizeName: (name: string) => string,
+  graph: ProductionGraph = {},
 ): SanitizeProductionResult {
   const name = String(input.name ?? "")
     .replace(/\s+/g, " ")
@@ -245,37 +360,74 @@ export function sanitizeProductionItem(
   if (alertQty < 0) return { error: "Alert qty cannot be negative" };
 
   if (!Array.isArray(input.recipe) || input.recipe.length === 0) {
-    return { error: "Add at least one raw material" };
+    return { error: "Add at least one component" };
   }
 
   const recipe: ProductionRecipeLine[] = [];
   const seen = new Set<string>();
   for (const entry of input.recipe) {
-    const row = entry as { rawMaterialId?: unknown; qtyUsed?: unknown };
-    const rawMaterialId = String(row?.rawMaterialId ?? "").trim();
-    if (!rawMaterialId) return { error: "A recipe row has no raw material" };
-    if (!materialsById.has(rawMaterialId)) {
-      return { error: "Unknown raw material in recipe" };
+    const row = entry as {
+      refType?: unknown;
+      refId?: unknown;
+      rawMaterialId?: unknown;
+      qtyUsed?: unknown;
+    };
+
+    // A body written against the raw-material-only shape still means what it
+    // always meant, so it is read rather than rejected.
+    const refType: ComponentType = isComponentType(row?.refType)
+      ? row.refType
+      : "raw";
+    const refId =
+      String(row?.refId ?? "").trim() ||
+      String(row?.rawMaterialId ?? "").trim();
+    if (!refId) return { error: "A recipe row has nothing selected" };
+
+    const key = componentKey(refType, refId);
+    if (!componentsByKey.has(key)) {
+      return {
+        error:
+          refType === "production"
+            ? "Unknown production item in recipe"
+            : "Unknown raw material in recipe",
+      };
     }
-    // Two lines for one material would make the qty ambiguous and let the UI
+    // Two lines for one component would make the qty ambiguous and let the UI
     // and the stored total disagree.
-    if (seen.has(rawMaterialId)) {
-      return { error: "The same raw material is listed twice" };
+    if (seen.has(key)) {
+      return { error: "The same component is listed twice" };
     }
-    seen.add(rawMaterialId);
+    seen.add(key);
+
+    // A recipe that reaches back to the item it belongs to could never be
+    // costed or produced: each side would be waiting on the other.
+    if (refType === "production" && graph.selfId) {
+      if (refId === graph.selfId) {
+        return { error: "A production item cannot be made from itself" };
+      }
+      if (
+        graph.recipesById &&
+        productionDependencies(refId, graph.recipesById).has(graph.selfId)
+      ) {
+        return {
+          error:
+            "That production item is already made from this one — using it here would create a loop",
+        };
+      }
+    }
 
     const qtyUsed = toNumber(row?.qtyUsed);
     if (qtyUsed === null) return { error: "Every recipe row needs a quantity" };
     if (qtyUsed <= 0) return { error: "Recipe quantities must be greater than 0" };
 
-    recipe.push({ rawMaterialId, qtyUsed });
+    recipe.push({ refType, refId, qtyUsed });
   }
 
   const { pricePerPurchaseUnit } = computeCost(
     recipe,
     batchYieldQty,
     unitConversion,
-    materialsById,
+    componentsByKey,
   );
 
   return {

@@ -3,11 +3,14 @@ import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import {
   PRODUCTION_ITEMS_COLLECTION,
-  costingMaterialsById,
+  componentCostsByKey,
   isValidId,
   itemRecipesUsing,
   listProductionItems,
+  productionItemsUsing,
+  productionRecipesById,
   recalcItemRecipeCosts,
+  recalcProductionItemPrices,
 } from "@/lib/inventoryDb";
 import { sanitizeProductionItem } from "@/lib/productionItems";
 import { normalizeMaterialName } from "@/lib/rawMaterials";
@@ -67,12 +70,18 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const materials = await costingMaterialsById();
+    const [components, recipesById] = await Promise.all([
+      componentCostsByKey(),
+      productionRecipesById(),
+    ]);
 
+    // The graph is what rejects a recipe that reaches back to this item —
+    // directly, or through a chain of other production items.
     const { doc, error } = sanitizeProductionItem(
       body,
-      materials,
+      components,
       normalizeMaterialName,
+      { selfId: id, recipesById },
     );
     if (error || !doc) {
       return NextResponse.json(
@@ -106,13 +115,15 @@ export async function PUT(
       );
     }
 
-    // Item recipes may use this item as a component, so their cost moves with
-    // its price.
+    // Other production items may be built on this one, so their prices move
+    // with it; item recipes may use either, so they settle after.
+    const repricedProductionItems = await recalcProductionItemPrices();
     const repricedItemRecipes = await recalcItemRecipeCosts();
 
     return NextResponse.json({
       success: true,
       item: { ...doc, _id: id },
+      repricedProductionItems,
       repricedItemRecipes,
     });
   } catch (error) {
@@ -124,8 +135,8 @@ export async function PUT(
   }
 }
 
-/** Delete a production item, unless an item recipe still uses it as a
- *  component — that line would silently cost zero. */
+/** Delete a production item, unless an item recipe or another production item
+ *  still uses it as a component — that line would silently cost zero. */
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -136,6 +147,19 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, message: "Invalid id" },
         { status: 400 },
+      );
+    }
+
+    // A recipe may now nest production items, so this item can be a component
+    // one level down as well as one level up. Both are checked.
+    const inProduction = await productionItemsUsing(id, "production");
+    if (inProduction > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `${inProduction} production item${inProduction === 1 ? "" : "s"} still use${inProduction === 1 ? "s" : ""} this item in their recipe. Remove it from them first.`,
+        },
+        { status: 409 },
       );
     }
 

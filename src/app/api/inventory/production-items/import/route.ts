@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  costingMaterialsById,
+  componentCostsByKey,
+  productionDepsByNameKey,
   productionItemIdsByNameKey,
   rawMaterialIdsByNameKey,
 } from "@/lib/inventoryDb";
@@ -53,17 +54,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [materialIds, existingIds, materialsById] = await Promise.all([
-      rawMaterialIdsByNameKey(),
-      productionItemIdsByNameKey(),
-      costingMaterialsById(),
-    ]);
+    const [materialIds, productionIds, componentsByKey, storedDeps] =
+      await Promise.all([
+        rawMaterialIdsByNameKey(),
+        productionItemIdsByNameKey(),
+        componentCostsByKey(),
+        productionDepsByNameKey(),
+      ]);
+    // productionIds serves twice: the set of items a recipe line may name, and
+    // the map that reconciles an existing item to update.
     const plan = planProductionImport(
       itemRows,
       recipeRows,
       materialIds,
-      existingIds,
-      materialsById,
+      productionIds,
+      productionIds,
+      componentsByKey,
+      storedDeps,
     );
 
     return NextResponse.json({

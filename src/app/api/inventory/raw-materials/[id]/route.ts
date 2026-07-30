@@ -74,8 +74,10 @@ export async function PUT(
 
     // Production-item prices and item-recipe costs are cached derivations of
     // raw-material prices, so any edit here can invalidate both. Settle them
-    // before replying.
-    const repriced = await recalcDerivedCosts([id]);
+    // before replying. Everything is recomputed, not just this material's
+    // direct users: a production item built on another carries the change
+    // further than one hop.
+    const repriced = await recalcDerivedCosts();
 
     return NextResponse.json({
       success: true,

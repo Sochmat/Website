@@ -16,9 +16,11 @@ import {
   type StockRow,
 } from "@/components/inventory/useStockRows";
 
-/** A raw material the save spent, as the API reports it back. */
+/** Stock the save spent, as the API reports it back. */
 interface ConsumedRow {
   id: string;
+  /** Which shelf it came off — a production recipe may spend either. */
+  kind: AuditKind;
   name: string;
   unit: string;
   consumedQty: number;
@@ -158,13 +160,16 @@ export default function AddStockPage() {
         ),
       );
 
-      // Producing something spends its ingredients, so the Raw Material tab
-      // has moved too even though this save was about production items.
+      // Producing something spends what it is made from, so other rows have
+      // moved too — raw materials, and any production item this one is built
+      // on. Each tab is settled from its own share of the reply.
       const consumed: ConsumedRow[] = data.consumed ?? [];
-      if (consumed.length > 0) {
+      for (const consumedKind of ["raw", "production"] as const) {
+        const rows = consumed.filter((c) => c.kind === consumedKind);
+        if (rows.length === 0) continue;
         applySaved(
-          "raw",
-          new Map(consumed.map((c) => [c.id, c.currentStock])),
+          consumedKind,
+          new Map(rows.map((c) => [c.id, c.currentStock])),
         );
       }
       clearDrafts(new Set(rows.map((row) => row.key)));
@@ -173,7 +178,7 @@ export default function AddStockPage() {
         ? `, ${data.rejected.length} rejected`
         : "";
       const deducted = consumed.length
-        ? ` · ${consumed.length} raw material${consumed.length === 1 ? "" : "s"} deducted`
+        ? ` · ${consumed.length} component${consumed.length === 1 ? "" : "s"} deducted`
         : "";
       messageApi.success(
         `Added stock to ${data.saved} ${KIND_LABEL[kind]} item${data.saved === 1 ? "" : "s"}${suffix}${deducted}`,
