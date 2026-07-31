@@ -163,6 +163,18 @@ export interface Order {
 
   status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
 
+  /** When delivery spent this order's inventory. Present = already deducted,
+   *  which is what stops a second "Delivered" click deducting twice. */
+  stockConsumedAt?: Date;
+  /** The inventoryOrderConsumptions record holding the deducted lines. */
+  stockConsumptionId?: ObjectId | string;
+  /** How many stock rows that deduction wrote. */
+  stockConsumptionRows?: number;
+  /** Ordered items with no item recipe — nothing was deducted for these. */
+  stockConsumptionUnmapped?: string[];
+  /** Set when the deduction failed after being claimed; needs a manual audit. */
+  stockConsumptionError?: string;
+
   petpoojaStatus?: "success" | "failed" | "skipped";
   petpoojaOrderId?: string;
   petpoojaError?: string;

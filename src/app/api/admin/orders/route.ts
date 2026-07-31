@@ -3,6 +3,7 @@ import { Db, ObjectId } from "mongodb";
 import Razorpay from "razorpay";
 import { connectToDatabase } from "@/lib/mongodb";
 import { kotDayKey, nextKotNumber, nextBillNumber } from "@/lib/kotCounter";
+import { consumeStockForOrder, type OrderStockResult } from "@/lib/orderStock";
 import {
   reverseRewardPointsForOrder,
   creditRewardPointsRefund,
@@ -44,13 +45,19 @@ async function referralAttribution(
 
   const customers = await db
     .collection("users")
-    .find({ _id: { $in: [...customerIds.values()] }, referredBy: { $exists: true } })
+    .find({
+      _id: { $in: [...customerIds.values()] },
+      referredBy: { $exists: true },
+    })
     .project({ referredBy: 1, referralCredited: 1 })
     .toArray();
   if (customers.length === 0) return result;
 
   const referrerIds: ObjectId[] = [];
-  const referredBy = new Map<string, { referrerId: string; credited: boolean }>();
+  const referredBy = new Map<
+    string,
+    { referrerId: string; credited: boolean }
+  >();
   for (const c of customers) {
     const referrerId = String(c.referredBy);
     if (!ObjectId.isValid(referrerId)) continue;
@@ -147,18 +154,25 @@ export async function GET() {
 
     const productMap = new Map<string, { name: string; image?: string }>();
     for (const p of products) {
-      productMap.set(String(p._id), { name: String(p.name ?? ""), image: p.image });
+      productMap.set(String(p._id), {
+        name: String(p.name ?? ""),
+        image: p.image,
+      });
     }
 
     const referralByOrderId = await referralAttribution(db, orders);
 
     const enriched = orders.map((order) => {
-      const items = ((order.orderItems ?? []) as Array<{
-        productId?: string;
-        quantity?: number;
-        price?: number;
-      }>).map((item) => {
-        const product = item.productId ? productMap.get(String(item.productId)) : undefined;
+      const items = (
+        (order.orderItems ?? []) as Array<{
+          productId?: string;
+          quantity?: number;
+          price?: number;
+        }>
+      ).map((item) => {
+        const product = item.productId
+          ? productMap.get(String(item.productId))
+          : undefined;
         return {
           ...item,
           name: product?.name ?? "Unknown product",
@@ -177,7 +191,7 @@ export async function GET() {
     console.error("Error fetching orders:", error);
     return NextResponse.json(
       { success: false, message: "Failed to fetch orders" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -197,14 +211,14 @@ export async function PATCH(req: NextRequest) {
     if (!id || !ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, message: "Valid order id is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // Reject unknown status values before they can be written to the DB.
     if (status !== undefined && !ORDER_STATUSES.includes(status)) {
       return NextResponse.json(
         { success: false, message: "Invalid status" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     if (
@@ -213,7 +227,7 @@ export async function PATCH(req: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, message: "Invalid payment status" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -227,7 +241,7 @@ export async function PATCH(req: NextRequest) {
       if (!order) {
         return NextResponse.json(
           { success: false, message: "Order not found" },
-          { status: 404 }
+          { status: 404 },
         );
       }
 
@@ -245,13 +259,13 @@ export async function PATCH(req: NextRequest) {
               message:
                 "Order is paid but has no payment id; cannot auto-refund.",
             },
-            { status: 422 }
+            { status: 422 },
           );
         }
         try {
           const refund = await razorpay.payments.refund(
             String(order.paymentId),
-            { speed: "normal" }
+            { speed: "normal" },
           );
           rejectUpdate.paymentStatus = "refunded";
           rejectUpdate.refundId = refund.id;
@@ -262,14 +276,12 @@ export async function PATCH(req: NextRequest) {
           console.error("Razorpay refund failed:", err);
           return NextResponse.json(
             { success: false, message: `Refund failed: ${msg}` },
-            { status: 502 }
+            { status: 502 },
           );
         }
       }
 
-      await db
-        .collection("orders")
-        .updateOne({ _id }, { $set: rejectUpdate });
+      await db.collection("orders").updateOne({ _id }, { $set: rejectUpdate });
 
       // Unwind the order's rewards. Only after the Razorpay refund succeeded —
       // a failed refund returns above and leaves the order untouched.
@@ -284,10 +296,18 @@ export async function PATCH(req: NextRequest) {
         if (pointsSpent > 0) {
           await creditRewardPointsRefund(db, orderUserId, _id, pointsSpent);
         }
-        await db.collection("orders").updateOne(
-          { _id },
-          { $set: { walletApplied: 0, pointsApplied: 0, updatedAt: new Date() } },
-        );
+        await db
+          .collection("orders")
+          .updateOne(
+            { _id },
+            {
+              $set: {
+                walletApplied: 0,
+                pointsApplied: 0,
+                updatedAt: new Date(),
+              },
+            },
+          );
         // …and claw back what it earned. The streak day stands: the order was
         // genuinely placed, and a rejection is usually the kitchen's call.
         await reverseRewardPointsForOrder(db, _id);
@@ -308,7 +328,7 @@ export async function PATCH(req: NextRequest) {
     if (Object.keys(update).length === 0 && !printBill) {
       return NextResponse.json(
         { success: false, message: "Nothing to update" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -371,8 +391,27 @@ export async function PATCH(req: NextRequest) {
     if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, message: "Order not found" },
-        { status: 404 }
+        { status: 404 },
       );
+    }
+
+    // Delivery is when the food actually leaves, so it is when the inventory
+    // is spent: every item's recipe draws down the production items and raw
+    // materials behind it. Runs once per order — see consumeStockForOrder.
+    //
+    // Never allowed to fail the status update: the order IS delivered, and
+    // saying otherwise would have the admin click again. A failure is logged,
+    // marked on the order, and reported alongside the success.
+    let stockConsumption: OrderStockResult | undefined;
+    let stockConsumptionError: string | undefined;
+    if (update.status === "delivered") {
+      try {
+        stockConsumption = await consumeStockForOrder(db, _id);
+      } catch (err) {
+        console.error("Stock deduction failed for order", id, err);
+        stockConsumptionError =
+          "Order marked delivered, but stock could not be deducted";
+      }
     }
 
     return NextResponse.json({
@@ -380,12 +419,14 @@ export async function PATCH(req: NextRequest) {
       kotNumber,
       billNumber,
       confirmedAt,
+      stockConsumption,
+      stockConsumptionError,
     });
   } catch (error) {
     console.error("Error updating order:", error);
     return NextResponse.json(
       { success: false, message: "Failed to update order" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

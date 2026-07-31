@@ -32,7 +32,12 @@ export async function middleware(request: NextRequest) {
   const host = request.headers.get("host") ?? request.nextUrl.host;
   if (isSubscriptionHost(host)) {
     // The admin surface is never available on the subscription host.
-    if (pathname.startsWith("/admin") || pathname.startsWith("/api/admin")) {
+    if (
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/api/admin") ||
+      pathname.startsWith("/inventory-management") ||
+      pathname.startsWith("/api/inventory")
+    ) {
       return NextResponse.redirect(new URL("/", request.url));
     }
     if (
@@ -57,8 +62,14 @@ export async function middleware(request: NextRequest) {
   // Gate the admin surface (dashboard pages + admin APIs) behind a valid,
   // signed session cookie. Auth is enforced here on the server — client-side
   // localStorage role flags are UI sugar only and are not trusted.
+  //
+  // Inventory management is a separate route group but shares the same admin
+  // session: you sign in at /admin/login and that cookie unlocks both.
   const needsAuth =
-    (pathname.startsWith("/api/admin") || pathname.startsWith("/admin")) &&
+    (pathname.startsWith("/api/admin") ||
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/inventory-management") ||
+      pathname.startsWith("/api/inventory")) &&
     !isPublicAdminPath(pathname);
 
   if (needsAuth) {
