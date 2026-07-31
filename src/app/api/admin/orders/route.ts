@@ -23,11 +23,16 @@ interface OrderReferral {
   /** True on the order that earned the referrer their reward (the customer's
    *  first paid order), so admins can tell the payout order from later ones. */
   earnedReward: boolean;
+  /** ₹ actually credited on that order — the amount climbs the reward ladder
+   *  with each referral the referrer has earned, so it is read from the ledger
+   *  rather than assumed. 0 when this order earned nothing. */
+  rewardAmount: number;
 }
 
 /**
  * Map order id → referrer details, for orders placed by customers who signed up
- * with someone's referral code. Two lookups total (customers, then referrers).
+ * with someone's referral code. Three lookups total (customers, referrers, then
+ * the referral credits they were paid).
  */
 async function referralAttribution(
   db: Db,
@@ -69,12 +74,27 @@ async function referralAttribution(
   }
   if (referredBy.size === 0) return result;
 
-  const referrers = await db
-    .collection("users")
-    .find({ _id: { $in: referrerIds } })
-    .project({ name: 1, phone: 1, referralCode: 1 })
-    .toArray();
+  const [referrers, credits] = await Promise.all([
+    db
+      .collection("users")
+      .find({ _id: { $in: referrerIds } })
+      .project({ name: 1, phone: 1, referralCode: 1 })
+      .toArray(),
+    db
+      .collection("walletTransactions")
+      .find({
+        type: "referral_earned",
+        refereeUserId: {
+          $in: [...referredBy.keys()].map((id) => new ObjectId(id)),
+        },
+      })
+      .project({ refereeUserId: 1, amount: 1 })
+      .toArray(),
+  ]);
   const referrerMap = new Map(referrers.map((r) => [String(r._id), r]));
+  const rewardByReferee = new Map(
+    credits.map((c) => [String(c.refereeUserId), Number(c.amount ?? 0)]),
+  );
 
   // The reward fires on the customer's first paid order, so find the earliest
   // one per referred customer ("refunded" was paid at some point too).
@@ -101,12 +121,14 @@ async function referralAttribution(
     const referrer = referrerMap.get(link.referrerId);
     if (!referrer) continue;
     const orderId = String(order._id);
+    const earnedReward =
+      link.credited && firstPaidOrderId.get(customerId)?.id === orderId;
     result.set(orderId, {
       referrerName: String(referrer.name ?? ""),
       referrerPhone: String(referrer.phone ?? ""),
       referrerCode: String(referrer.referralCode ?? ""),
-      earnedReward:
-        link.credited && firstPaidOrderId.get(customerId)?.id === orderId,
+      earnedReward,
+      rewardAmount: earnedReward ? (rewardByReferee.get(customerId) ?? 0) : 0,
     });
   }
 

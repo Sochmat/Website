@@ -6,8 +6,28 @@
 /** Razorpay cannot charge ₹0, so wallet always leaves at least this much payable. */
 export const MIN_PAYABLE = 1;
 
-/** ₹ credited to a referrer when their referee's first order is paid. */
-export const REFERRAL_REWARD = 75;
+/**
+ * ₹ credited to a referrer when a referee's first order is paid, by referral
+ * number: the 1st pays ₹75 and each further one steps up ₹25, flattening at
+ * ₹200 from the 6th on.
+ */
+export const REFERRAL_REWARDS = [75, 100, 125, 150, 175, 200] as const;
+
+/** What a first referral pays — the headline number in share copy. */
+export const REFERRAL_REWARD = REFERRAL_REWARDS[0];
+
+/** The top of the ladder, paid by every referral past the 6th. */
+export const REFERRAL_REWARD_MAX =
+  REFERRAL_REWARDS[REFERRAL_REWARDS.length - 1];
+
+/** The reward for someone's `n`th referral (1-based), clamped to the ladder. */
+export function referralRewardFor(n: number): number {
+  const rung = Math.min(
+    Math.max(Math.floor(n) || 1, 1),
+    REFERRAL_REWARDS.length,
+  );
+  return REFERRAL_REWARDS[rung - 1];
+}
 
 /**
  * How much wallet balance to apply to an order total, capped so at least

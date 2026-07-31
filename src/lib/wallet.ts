@@ -1,5 +1,5 @@
 import { Db, ObjectId } from "mongodb";
-import { REFERRAL_REWARD } from "./walletMath";
+import { referralRewardFor } from "./walletMath";
 import { hasPhone } from "./phone";
 import type { WalletTransaction } from "./types";
 
@@ -85,9 +85,10 @@ export async function creditWalletRefund(
 }
 
 /**
- * Credit the referrer REFERRAL_REWARD when their referee's first order is paid. Idempotent:
- * flips the referee's `referralCredited` flag first and only pays if that flip
- * matched, so a retried verify never double-pays.
+ * Credit the referrer when their referee's first order is paid. The amount
+ * climbs the REFERRAL_REWARDS ladder with each referral they've earned.
+ * Idempotent: flips the referee's `referralCredited` flag first and only pays
+ * if that flip matched, so a retried verify never double-pays.
  */
 export async function creditReferral(
   db: Db,
@@ -118,21 +119,30 @@ export async function creditReferral(
   const referrerId = new ObjectId(String(referee.referredBy));
   // Never credit a self-referral.
   if (referrerId.equals(refereeUserId)) return;
+
+  // Which rung of the ladder this referral pays. The ledger is the source of
+  // truth for how many the referrer has earned (the same rows /refer counts),
+  // so there is no denormalised counter to drift out of sync. Two referees
+  // paying their first order in the same instant could read the same count and
+  // land on the same rung; that costs one ₹25 step once, which is cheaper than
+  // keeping a second counter honest.
+  const priorReferrals = await db
+    .collection(LEDGER)
+    .countDocuments({ userId: referrerId, type: "referral_earned" });
+  const reward = referralRewardFor(priorReferrals + 1);
+
   await db
     .collection(USERS)
     .updateOne(
       { _id: referrerId },
-      {
-        $inc: { walletBalance: REFERRAL_REWARD },
-        $set: { updatedAt: new Date() },
-      },
+      { $inc: { walletBalance: reward }, $set: { updatedAt: new Date() } },
     );
   await db.collection<WalletTransaction>(LEDGER).insertOne(
     ledgerEntry({
       userId: referrerId,
       refereeUserId,
       type: "referral_earned",
-      amount: REFERRAL_REWARD,
+      amount: reward,
     }),
   );
 }

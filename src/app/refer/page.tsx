@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import { useLoginPopup } from "@/context/LoginPopupContext";
-import { REFERRAL_REWARD } from "@/lib/walletMath";
+import { REFERRAL_REWARD, REFERRAL_REWARD_MAX } from "@/lib/walletMath";
 
 interface ReferralInfo {
   referralCode: string;
@@ -13,6 +13,8 @@ interface ReferralInfo {
   walletBalance: number;
   referralCount: number;
   earned: number;
+  /** ₹ the next successful referral pays, per the reward ladder. */
+  nextReward: number;
 }
 
 // A wa.me click-to-chat link with the invite pre-filled. Deliberately carries no
@@ -92,9 +94,21 @@ export default function ReferPage() {
           <>
             <p className="text-sm text-[#666]">
               Share your code. When a friend places their first order, you get
-              ₹{REFERRAL_REWARD} in wallet credit — used automatically on your
-              next order.
+              wallet credit — used automatically on your next order. It starts
+              at ₹{REFERRAL_REWARD} and grows ₹25 with every friend, up to ₹
+              {REFERRAL_REWARD_MAX}.
             </p>
+
+            <div className="rounded-2xl bg-[#fff3ec] p-4 text-sm text-[#111]">
+              Your next referral earns{" "}
+              <span className="font-semibold">₹{info.nextReward}</span>
+              {info.nextReward < REFERRAL_REWARD_MAX && (
+                <span className="text-[#666]">
+                  {" "}
+                  — the one after that, ₹{info.nextReward + 25}
+                </span>
+              )}
+            </div>
 
             <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
               <div className="text-xs text-gray-500">Your referral code</div>

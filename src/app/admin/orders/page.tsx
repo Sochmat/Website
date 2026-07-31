@@ -126,6 +126,8 @@ interface OrderRow {
   referrerCode: string;
   /** True on the order that earned the referrer their reward. */
   referralEarned: boolean;
+  /** ₹ credited to the referrer on that order (the ladder makes it vary). */
+  referralRewardAmount: number;
   items: OrderItemRow[];
 }
 
@@ -253,6 +255,9 @@ export default function AdminOrdersPage() {
               referralEarned:
                 (o.referral as { earnedReward?: boolean })?.earnedReward ===
                 true,
+              referralRewardAmount: Number(
+                (o.referral as { rewardAmount?: number })?.rewardAmount ?? 0,
+              ),
               items: Array.isArray(o.orderItems)
                 ? (o.orderItems as Array<Record<string, unknown>>).map(
                     (it) => ({
@@ -497,7 +502,8 @@ export default function AdminOrdersPage() {
                     <div
                       style={{ fontSize: 11, color: "#52c41a", fontWeight: 600 }}
                     >
-                      ₹{REFERRAL_REWARD} credited on this order
+                      ₹{record.referralRewardAmount || REFERRAL_REWARD} credited
+                      on this order
                     </div>
                   )}
                 </div>

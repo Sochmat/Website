@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
 import { getOrCreateReferralCode } from "@/lib/referral";
+import { referralRewardFor } from "@/lib/walletMath";
 
 export const dynamic = "force-dynamic";
 
 /**
  * The signed-in customer's referral summary: their code, a share link to the
- * main site, wallet balance, and referral earnings (derived from the ledger).
+ * main site, wallet balance, referral earnings (derived from the ledger), and
+ * what their next referral pays on the reward ladder.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +42,8 @@ export async function GET(request: NextRequest) {
         walletBalance: Number(user?.walletBalance ?? 0),
         referralCount,
         earned,
+        // Mirrors what creditReferral will pay, which reads the same rows.
+        nextReward: referralRewardFor(referralCount + 1),
       },
       { headers: { "Cache-Control": "no-store" } },
     );

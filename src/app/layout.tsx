@@ -29,6 +29,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} antialiased`}>
+        <script
+          src="http://localhost:8899/embed.js"
+          data-env="development"
+        ></script>
         <UserProvider>
           <LoginPopupProvider>
             <CartProvider>
