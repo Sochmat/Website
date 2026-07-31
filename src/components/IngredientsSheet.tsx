@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, ReactNode } from "react";
 import { Product } from "@/context/CartContext";
 import SheetCloseButton from "./subscription/SheetCloseButton";
 
@@ -10,6 +10,9 @@ interface IngredientsSheetProps {
   product: Product;
   /** Show the floating centered close button (subscription flow). */
   floatingClose?: boolean;
+  /** Pinned to the bottom of the sheet. The caller owns it so the price and
+   *  add control stay identical to the ones on its own card. */
+  footer?: ReactNode;
 }
 
 export default function IngredientsSheet({
@@ -17,6 +20,7 @@ export default function IngredientsSheet({
   onClose,
   product,
   floatingClose = false,
+  footer,
 }: IngredientsSheetProps) {
   const [closing, setClosing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -135,7 +139,11 @@ export default function IngredientsSheet({
         </div>
 
         {/* Content */}
-        <div className="px-[16px] pt-[16px] pb-[32px] flex flex-col gap-[12px]">
+        <div
+          className={`px-[16px] pt-[16px] flex flex-col gap-[12px] ${
+            footer ? "pb-[16px]" : "pb-[32px]"
+          }`}
+        >
           {/* Veg indicator + Title */}
           <div className="flex gap-[16px] items-center">
             <div
@@ -222,6 +230,12 @@ export default function IngredientsSheet({
             </div>
           )}
         </div>
+
+        {footer && (
+          <div className="sticky bottom-0 bg-white border-t border-[#e6e6e6] px-[16px] pt-[12px] pb-[16px]">
+            {footer}
+          </div>
+        )}
       </div>
 
       <style jsx>{`

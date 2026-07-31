@@ -11,6 +11,31 @@ interface Category {
   type: "food" | "beverages";
 }
 
+/** Same tile treatment as the menu's CategoryFilter, minus the active state —
+ *  these navigate rather than filter, so none of them is ever selected. */
+function CategoryTile({ category }: { category: Category }) {
+  return (
+    <Link
+      href={`/menu?category=${category.id}`}
+      className="flex flex-col items-center gap-[8px] shrink-0 w-[88px]"
+    >
+      <div className="w-[88px] h-[88px] rounded-[16px] border border-[#f0f0f0] bg-[#f0f0f0] flex items-center justify-center">
+        <Image
+          src={category.image}
+          alt={category.name}
+          width={68}
+          height={68}
+          className="w-[68px] h-[68px] object-contain"
+          unoptimized
+        />
+      </div>
+      <p className="text-xs font-semibold leading-tight text-center text-[#222]">
+        {category.name}
+      </p>
+    </Link>
+  );
+}
+
 export default function HomeCategoryScroll() {
   const [categories, setCategories] = useState<Category[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -64,25 +89,7 @@ export default function HomeCategoryScroll() {
           {/* Row 1 */}
           <div className="flex gap-3">
             {row1.map((cat) => (
-              <Link
-                key={cat.id}
-                href={`/menu?category=${cat.id}`}
-                className="flex flex-col items-center shrink-0 w-[100px]"
-              >
-                <div className="w-[100px] h-[100px] rounded-full overflow-hidden flex items-center justify-center">
-                  <Image
-                    src={cat.image}
-                    alt={cat.name}
-                    width={100}
-                    height={100}
-                    className="w-full h-full object-contain"
-                    unoptimized
-                  />
-                </div>
-                <p className="mt-1.5 text-xs font-medium text-[#444] text-center leading-tight">
-                  {cat.name}
-                </p>
-              </Link>
+              <CategoryTile key={cat.id} category={cat} />
             ))}
           </div>
 
@@ -90,25 +97,7 @@ export default function HomeCategoryScroll() {
           {row2.length > 0 && (
             <div className="flex gap-3">
               {row2.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/menu?category=${cat.id}`}
-                  className="flex flex-col items-center shrink-0 w-[100px]"
-                >
-                  <div className="w-[100px] h-[100px] rounded-full overflow-hidden flex items-center justify-center">
-                    <Image
-                      src={cat.image}
-                      alt={cat.name}
-                      width={100}
-                      height={100}
-                      className="w-full h-full object-contain"
-                      unoptimized
-                    />
-                  </div>
-                  <p className="mt-1.5 text-xs font-medium text-[#444] text-center leading-tight">
-                    {cat.name}
-                  </p>
-                </Link>
+                <CategoryTile key={cat.id} category={cat} />
               ))}
             </div>
           )}

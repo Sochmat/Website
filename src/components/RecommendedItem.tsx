@@ -44,7 +44,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
             <PlusIcon className="w-5 h-5 text-[#f56215]" />
           </button>
         )}
-        <div className="absolute left-2 bottom-2">
+        <div className="absolute left-2 top-2">
           <div
             className={`w-4 h-4 bg-white border-2 ${
               product.isVeg ? "border-green-600" : "border-red-600"
@@ -60,22 +60,19 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <div className="flex flex-col gap-0.5">
-          <p className="font-semibold text-sm text-black leading-tight">
-            {product.name}
-          </p>
-          <p className="text-[#f56215] text-xs font-medium tracking-tight">
-            {product.kcal} kcal | {product.protein}g Protein
-          </p>
-        </div>
+        <p className="font-semibold text-sm text-black leading-tight">
+          {product.name}
+        </p>
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[#111] font-semibold text-sm">
+            <span className="text-[#b2b2b2] font-semibold text-sm">
               ₹{product.price}/-
             </span>
-            <span className="text-[#666] text-xs line-through">
-              ₹{product.originalPrice}/-
-            </span>
+            {product.originalPrice > product.price && (
+              <span className="text-[#666] text-xs line-through">
+                ₹{product.originalPrice}/-
+              </span>
+            )}
           </div>
           {Number(product.discount) ? (
             <span className="border border-[#8bc11a] text-[#8bc11a] text-[11px] font-semibold px-2 py-0.5 rounded-full">

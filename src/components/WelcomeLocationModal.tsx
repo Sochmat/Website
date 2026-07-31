@@ -86,7 +86,10 @@ export default function WelcomeLocationModal({
         centered
         title={null}
       >
-        <div className="pt-1">
+        {/* Focusable so antd's focus trap lands here instead of ringing the
+            first society button on open; `outline-none` keeps the container
+            itself unmarked, and tabbing on from here rings buttons normally. */}
+        <div tabIndex={0} className="pt-1 outline-none">
           <p className="text-lg font-semibold text-[#1c1c1c]">
             Where should we deliver?
           </p>

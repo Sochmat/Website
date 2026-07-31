@@ -101,13 +101,17 @@ export default function MealCards() {
 }
 
 function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
+  // `current` can reach images.length — that's the cloned first slide, which
+  // lets the wrap-around keep sliding in the same direction instead of
+  // snapping backwards.
   const [current, setCurrent] = useState(0);
+  const [sliding, setSliding] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const startAutoPlay = useCallback(() => {
     if (images.length <= 1) return;
     intervalRef.current = setInterval(() => {
-      setCurrent((prev) => (prev + 1) % images.length);
+      setCurrent((prev) => prev + 1);
     }, 3000);
   }, [images.length]);
 
@@ -123,16 +127,52 @@ function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
     return stopAutoPlay;
   }, [startAutoPlay, stopAutoPlay]);
 
+  // Once the jump back to the real first slide has been painted without a
+  // transition, re-enable sliding for the next tick.
+  useEffect(() => {
+    if (sliding) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setSliding(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [sliding]);
+
   if (images.length === 0) return null;
+
+  const slides = images.length > 1 ? [...images, images[0]] : images;
+  const activeDot = current % images.length;
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={images[current]}
-        alt={alt}
-        className="w-full h-full object-cover pointer-events-none"
-      />
+      <div
+        className="flex h-full w-full pointer-events-none"
+        style={{
+          transform: `translate3d(-${current * 100}%, 0, 0)`,
+          transition: sliding
+            ? "transform 600ms cubic-bezier(0.4, 0, 0.2, 1)"
+            : "none",
+        }}
+        onTransitionEnd={() => {
+          if (current === images.length) {
+            setSliding(false);
+            setCurrent(0);
+          }
+        }}
+      >
+        {slides.map((src, idx) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={`${src}-${idx}`}
+            src={src}
+            alt={alt}
+            className="w-full h-full shrink-0 object-cover"
+          />
+        ))}
+      </div>
 
       {/* Image dots */}
       {images.length > 1 && (
@@ -149,7 +189,7 @@ function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
                 startAutoPlay();
               }}
               className={`w-2 h-2 rounded-full transition-colors ${
-                idx === current ? "bg-white" : "bg-white/50"
+                idx === activeDot ? "bg-white" : "bg-white/50"
               }`}
             />
           ))}

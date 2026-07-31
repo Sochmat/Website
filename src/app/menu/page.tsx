@@ -128,7 +128,6 @@ function MenuContent() {
         <Menu
           showTitle={!mealCardId}
           linkCategoriesToMenu={false}
-          initialCategory={category === "beverages" ? "beverages" : "food"}
           initialActiveCategory={mealCategory || category || null}
           hideHeader={!!mealCardId}
         />
