@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DatePicker, Segmented, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 
 const { RangePicker } = DatePicker;
+
+/** Mirrors TOP_ITEMS_LIMIT in the dashboard API — display copy only. */
+const TOP_ITEMS_SHOWN = 10;
 
 interface StatusBucket {
   paidAmount: number;
@@ -37,6 +42,21 @@ interface DashboardData {
     repeatBuyers: number;
   };
   topItems: TopItem[];
+  referrals: {
+    signups: number;
+    converted: number;
+    /** Credit disbursed during the range — a different cohort to the two above. */
+    creditPaidOut: number;
+  };
+  /** A right-now snapshot, not scoped to the selected range. */
+  streaks: {
+    total: number;
+    longest: number;
+    day1: number;
+    day2: number;
+    day3: number;
+    day4plus: number;
+  };
 }
 
 type Preset = "today" | "7d" | "30d" | "month";
@@ -134,9 +154,36 @@ function CardSkeleton() {
   );
 }
 
-export default function AdminDashboardPage() {
-  const [preset, setPreset] = useState<Preset | null>("7d");
-  const [range, setRange] = useState<[Dayjs, Dayjs]>(() => presetRange("7d"));
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The range to open on. A `?from=&to=` pair wins so the view is linkable — and
+ * so returning from the items page lands back on the range you left. Anything
+ * missing or malformed falls back to the default preset.
+ */
+function initialRange(
+  from: string | null,
+  to: string | null,
+): { preset: Preset | null; range: [Dayjs, Dayjs] } {
+  if (from && to && DATE_RE.test(from) && DATE_RE.test(to)) {
+    const f = dayjs(from);
+    const t = dayjs(to);
+    if (f.isValid() && t.isValid()) {
+      return { preset: null, range: f.isAfter(t) ? [t, f] : [f, t] };
+    }
+  }
+  return { preset: "7d", range: presetRange("7d") };
+}
+
+function DashboardView() {
+  const params = useSearchParams();
+  // First render only — after that the picker owns the range.
+  const initial = useMemo(
+    () => initialRange(params.get("from"), params.get("to")),
+    [params],
+  );
+  const [preset, setPreset] = useState<Preset | null>(initial.preset);
+  const [range, setRange] = useState<[Dayjs, Dayjs]>(initial.range);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -267,17 +314,75 @@ export default function AdminDashboardPage() {
               <Chip label="buyers" value={users.buyersInRange} tone="gray" />
               <Chip label="repeat" value={users.repeatBuyers} tone="amber" />
             </StatCard>
+
+            {data?.referrals && (
+              <StatCard
+                label="Referred signups"
+                value={num.format(data.referrals.signups)}
+                sub={`${inr.format(data.referrals.creditPaidOut)} credit paid out in range`}
+              >
+                <Chip
+                  label="converted"
+                  value={data.referrals.converted}
+                  tone="green"
+                />
+                <Chip
+                  label="pending"
+                  value={Math.max(
+                    0,
+                    data.referrals.signups - data.referrals.converted,
+                  )}
+                  tone="amber"
+                />
+              </StatCard>
+            )}
+
+            {data?.streaks && (
+              <StatCard
+                label="Live streaks"
+                value={num.format(data.streaks.total)}
+                // Not range-scoped: a streak is a right-now fact, so this tile
+                // deliberately ignores the date picker above.
+                sub={
+                  data.streaks.total
+                    ? `Right now · longest ${data.streaks.longest} days`
+                    : "Right now"
+                }
+              >
+                {data.streaks.day1 > 0 && (
+                  <Chip label="day 1" value={data.streaks.day1} tone="gray" />
+                )}
+                {data.streaks.day2 > 0 && (
+                  <Chip label="day 2" value={data.streaks.day2} tone="amber" />
+                )}
+                {data.streaks.day3 > 0 && (
+                  <Chip label="day 3" value={data.streaks.day3} tone="green" />
+                )}
+                {data.streaks.day4plus > 0 && (
+                  <Chip label="day 4+" value={data.streaks.day4plus} tone="green" />
+                )}
+              </StatCard>
+            )}
           </div>
         )
       )}
 
       {/* Most ordered items */}
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-[#111]">Most ordered items</h2>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Top items by quantity across paid orders in range
-          </p>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-semibold text-[#111]">Most ordered items</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Top {TOP_ITEMS_SHOWN} by quantity across paid orders in range
+            </p>
+          </div>
+          {/* Carries the range in the URL, so the full list is linkable. */}
+          <Link
+            href={`/admin/dashboard/items?from=${fromStr}&to=${toStr}`}
+            className="shrink-0 text-sm font-medium text-[#f56215] hover:underline whitespace-nowrap"
+          >
+            View all →
+          </Link>
         </div>
 
         {loading ? (
@@ -322,5 +427,14 @@ export default function AdminDashboardPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  // useSearchParams needs a Suspense boundary to keep the route prerenderable.
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-500">Loading…</div>}>
+      <DashboardView />
+    </Suspense>
   );
 }

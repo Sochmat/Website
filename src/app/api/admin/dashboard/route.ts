@@ -1,37 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ObjectId } from "mongodb";
 import type { Db } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { parseIstRange } from "@/lib/adminRange";
+import { itemSalesInRange } from "@/lib/adminItemSales";
+import { istToday, addIstDays } from "@/lib/ist";
 
-// IST is a fixed +5:30 with no DST (see src/lib/ist.ts).
-const IST_OFFSET_MS = 330 * 60_000;
-const DAY_MS = 86_400_000;
-
-/** The UTC instant of 00:00 IST on the given yyyy-mm-dd IST calendar date. */
-function istDateStartUtc(date: string): number {
-  const [y, mo, d] = date.split("-").map(Number);
-  return Date.UTC(y, mo - 1, d) - IST_OFFSET_MS;
-}
-
-/** Today's IST calendar date as yyyy-mm-dd. */
-function istToday(now: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
-}
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** yyyy-mm-dd shifted by `days`, staying on the IST calendar. */
-function shiftIstDate(date: string, days: number): string {
-  const shifted = new Date(istDateStartUtc(date) + days * DAY_MS + IST_OFFSET_MS);
-  return shifted.toISOString().slice(0, 10);
-}
+/** How many items the dashboard's top-sellers panel shows. */
+const TOP_ITEMS_LIMIT = 10;
 
 interface StatusBucket {
   paidAmount: number;
@@ -127,78 +102,80 @@ async function buyerBreakdown(db: Db, gte: Date, lt: Date) {
   return { buyersInRange: buyers, newBuyers, repeatBuyers: buyers - newBuyers };
 }
 
-interface TopItem {
-  productId: string;
-  name: string;
-  isVeg: boolean;
-  quantity: number;
-  revenue: number;
-}
+/**
+ * How the referral programme is doing.
+ *
+ * `signups` and `converted` are one cohort — accounts created in range that
+ * carry a referrer — so their ratio is a real conversion rate. `creditPaidOut`
+ * is deliberately NOT that cohort: credit lands when the referred friend first
+ * pays, which can be weeks after they signed up, so it is the credit actually
+ * disbursed during the range whoever it was earned for. The UI labels it that
+ * way rather than implying the three numbers describe the same people.
+ */
+async function referralStats(db: Db, gte: Date, lt: Date) {
+  const referredInRange = { referredBy: { $exists: true }, createdAt: { $gte: gte, $lt: lt } };
 
-/** Top 10 items by quantity across paid orders in range, name-resolved from menuItems. */
-async function topItems(db: Db, gte: Date, lt: Date): Promise<TopItem[]> {
-  const grouped = await db
-    .collection("orders")
-    .aggregate<{ _id: string; quantity: number; revenue: number }>([
-      { $match: { paymentStatus: "paid", createdAt: { $gte: gte, $lt: lt } } },
-      { $unwind: "$orderItems" },
-      {
-        $group: {
-          _id: "$orderItems.productId",
-          quantity: { $sum: { $ifNull: ["$orderItems.quantity", 0] } },
-          revenue: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ["$orderItems.price", 0] },
-                { $ifNull: ["$orderItems.quantity", 0] },
-              ],
-            },
+  const [signups, converted, payout] = await Promise.all([
+    db.collection("users").countDocuments(referredInRange),
+    db
+      .collection("users")
+      .countDocuments({ ...referredInRange, referralCredited: true }),
+    db
+      .collection("walletTransactions")
+      .aggregate<{ total: number }>([
+        {
+          $match: {
+            type: "referral_earned",
+            createdAt: { $gte: gte, $lt: lt },
           },
         },
-      },
-      { $sort: { quantity: -1 } },
-      { $limit: 10 },
+        { $group: { _id: null, total: { $sum: { $ifNull: ["$amount", 0] } } } },
+      ])
+      .toArray(),
+  ]);
+
+  return { signups, converted, creditPaidOut: payout[0]?.total ?? 0 };
+}
+
+/**
+ * A snapshot of live order streaks, bucketed by day count.
+ *
+ * Deliberately not range-scoped: a streak is a right-now fact, and the stored
+ * `streakCount` carries no history to slice by date. "Live" means the last
+ * streak-advancing order was today or yesterday — the same window `nextStreak`
+ * uses to decide whether a new order continues a run or starts one. Without
+ * that filter every streak ever abandoned would still be counted, which would
+ * badly overstate the number.
+ */
+async function streakStats(db: Db, now: Date) {
+  const today = istToday(now);
+  const live = {
+    streakCount: { $gt: 0 },
+    streakLastDate: { $in: [today, addIstDays(today, -1)] },
+  };
+
+  const rows = await db
+    .collection("users")
+    .aggregate<{ _id: number; count: number }>([
+      { $match: live },
+      { $group: { _id: "$streakCount", count: { $sum: 1 } } },
     ])
     .toArray();
 
-  if (grouped.length === 0) return [];
-
-  // productId may be an ObjectId string or a raw string; match menuItems both ways.
-  const objectIds: ObjectId[] = [];
-  const rawIds: string[] = [];
-  for (const g of grouped) {
-    const id = String(g._id ?? "");
-    if (!id) continue;
-    if (ObjectId.isValid(id)) objectIds.push(new ObjectId(id));
-    else rawIds.push(id);
-  }
-  const orQuery: Record<string, unknown>[] = [];
-  if (objectIds.length) orQuery.push({ _id: { $in: objectIds } });
-  if (rawIds.length) orQuery.push({ _id: { $in: rawIds } });
-
-  const products = orQuery.length
-    ? await db
-        .collection("menuItems")
-        .find({ $or: orQuery })
-        .project({ name: 1, isVeg: 1 })
-        .toArray()
-    : [];
-  const productMap = new Map<string, { name: string; isVeg: boolean }>();
-  for (const p of products) {
-    productMap.set(String(p._id), { name: String(p.name ?? ""), isVeg: Boolean(p.isVeg) });
+  const buckets = { day1: 0, day2: 0, day3: 0, day4plus: 0 };
+  let total = 0;
+  let longest = 0;
+  for (const r of rows) {
+    const day = Number(r._id) || 0;
+    total += r.count;
+    if (day > longest) longest = day;
+    if (day === 1) buckets.day1 += r.count;
+    else if (day === 2) buckets.day2 += r.count;
+    else if (day === 3) buckets.day3 += r.count;
+    else buckets.day4plus += r.count;
   }
 
-  return grouped.map((g) => {
-    const id = String(g._id ?? "");
-    const meta = productMap.get(id);
-    return {
-      productId: id,
-      name: meta?.name || "Unknown item",
-      isVeg: meta?.isVeg ?? false,
-      quantity: g.quantity,
-      revenue: g.revenue,
-    };
-  });
+  return { total, longest, ...buckets };
 }
 
 /**
@@ -209,29 +186,25 @@ export async function GET(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
     const now = new Date();
-    const today = istToday(now);
-
-    let from = params.get("from") ?? "";
-    let to = params.get("to") ?? "";
-    if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
-      to = today;
-      from = shiftIstDate(today, -6); // last 7 days inclusive
-    }
-    if (from > to) [from, to] = [to, from];
-
-    const gte = new Date(istDateStartUtc(from));
-    const lt = new Date(istDateStartUtc(shiftIstDate(to, 1))); // exclusive upper bound
+    const { from, to, gte, lt } = parseIstRange(
+      params.get("from"),
+      params.get("to"),
+      now,
+    );
 
     const { db } = await connectToDatabase();
 
-    const [orders, subscriptions, totalUsers, newUsers, buyers, items] = await Promise.all([
-      salesBucket(db, "orders", gte, lt),
-      salesBucket(db, "subscriptions", gte, lt),
-      db.collection("users").countDocuments({}),
-      db.collection("users").countDocuments({ createdAt: { $gte: gte, $lt: lt } }),
-      buyerBreakdown(db, gte, lt),
-      topItems(db, gte, lt),
-    ]);
+    const [orders, subscriptions, totalUsers, newUsers, buyers, items, referrals, streaks] =
+      await Promise.all([
+        salesBucket(db, "orders", gte, lt),
+        salesBucket(db, "subscriptions", gte, lt),
+        db.collection("users").countDocuments({}),
+        db.collection("users").countDocuments({ createdAt: { $gte: gte, $lt: lt } }),
+        buyerBreakdown(db, gte, lt),
+        itemSalesInRange(db, gte, lt, TOP_ITEMS_LIMIT),
+        referralStats(db, gte, lt),
+        streakStats(db, now),
+      ]);
 
     return NextResponse.json({
       success: true,
@@ -249,6 +222,8 @@ export async function GET(request: NextRequest) {
         repeatBuyers: buyers.repeatBuyers,
       },
       topItems: items,
+      referrals,
+      streaks,
     });
   } catch (error) {
     console.error("Error building dashboard stats:", error);
