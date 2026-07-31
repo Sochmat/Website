@@ -7,6 +7,7 @@ import { useUser } from "@/context/UserContext";
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"details" | "otp">("details");
@@ -51,6 +52,7 @@ export default function RegisterPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           name: name.trim(),
+          phone,
           ref: resolveRef(),
         }),
       });
@@ -111,6 +113,7 @@ export default function RegisterPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           name: name.trim(),
+          phone,
           ref: resolveRef(),
         }),
       });
@@ -175,6 +178,27 @@ export default function RegisterPage() {
             </div>
 
             <div>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="10-digit mobile number"
+                maxLength={10}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                required
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                We use this for delivery updates. One account per number.
+              </p>
+            </div>
+
+            <div>
               <label
                 htmlFor="referral"
                 className="block text-sm font-medium text-gray-700 mb-2"
@@ -200,7 +224,7 @@ export default function RegisterPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || phone.length !== 10}
               className="w-full bg-[#1c1c1c] text-white py-3 rounded-lg font-semibold hover:bg-[#034030] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Sending OTP..." : "Send OTP"}

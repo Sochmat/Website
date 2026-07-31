@@ -20,6 +20,8 @@ interface UserRow {
   email: string;
   address: string;
   addresses: UserAddress[];
+  rewardPoints: number;
+  streakCount: number;
   createdAt: string;
 }
 
@@ -52,6 +54,8 @@ export default function AdminUsersPage() {
                 email: String(u.email ?? "-"),
                 address: addrDisplay,
                 addresses: addrs,
+                rewardPoints: Number(u.rewardPoints ?? 0),
+                streakCount: Number(u.streakCount ?? 0),
                 createdAt: u.createdAt
                   ? new Date(u.createdAt as string).toLocaleString()
                   : "-",
@@ -95,6 +99,20 @@ export default function AdminUsersPage() {
     { title: "Name", dataIndex: "name", key: "name", ellipsis: true },
     { title: "Email", dataIndex: "email", key: "email", ellipsis: true },
     { title: "Address", dataIndex: "address", key: "address", ellipsis: true },
+    {
+      title: "Points",
+      dataIndex: "rewardPoints",
+      key: "rewardPoints",
+      width: 90,
+      sorter: (a: UserRow, b: UserRow) => a.rewardPoints - b.rewardPoints,
+    },
+    {
+      title: "Streak",
+      dataIndex: "streakCount",
+      key: "streakCount",
+      width: 90,
+      sorter: (a: UserRow, b: UserRow) => a.streakCount - b.streakCount,
+    },
     { title: "Created", dataIndex: "createdAt", key: "createdAt", width: 160 },
     {
       title: "Action",

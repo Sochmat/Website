@@ -60,6 +60,15 @@ export default function SocietyNoticeModal({
       }}
       centered
       title={null}
+      // The close button is the panel's first focusable child, so antd's focus
+      // trap rings it on open. Wrapping the panel in a focusable, unmarked
+      // element makes that the trap's first stop instead — tabbing on from
+      // there still rings the closer normally.
+      modalRender={(node) => (
+        <div tabIndex={0} className="outline-none">
+          {node}
+        </div>
+      )}
     >
       {society && (
         <div className="pt-1">

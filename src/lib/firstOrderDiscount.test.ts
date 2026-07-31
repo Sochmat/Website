@@ -4,6 +4,7 @@ import {
   computeFirstOrderDiscount,
   resolveOfferDiscount,
 } from "./firstOrderDiscount";
+import { societyOffersFirstOrderDiscount } from "./societies";
 
 describe("FIRST_ORDER_DISCOUNT_RATE", () => {
   it("is 20%", () => {
@@ -21,6 +22,25 @@ describe("computeFirstOrderDiscount", () => {
   it("is 0 for a non-positive subtotal", () => {
     expect(computeFirstOrderDiscount(0)).toBe(0);
     expect(computeFirstOrderDiscount(-50)).toBe(0);
+  });
+});
+
+describe("societyOffersFirstOrderDiscount", () => {
+  it("is off at Pivotal Paradise", () => {
+    expect(societyOffersFirstOrderDiscount("pivotal-paradise-sector-62")).toBe(
+      false,
+    );
+  });
+
+  it("is on at the other locations", () => {
+    expect(societyOffersFirstOrderDiscount("zomato-office-sector-62")).toBe(
+      true,
+    );
+  });
+
+  it("is off for an unknown or missing society", () => {
+    expect(societyOffersFirstOrderDiscount("nope")).toBe(false);
+    expect(societyOffersFirstOrderDiscount(undefined)).toBe(false);
   });
 });
 

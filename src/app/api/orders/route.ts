@@ -12,14 +12,26 @@ import {
   computeSocietyDiscount,
 } from "@/lib/societyDiscounts";
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
-import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
-import { getCustomerUserId } from "@/lib/customerSession";
 import {
-  getWalletBalance,
-  reserveWallet,
-  sweepStaleOrderReservations,
-} from "@/lib/wallet";
+  DELIVERY_FEES_KEY,
+  computeDeliveryFee,
+  ruleFor,
+  sanitizeDeliveryFeeConfig,
+} from "@/lib/deliveryFees";
+import { isEligibleForFirstOrderDiscount } from "@/lib/orderEligibility";
+import { societyOffersFirstOrderDiscount } from "@/lib/societies";
+import { couponAppliesToSociety } from "@/lib/couponScope";
+import { getCustomerUserId } from "@/lib/customerSession";
+import { normalizePhone } from "@/lib/phone";
+import { backfillPhoneIfMissing } from "@/lib/userPhone";
+import { getWalletBalance, reserveWallet } from "@/lib/wallet";
+import { sweepStaleOrderRedemptions } from "@/lib/orderRedemption";
 import { computeWalletApplied } from "@/lib/walletMath";
+import { computePointsApplied } from "@/lib/rewards";
+import {
+  getRewardPointsBalance,
+  reserveRewardPoints,
+} from "@/lib/rewardPoints";
 
 function generateOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -80,11 +92,15 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const [storeDoc, deliveryDoc, societyDiscountsDoc] = await Promise.all([
-      settingsDb.collection("settings").findOne({ key: "store" }),
-      settingsDb.collection("settings").findOne({ key: "delivery" }),
-      settingsDb.collection("settings").findOne({ key: SOCIETY_DISCOUNTS_KEY }),
-    ]);
+    const [storeDoc, deliveryDoc, societyDiscountsDoc, deliveryFeesDoc] =
+      await Promise.all([
+        settingsDb.collection("settings").findOne({ key: "store" }),
+        settingsDb.collection("settings").findOne({ key: "delivery" }),
+        settingsDb
+          .collection("settings")
+          .findOne({ key: SOCIETY_DISCOUNTS_KEY }),
+        settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
+      ]);
     if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -101,12 +117,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const phone = String(body.receiver?.phone ?? "")
-      .trim()
-      .replace(/\D/g, "");
-    if (!phone) {
+    // The delivery contact, not the account holder — the two are separate, and
+    // ordering for someone else is normal.
+    const receiverPhone = normalizePhone(body.receiver?.phone);
+    if (!receiverPhone) {
       return NextResponse.json(
-        { success: false, message: "user.phone is required" },
+        {
+          success: false,
+          message: "A valid 10-digit receiver.phone is required",
+        },
         { status: 400 },
       );
     }
@@ -129,42 +148,28 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
 
-    let user = (await db.collection("users").findOne({ phone })) as {
-      _id: ObjectId;
-      phone: string;
-      name?: string;
-    } | null;
-    if (!user) {
-      const newUser = {
-        phone,
-        name: body.receiver?.name ?? "",
-        address: body.receiver?.address ?? "",
-        addresses: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const insertResult = await db.collection("users").insertOne(newUser);
-      user = {
-        _id: insertResult.insertedId as ObjectId,
-        phone,
-        name: newUser.name,
-      };
-    }
-    if (!user) {
+    // Canonical order identity: the signed-in session user (from the httpOnly
+    // cookie), NOT the spoofable body.userId. All per-user logic — first-order
+    // eligibility, wallet, referral credit, and the stored order.userId — must
+    // key off the SAME id, or they silently target different documents.
+    //
+    // This used to fall back to a user resolved from (or created from) the
+    // *receiver's* phone, which minted a shadow account under someone else's
+    // number every time you ordered food for a friend. The order page is
+    // auth-gated, so there was never a real guest order to serve.
+    const orderUserId = await getCustomerUserId(request);
+    if (!orderUserId) {
       return NextResponse.json(
-        { success: false, message: "Failed to resolve user" },
-        { status: 500 },
+        { success: false, message: "Please sign in to place an order" },
+        { status: 401 },
       );
     }
 
-    // Canonical order identity: the signed-in session user (from the httpOnly
-    // cookie), NOT the phone-resolved record or the spoofable body.userId. All
-    // per-user logic — first-order eligibility, wallet, referral credit, and the
-    // stored order.userId — must key off the SAME id, or they silently target
-    // different documents. Fall back to the phone-resolved user for the rare
-    // unauthenticated/guest order.
-    const sessionUserId = await getCustomerUserId(request);
-    const orderUserId: ObjectId = sessionUserId ?? user._id;
+    // Legacy accounts predate the required-phone rule. If this one still has no
+    // number and the receiver's is unclaimed, adopt it — that is what restores
+    // their eligibility for the one-time offers. Best-effort: a number that
+    // belongs to someone else just means the order proceeds without a backfill.
+    await backfillPhoneIfMissing(db, orderUserId, receiverPhone);
 
     const discountAmount = Number(body.discountAmount) || 0;
     let allowedDiscount = 0;
@@ -175,6 +180,17 @@ export async function POST(request: NextRequest) {
         code: String(body.couponCode).trim().toUpperCase(),
         active: true,
       });
+      // A coupon scoped to other locations grants nothing here — drop it so
+      // neither its discount nor its free item applies.
+      if (
+        coupon &&
+        !couponAppliesToSociety(
+          coupon.societyIds,
+          typeof body.societyId === "string" ? body.societyId : undefined,
+        )
+      ) {
+        coupon = null;
+      }
     }
 
     // --- Server-side price recomputation (anti-tampering) -----------------
@@ -279,10 +295,12 @@ export async function POST(request: NextRequest) {
     // First-order 20% discount — resolved server-side from the user's order
     // history so it can't be spoofed. It does NOT stack with the coupon: the
     // larger of the two is allowed (matches the client's "best value" rule).
-    const serverEligibleFirstOrder = await isEligibleForFirstOrderDiscount(
-      db,
-      orderUserId,
-    );
+    // The offer doesn't run at every location (e.g. not at Pivotal Paradise),
+    // so the society gates it too.
+    const serverEligibleFirstOrder =
+      societyOffersFirstOrderDiscount(
+        typeof body.societyId === "string" ? body.societyId : undefined,
+      ) && (await isEligibleForFirstOrderDiscount(db, orderUserId));
     const serverFirstOrderDiscount = serverEligibleFirstOrder
       ? computeFirstOrderDiscount(serverSubtotal)
       : 0;
@@ -302,10 +320,24 @@ export async function POST(request: NextRequest) {
     );
     allowedDiscount += societyDiscountAmount;
 
-    const minAcceptable = Math.max(
-      0,
-      serverSubtotal - Math.max(0, allowedDiscount),
-    );
+    // Small-order delivery fee, resolved server-side from the location's rule
+    // and the server's own subtotal. Never trust body.deliveryFee: the floor
+    // below only covers the pre-tax item total, so a tampered fee would
+    // otherwise slip straight through.
+    const serverDeliveryFee =
+      body.orderType === "delivery"
+        ? computeDeliveryFee(
+            serverSubtotal,
+            ruleFor(
+              sanitizeDeliveryFeeConfig(deliveryFeesDoc),
+              typeof body.societyId === "string" ? body.societyId : undefined,
+            ),
+          )
+        : 0;
+
+    const minAcceptable =
+      Math.max(0, serverSubtotal - Math.max(0, allowedDiscount)) +
+      serverDeliveryFee;
 
     const clientNet = Number(body.netAmount ?? body.totalAmount);
     // 1-rupee epsilon for rounding; tax/delivery only ever raise the real total.
@@ -326,7 +358,7 @@ export async function POST(request: NextRequest) {
       receiver: body.receiver
         ? {
             name: body.receiver.name ?? "",
-            phone: String(body.receiver.phone ?? "").trim(),
+            phone: receiverPhone,
             address: body.receiver.address ?? "",
           }
         : undefined,
@@ -357,8 +389,7 @@ export async function POST(request: NextRequest) {
         body.orderType === "delivery" ? body.deliveryRoom : undefined,
       deliverySlot:
         body.orderType === "delivery" ? body.deliverySlot : undefined,
-      deliveryFee:
-        body.orderType === "delivery" ? Number(body.deliveryFee) || 0 : 0,
+      deliveryFee: serverDeliveryFee,
       societyId: typeof body.societyId === "string" ? body.societyId : undefined,
       societyDiscount: societyDiscountAmount,
       societyDiscountPercent,
@@ -371,6 +402,11 @@ export async function POST(request: NextRequest) {
       totalAmount,
       discountAmount,
       tax,
+      // The pre-tax total after every discount, computed entirely server-side
+      // (see minAcceptable above) — the base reward points are earned on. It is
+      // conservative by construction: it assumes the largest discount the
+      // customer was entitled to, so a tampered client can never inflate it.
+      rewardBase: minAcceptable,
       netAmount: totalAmount,
       couponCode: body.couponCode ?? undefined,
       paymentStatus: "pending" as const,
@@ -385,22 +421,34 @@ export async function POST(request: NextRequest) {
       .collection("orders")
       .findOne({ _id: result.insertedId });
 
-    // Wallet redemption (referral credit) — auto-applied unless the client
-    // opted out. Reserve at creation so the balance can't be double-spent; the
-    // reservation settles at payment (reconcile) or is refunded on fail/sweep.
-    // Only for online orders — COD never reaches the reconcile settle path.
+    // Redemption — wallet credit first, then reward points on whatever payable
+    // remains. Both are auto-applied unless the client opted out, and both are
+    // reserved at creation so a balance can't be double-spent across concurrent
+    // checkouts; the reservations settle at payment (reconcile) or are refunded
+    // on fail/sweep. Only for online orders — COD never reaches the settle path.
+    const online = orderDoc.paymentMethod !== "cash";
     const wantWallet =
-      (body as { useWallet?: boolean }).useWallet !== false &&
-      orderDoc.paymentMethod !== "cash";
+      (body as { useWallet?: boolean }).useWallet !== false && online;
+    const wantPoints =
+      (body as { useRewardPoints?: boolean }).useRewardPoints !== false &&
+      online;
+
+    // Reclaim any reservations from this user's abandoned checkouts first —
+    // this must run even at a zero live balance, since a balance can read 0
+    // precisely because it's all tied up in a stale reservation.
+    if (wantWallet || wantPoints) {
+      await sweepStaleOrderRedemptions(db, orderUserId, 30 * 60 * 1000);
+    }
+
+    // Tracks the payable as each balance is applied, so the MIN_PAYABLE floor
+    // is enforced once across both rather than twice.
+    let payableSoFar = totalAmount;
+
     if (wantWallet) {
-      // Reclaim any reservations from this user's abandoned checkouts first —
-      // this must run even at a zero live balance, since the balance can read 0
-      // precisely because it's all tied up in a stale reservation.
-      await sweepStaleOrderReservations(db, orderUserId, 30 * 60 * 1000);
       const balance = await getWalletBalance(db, orderUserId);
       const { walletApplied, amountPayable } = computeWalletApplied(
         balance,
-        totalAmount,
+        payableSoFar,
       );
       if (walletApplied > 0) {
         const reserved = await reserveWallet(
@@ -410,6 +458,7 @@ export async function POST(request: NextRequest) {
           walletApplied,
         );
         if (reserved) {
+          payableSoFar = amountPayable;
           // netAmount is what Razorpay is charged and what reconcile verifies.
           await db.collection("orders").updateOne(
             { _id: result.insertedId },
@@ -422,11 +471,42 @@ export async function POST(request: NextRequest) {
               },
             },
           );
-          order = await db
-            .collection("orders")
-            .findOne({ _id: result.insertedId });
         }
       }
+    }
+
+    if (wantPoints) {
+      const balance = await getRewardPointsBalance(db, orderUserId);
+      const { pointsApplied, amountPayable } = computePointsApplied(
+        balance,
+        payableSoFar,
+      );
+      if (pointsApplied > 0) {
+        const reserved = await reserveRewardPoints(
+          db,
+          orderUserId,
+          result.insertedId,
+          pointsApplied,
+        );
+        if (reserved) {
+          payableSoFar = amountPayable;
+          await db.collection("orders").updateOne(
+            { _id: result.insertedId },
+            {
+              $set: {
+                pointsApplied,
+                amountPayable,
+                netAmount: amountPayable,
+                updatedAt: new Date(),
+              },
+            },
+          );
+        }
+      }
+    }
+
+    if (wantWallet || wantPoints) {
+      order = await db.collection("orders").findOne({ _id: result.insertedId });
     }
 
     // COD orders are pushed to Petpooja at creation (online orders push from

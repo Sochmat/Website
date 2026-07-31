@@ -130,6 +130,71 @@ button {
   animation: bounce-x-left 1s ease-in-out infinite;
 }
 
+/* --- Reward streak timeline -------------------------------------------------
+   Each of these animates only the `from` half: the resting value lives inline
+   on the element, so switching the animation off (reduced motion) lands on the
+   finished state instead of an empty rail. */
+
+@keyframes streak-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+.animate-streak-reveal {
+  animation: streak-reveal 1s cubic-bezier(0.33, 1, 0.68, 1) 0.15s backwards;
+}
+
+@keyframes streak-flame {
+  from {
+    left: 0%;
+    opacity: 0;
+  }
+  25% {
+    opacity: 1;
+  }
+}
+
+.animate-streak-flame {
+  animation: streak-flame 1s cubic-bezier(0.33, 1, 0.68, 1) 0.15s backwards;
+}
+
+@keyframes streak-glow {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 3px rgba(245, 98, 21, 0.5));
+  }
+  50% {
+    transform: scale(1.12);
+    filter: drop-shadow(0 0 7px rgba(245, 98, 21, 0.75));
+  }
+}
+
+.animate-streak-glow {
+  animation: streak-glow 2.4s ease-in-out 1.15s infinite;
+}
+
+@keyframes streak-node {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+}
+
+.animate-streak-node {
+  animation: streak-node 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-streak-reveal,
+  .animate-streak-flame,
+  .animate-streak-glow,
+  .animate-streak-node {
+    animation: none;
+  }
+}
+
 .font-squada {
   font-family: "Squada One", sans-serif;
 }
@@ -150,4 +215,10 @@ html {
   scroll-behavior: smooth;
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* No page ever scrolls sideways: `clip` (not `hidden`) so this stays a
+     non-scrolling box and the `sticky` headers keep pinning to the viewport,
+     and `overscroll-behavior-x` so a sideways drag can't rubber-band the page
+     or chain out of the horizontal category strips. */
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }

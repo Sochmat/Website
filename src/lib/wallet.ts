@@ -1,9 +1,9 @@
 import { Db, ObjectId } from "mongodb";
 import { REFERRAL_REWARD } from "./walletMath";
+import { hasPhone } from "./phone";
 import type { WalletTransaction } from "./types";
 
 const USERS = "users";
-const ORDERS = "orders";
 const LEDGER = "walletTransactions";
 
 function ledgerEntry(
@@ -61,36 +61,18 @@ export async function settleWallet(
 }
 
 /**
- * Return an unpaid order's reservation to the wallet. Idempotent: the order's
- * `walletApplied` is zeroed in the same guarded update, so a second call is a
- * no-op. Also restores `netAmount`/`amountPayable` to the full total. Returns
- * the ₹ refunded.
+ * Return a reservation to the wallet. The caller owns the guarded update that
+ * zeroes `order.walletApplied`, so this is only ever reached once per order —
+ * see refundOrderRedemptions in orderRedemption.ts, which unwinds wallet credit
+ * and reward points together in a single atomic update.
  */
-export async function refundReservationForOrder(
+export async function creditWalletRefund(
   db: Db,
+  userId: ObjectId,
   orderId: ObjectId,
-): Promise<number> {
-  const before = await db.collection(ORDERS).findOneAndUpdate(
-    {
-      _id: orderId,
-      paymentStatus: { $ne: "paid" },
-      walletApplied: { $gt: 0 },
-    },
-    [
-      {
-        $set: {
-          walletApplied: 0,
-          amountPayable: "$totalAmount",
-          netAmount: "$totalAmount",
-          updatedAt: new Date(),
-        },
-      },
-    ],
-    { returnDocument: "before" },
-  );
-  const amount = Number(before?.walletApplied ?? 0);
-  const userId = before?.userId as ObjectId | undefined;
-  if (amount <= 0 || !userId) return 0;
+  amount: number,
+): Promise<void> {
+  if (amount <= 0) return;
   await db
     .collection(USERS)
     .updateOne(
@@ -100,31 +82,6 @@ export async function refundReservationForOrder(
   await db
     .collection<WalletTransaction>(LEDGER)
     .insertOne(ledgerEntry({ userId, orderId, type: "refunded", amount }));
-  return amount;
-}
-
-/** Safety net for checkouts abandoned before the client fail-call fired. */
-export async function sweepStaleOrderReservations(
-  db: Db,
-  userId: ObjectId,
-  olderThanMs: number,
-): Promise<void> {
-  const cutoff = new Date(Date.now() - olderThanMs);
-  const stale = await db
-    .collection(ORDERS)
-    .find(
-      {
-        userId,
-        paymentStatus: { $ne: "paid" },
-        walletApplied: { $gt: 0 },
-        createdAt: { $lt: cutoff },
-      },
-      { projection: { _id: 1 } },
-    )
-    .toArray();
-  for (const o of stale) {
-    await refundReservationForOrder(db, o._id as ObjectId);
-  }
 }
 
 /**
@@ -140,9 +97,15 @@ export async function creditReferral(
     .collection(USERS)
     .findOne(
       { _id: refereeUserId },
-      { projection: { referredBy: 1, referralCredited: 1 } },
+      { projection: { referredBy: 1, referralCredited: 1, phone: 1 } },
     );
   if (!referee?.referredBy || referee.referralCredited) return;
+
+  // A phoneless account cannot claim the referral bonus — otherwise one person
+  // collects it once per email address, which is what the unique-phone rule is
+  // there to prevent. `referralCredited` is deliberately left unset, so the
+  // credit survives to be paid once their number is backfilled at checkout.
+  if (!hasPhone(referee)) return;
 
   const claimed = await db
     .collection(USERS)

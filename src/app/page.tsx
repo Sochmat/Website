@@ -13,6 +13,7 @@ import HomeCategoryScroll from "@/components/HomeCategoryScroll";
 import SocietySelector from "@/components/SocietySelector";
 import LocationPerkModals from "@/components/LocationPerkModals";
 import StoreClosedBanner from "@/components/StoreClosedBanner";
+import StreakTimeline from "@/components/StreakTimeline";
 
 export default function Home() {
   // OLD map-based location selector — disabled (replaced by SocietySelector)
@@ -99,6 +100,9 @@ export default function Home() {
 
       {/* Hero Banner Carousel */}
       <HeroCarousel />
+
+      {/* Reward streak — renders nothing for signed-out visitors */}
+      <StreakTimeline />
       {/* <div className="bg-[#f56215] py-4 overflow-hidden mt-2">
         <div className="flex animate-marquee whitespace-nowrap">
           {[...marqueeItems, ...marqueeItems].map((item, index) => (

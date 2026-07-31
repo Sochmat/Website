@@ -9,12 +9,12 @@ const zomato: Society = {
   label: "Zomato office, Sector 62",
   towers: ["T1", "T2"],
   collectRoom: false,
-  deliveryCharge: 0,
   slots: [
     { orderBefore: "12:30", getTill: "13:00" },
     { orderBefore: "13:30", getTill: "14:00" },
     { orderBefore: "14:30", getTill: "15:00" },
   ],
+  offersFirstOrderDiscount: true,
 };
 
 const pivotal: Society = {
@@ -24,8 +24,8 @@ const pivotal: Society = {
   label: "Pivotal Paradise, Sector 62",
   towers: ["T1"],
   collectRoom: true,
-  deliveryCharge: 0,
   slots: [],
+  offersFirstOrderDiscount: false,
 };
 
 /** A UTC instant whose IST wall-clock reads hh:mm. IST = UTC + 5:30. */

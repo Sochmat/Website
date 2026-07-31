@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { nextBoundary } from "@/lib/ist";
 import { DEFAULT_OPEN_MINUTES, DEFAULT_CLOSE_MINUTES } from "@/lib/storeState";
+import { nextBoundaryFrom, type WeeklyHours } from "@/lib/storeHours";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,15 @@ export async function POST(request: NextRequest) {
     if (store?.scheduleEnabled === true) {
       // Schedule is running → the tap is a manual override that holds only until
       // the next open/close boundary, after which the schedule takes back over.
+      const now = new Date();
+      const weekly = store.weeklyHours as WeeklyHours | undefined;
       const openMin = store.openMinutes ?? DEFAULT_OPEN_MINUTES;
       const closeMin = store.closeMinutes ?? DEFAULT_CLOSE_MINUTES;
-      const overrideUntil = nextBoundary(new Date(), openMin, closeMin);
+      // A week with no windows at all has no boundary to hand back to, so the
+      // override would otherwise become permanent — cap it at a day.
+      const overrideUntil = weekly
+        ? (nextBoundaryFrom(weekly, now) ?? new Date(now.getTime() + 86_400_000))
+        : nextBoundary(now, openMin, closeMin);
       await db.collection("settings").updateOne(
         { key: "store" },
         {

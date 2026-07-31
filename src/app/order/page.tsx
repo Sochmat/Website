@@ -21,12 +21,13 @@ import { Order, type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import type { Product } from "@/context/CartContext";
 import { handleRazorpayPayment, type UpiApp } from "@/helpers/razorpay";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, Info } from "lucide-react";
 // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
 // import LocationSelector from "@/components/LocationSelector";
 import DeliveryDetailsSheet, {
   type DeliveryDetails,
 } from "@/components/DeliveryDetailsSheet";
+import RewardInfoModal from "@/components/RewardInfoModal";
 import {
   activeSlot,
   isDeliveryOpenNow,
@@ -38,6 +39,15 @@ import {
   resolveOfferDiscount,
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
+import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
+import {
+  DEFAULT_RULE,
+  amountToFreeDelivery,
+  computeDeliveryFee,
+  ruleFor,
+  type DeliveryFeeConfig,
+} from "@/lib/deliveryFees";
+import { DEFAULT_LADDER } from "@/lib/streakLadder";
 
 const SAVED_DELIVERY_DETAILS_KEY = "sochmat_delivery_details";
 
@@ -60,8 +70,12 @@ export default function OrderPage() {
     totalDiscount,
     clearCart,
   } = useCart();
-  const { distanceFromStoreKm, isServiceable, society, societyDiscountPercent } =
-    useLocation();
+  const {
+    distanceFromStoreKm,
+    isServiceable,
+    society,
+    societyDiscountPercent,
+  } = useLocation();
   const { user, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const {
@@ -99,6 +113,19 @@ export default function OrderPage() {
   const [firstOrderEligible, setFirstOrderEligible] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWallet, setUseWallet] = useState(true);
+  const [rewardPoints, setRewardPoints] = useState(0);
+  const [rewardNextStreak, setRewardNextStreak] = useState(1);
+  const [rewardNextRate, setRewardNextRate] = useState(DEFAULT_LADDER[0]);
+  const [rewardRates, setRewardRates] = useState<number[]>(DEFAULT_LADDER);
+  const [rewardsEnabled, setRewardsEnabled] = useState(true);
+  const [useRewardPoints, setUseRewardPoints] = useState(true);
+  const [showRewardInfo, setShowRewardInfo] = useState(false);
+  const [deliveryFeeConfig, setDeliveryFeeConfig] =
+    useState<DeliveryFeeConfig | null>(null);
+  /** This location's small-order rule; the built-in default until it loads. */
+  const deliveryRule = deliveryFeeConfig
+    ? ruleFor(deliveryFeeConfig, society.id)
+    : DEFAULT_RULE;
   const [placingOrder, setPlacingOrder] = useState(false);
   const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
   // OLD address flow — disabled (replaced by DeliveryDetailsSheet)
@@ -148,32 +175,80 @@ export default function OrderPage() {
     if (!isAuthenticated) {
       setFirstOrderEligible(false);
       setWalletBalance(0);
+      setRewardPoints(0);
+      setRewardNextStreak(1);
+      setRewardNextRate(DEFAULT_LADDER[0]);
+      setRewardRates(DEFAULT_LADDER);
+      setRewardsEnabled(true);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const [eligRes, walletRes] = await Promise.all([
+        const [eligRes, walletRes, rewardsRes] = await Promise.all([
           fetch("/api/orders/first-order-eligibility", { cache: "no-store" }),
           fetch("/api/wallet/balance", { cache: "no-store" }),
+          fetch(`/api/rewards/me?societyId=${encodeURIComponent(society.id)}`, {
+            cache: "no-store",
+          }),
         ]);
         const elig = await eligRes.json();
         const wallet = await walletRes.json();
+        const rewards = await rewardsRes.json();
         if (!cancelled) {
           setFirstOrderEligible(!!elig?.eligible);
           setWalletBalance(Number(wallet?.balance ?? 0));
+          setRewardPoints(Number(rewards?.points ?? 0));
+          setRewardNextStreak(Number(rewards?.nextStreak ?? 1));
+          setRewardNextRate(Number(rewards?.nextRate ?? DEFAULT_LADDER[0]));
+          setRewardRates(
+            Array.isArray(rewards?.rates) && rewards.rates.length
+              ? (rewards.rates as number[])
+              : DEFAULT_LADDER,
+          );
+          setRewardsEnabled(rewards?.enabled !== false);
         }
       } catch {
         if (!cancelled) {
           setFirstOrderEligible(false);
           setWalletBalance(0);
+          setRewardPoints(0);
+          setRewardNextStreak(1);
+          setRewardNextRate(DEFAULT_LADDER[0]);
+          setRewardRates(DEFAULT_LADDER);
+          setRewardsEnabled(true);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, society.id]);
+
+  // The offer doesn't run at every location (e.g. not at Pivotal Paradise), so
+  // the selected society gates it on top of the per-user eligibility. Re-checked
+  // authoritatively by the order route.
+  const firstOrderOffered =
+    firstOrderEligible && society.offersFirstOrderDiscount;
+
+  // Small-order delivery fee rules. Public, so this runs signed out too — the
+  // order route recomputes the fee authoritatively at creation either way.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/delivery-fees", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data?.default) return;
+        setDeliveryFeeConfig({
+          default: data.default,
+          byLocation: data.byLocation ?? {},
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Restore the last delivery details so the sheet pre-fills next time.
   useEffect(() => {
@@ -315,7 +390,7 @@ export default function OrderPage() {
     try {
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       // First-order 20% discount — best value vs the coupon (they don't stack).
-      const firstOrderDiscountAmount = firstOrderEligible
+      const firstOrderDiscountAmount = firstOrderOffered
         ? computeFirstOrderDiscount(totalPrice)
         : 0;
       const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
@@ -338,7 +413,9 @@ export default function OrderPage() {
       const gstAmount = Math.round(discountedAmount * 0.05);
       // Delivery charge applies only to delivery orders (not dine-in).
       const deliveryFeeAmount =
-        details.orderType === "delivery" ? society.deliveryCharge : 0;
+        details.orderType === "delivery"
+          ? computeDeliveryFee(totalPrice, deliveryRule)
+          : 0;
       const finalAmount = discountedAmount + gstAmount + deliveryFeeAmount;
 
       const orderPayload: Order = {
@@ -389,8 +466,9 @@ export default function OrderPage() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // `useWallet` is a request-only flag (not part of the stored order).
-        body: JSON.stringify({ ...orderPayload, useWallet }),
+        // `useWallet`/`useRewardPoints` are request-only flags (not part of the
+        // stored order).
+        body: JSON.stringify({ ...orderPayload, useWallet, useRewardPoints }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -466,7 +544,7 @@ export default function OrderPage() {
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   // First-order 20% discount — best value vs the coupon (they don't stack).
-  const firstOrderDiscountPreview = firstOrderEligible
+  const firstOrderDiscountPreview = firstOrderOffered
     ? computeFirstOrderDiscount(totalPrice)
     : 0;
   const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
@@ -477,7 +555,9 @@ export default function OrderPage() {
   // moves the total — surface it in the bill or the coupon looks like it did
   // nothing. Suppressed when the first-order discount supersedes the coupon,
   // matching what placeOrder actually sends.
-  const couponFreeItem = firstOrderApplied ? undefined : appliedCoupon?.freeItem;
+  const couponFreeItem = firstOrderApplied
+    ? undefined
+    : appliedCoupon?.freeItem;
   const couponSuperseded = firstOrderApplied && Boolean(appliedCoupon);
   // Flat location discount for the selected society (% of item subtotal),
   // stacks on top of the offer. Authoritatively re-derived server-side.
@@ -497,15 +577,35 @@ export default function OrderPage() {
   const deliveryAvailable = deliveryOn && slotsAllowDelivery;
   // Preview the delivery charge when delivery is available (the default choice);
   // dine-in orders drop it — the authoritative amount is recomputed in placeOrder.
-  const deliveryFee = deliveryAvailable ? society.deliveryCharge : 0;
+  const deliveryFee = deliveryAvailable
+    ? computeDeliveryFee(totalPrice, deliveryRule)
+    : 0;
+  // How much more food reaches free delivery; 0 once it already is.
+  const freeDeliveryShortfall = deliveryAvailable
+    ? amountToFreeDelivery(totalPrice, deliveryRule)
+    : 0;
   const finalPrice = discountedSubtotal + gst + deliveryFee;
-  const originalWithTax = Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
+  const originalWithTax =
+    Math.round(totalPrice + totalPrice * 0.05) + deliveryFee;
   // Wallet credit preview — reserved authoritatively server-side at creation.
   const walletApplied =
     useWallet && walletBalance > 0
       ? computeWalletApplied(walletBalance, finalPrice).walletApplied
       : 0;
-  const payable = finalPrice - walletApplied;
+  // Reward points apply to what's left after wallet credit, matching the order
+  // route. Preview only — reserved authoritatively server-side at creation.
+  const pointsApplied =
+    useRewardPoints && rewardPoints > 0
+      ? computePointsApplied(rewardPoints, finalPrice - walletApplied)
+          .pointsApplied
+      : 0;
+  const payable = finalPrice - walletApplied - pointsApplied;
+  // Points this order will earn: the streak rate off the pre-tax total.
+  // Redeeming doesn't shrink the base — points are consideration, not a discount.
+  const pointsWillEarn = computePointsEarned(
+    discountedSubtotal,
+    rewardNextRate,
+  );
 
   if (totalItems === 0) {
     return (
@@ -706,6 +806,7 @@ export default function OrderPage() {
 
         <CouponSelector
           totalPrice={totalPrice}
+          societyId={society.id}
           onCouponChange={setAppliedCoupon}
         />
 
@@ -816,6 +917,36 @@ export default function OrderPage() {
                     </span>
                   </div>
                 ) : null}
+                {freeDeliveryShortfall > 0 ? (
+                  <p className="text-xs text-[#f56215]">
+                    Add ₹{freeDeliveryShortfall} more to get free delivery
+                  </p>
+                ) : null}
+                {isAuthenticated && rewardsEnabled && pointsWillEarn > 0 ? (
+                  <div className="rounded-lg bg-[#fff4ec] px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-semibold text-[#f56215]">
+                        🔥 Day {rewardNextStreak} this month · earning{" "}
+                        {rewardNextRate}%
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowRewardInfo(true)}
+                        className="-my-1 -mr-1 shrink-0 rounded-full p-1 text-[#f56215] transition-colors hover:bg-[#ffe0cb]"
+                        aria-label="How reward points are calculated"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="text-xs text-[#8a6b57] mt-0.5">
+                      You&apos;ll earn {pointsWillEarn} points on this order
+                      {rewardNextRate < 20
+                        ? " — order again this month to earn more"
+                        : " — you're at this month's maximum rate"}
+                      . Points can be redeemed on next order
+                    </div>
+                  </div>
+                ) : null}
                 {walletBalance > 0 ? (
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 text-[#666]">
@@ -829,6 +960,24 @@ export default function OrderPage() {
                     </label>
                     {walletApplied > 0 ? (
                       <span className="text-[#00a86e]">−₹{walletApplied}</span>
+                    ) : (
+                      <span className="text-[#bbb] text-[13px]">₹0</span>
+                    )}
+                  </div>
+                ) : null}
+                {rewardPoints > 0 ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <label className="flex items-center gap-2 text-[#666]">
+                      <input
+                        type="checkbox"
+                        checked={useRewardPoints}
+                        onChange={(e) => setUseRewardPoints(e.target.checked)}
+                        className="h-4 w-4 accent-[#f56215]"
+                      />
+                      Use reward points ({rewardPoints})
+                    </label>
+                    {pointsApplied > 0 ? (
+                      <span className="text-[#00a86e]">−₹{pointsApplied}</span>
                     ) : (
                       <span className="text-[#bbb] text-[13px]">₹0</span>
                     )}
@@ -871,21 +1020,30 @@ export default function OrderPage() {
         </div>
       </div>
 
+      <RewardInfoModal
+        open={showRewardInfo}
+        onClose={() => setShowRewardInfo(false)}
+        rates={rewardRates}
+        currentDay={rewardNextStreak}
+      />
+
       {showDeliveryDetails && (
         <DeliveryDetailsSheet
           open
           society={society}
           onClose={() => setShowDeliveryDetails(false)}
+          // Account first, now that every account has a phone. `||` not `??`,
+          // so a legacy empty string falls through instead of winning.
           defaultName={
-            savedDeliveryDetails?.name ??
-            user?.name ??
-            selectedAddress?.receiverName ??
+            user?.name ||
+            savedDeliveryDetails?.name ||
+            selectedAddress?.receiverName ||
             ""
           }
           defaultPhone={
-            savedDeliveryDetails?.phone ??
-            user?.phone ??
-            selectedAddress?.receiverPhone ??
+            user?.phone ||
+            savedDeliveryDetails?.phone ||
+            selectedAddress?.receiverPhone ||
             ""
           }
           defaultTower={savedDeliveryDetails?.tower ?? ""}

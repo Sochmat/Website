@@ -6,6 +6,8 @@ import {
   customerCookieOptions,
   signCustomerSession,
 } from "@/lib/customerAuth";
+import { hasPhone } from "@/lib/phone";
+import { findUserIdByReferralCode } from "@/lib/referral";
 
 interface GoogleTokenInfo {
   sub?: string;
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
 
     const { db } = await connectToDatabase();
     let user = await db.collection("users").findOne({ email });
+    const isNewUser = !user;
 
     if (user) {
       const updates: Record<string, unknown> = {
@@ -76,8 +79,10 @@ export async function POST(request: NextRequest) {
       await db.collection("users").updateOne({ email }, { $set: updates });
       user = { ...user, ...updates };
     } else {
-      const newUser = {
-        phone: "",
+      // No `phone: ""` — an empty string would sit inside the unique index's
+      // partial filter and collide with every other phoneless signup. Absent
+      // means absent; the client collects the number via POST /api/users/phone.
+      const newUser: Record<string, unknown> = {
         email,
         name,
         googleId,
@@ -85,6 +90,15 @@ export async function POST(request: NextRequest) {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+      // Referral attribution: set `referredBy` once, only for a brand-new user,
+      // mirroring the email flow in otp/register. The client sends the code it
+      // captured from a `?ref=` link, so arriving through a referral link now
+      // attributes a Google signup without the user typing anything.
+      const ref = String(body.ref ?? "").trim().toUpperCase();
+      if (ref) {
+        const referrerId = await findUserIdByReferralCode(db, ref);
+        if (referrerId) newUser.referredBy = referrerId;
+      }
       const result = await db.collection("users").insertOne(newUser);
       user = { _id: result.insertedId, ...newUser };
     }
@@ -96,6 +110,15 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       success: true,
       token,
+      // Google never gives us a phone number. Until the account has one it is
+      // exempt from the unique-phone rule and from the one-time offers, so the
+      // client must collect it before letting the user continue.
+      needsPhone: !hasPhone(user),
+      // Only a brand-new account can still be attributed to a referrer, so the
+      // client shows its referral field for this and nothing else. An existing
+      // phoneless account also reaches the phone step, and must not be offered
+      // a code that `referredBy`'s set-once rule would silently discard.
+      isNewUser,
       user: {
         _id: user._id,
         phone: user.phone ?? "",

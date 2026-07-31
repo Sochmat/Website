@@ -12,14 +12,12 @@ interface Category {
 }
 
 interface CategoryFilterProps {
-  activeTab: "food" | "beverages";
   categories: Category[];
   activeCategory: string | null;
   onCategoryChange: (categoryId: string) => void;
 }
 
 export default function CategoryFilter({
-  activeTab,
   categories,
   activeCategory,
   onCategoryChange,
@@ -40,7 +38,7 @@ export default function CategoryFilter({
   useEffect(() => {
     updateScrollState();
     setHasScrolled(false);
-  }, [activeTab, categories, updateScrollState]);
+  }, [categories, updateScrollState]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -91,43 +89,41 @@ export default function CategoryFilter({
 
       <div
         ref={scrollRef}
-        className="flex gap-4 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide"
+        className="flex gap-2 py-5 border-b border-[#e6e6e6] overflow-x-auto scrollbar-hide"
       >
-        {categories
-          .filter((cat) => cat.type === activeTab)
-          .map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => onCategoryChange(cat.id)}
-              className="flex flex-col items-center shrink-0"
+        {categories.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => onCategoryChange(cat.id)}
+            className="flex flex-col items-center gap-[8px] shrink-0 w-[72px]"
+          >
+            <div
+              className={cn(
+                "w-[72px] h-[72px] rounded-[16px] border flex items-center justify-center transition-colors",
+                activeCategory === cat.id
+                  ? "bg-[#f56215] border-[#f56215]"
+                  : "bg-[#f0f0f0] border-[#f0f0f0]"
+              )}
             >
-              <div
-                className={cn(
-                  "relative w-[80px]",
-                  activeCategory === cat.id
-                    ? "border-[#1c1c1c]"
-                    : "border-[#e6e6e6]",
-                )}
-              >
-                <div
-                  className={`absolute w-[60px] h-[60px] left-1/2 -translate-x-1/2 top-[35px] -translate-y-1/2 rounded-full transition-colors z-1 ${
-                    activeCategory === cat.id ? "bg-[#1c1c1c]" : "bg-[#f0f0f0]"
-                  }`}
-                />
-                <Image
-                  src={cat.image}
-                  alt={cat.name}
-                  width={78}
-                  height={78}
-                  className="w-[78px] h-[78px] object-contain z-2 relative"
-                  unoptimized
-                />
-                <p className="text-[#222] text-xs font-semibold leading-tight">
-                  {cat.name}
-                </p>
-              </div>
-            </button>
-          ))}
+              <Image
+                src={cat.image}
+                alt={cat.name}
+                width={56}
+                height={56}
+                className="w-[56px] h-[56px] object-contain"
+                unoptimized
+              />
+            </div>
+            <p
+              className={cn(
+                "text-xs font-semibold leading-tight text-center transition-colors",
+                activeCategory === cat.id ? "text-[#f56215]" : "text-[#222]"
+              )}
+            >
+              {cat.name}
+            </p>
+          </button>
+        ))}
       </div>
 
       {showRight && (

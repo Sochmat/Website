@@ -5,7 +5,8 @@ import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 
 type AuthMode = "login" | "register";
-type AuthStep = "details" | "otp";
+/** "phone" is only reached after Google sign-in, which never gives us a number. */
+type AuthStep = "details" | "otp" | "phone";
 
 declare global {
   interface Window {
@@ -16,7 +17,18 @@ declare global {
             client_id: string;
             callback: (response: { credential?: string }) => void;
           }) => void;
-          prompt: () => void;
+          renderButton: (
+            parent: HTMLElement,
+            options: {
+              theme?: "outline" | "filled_blue" | "filled_black";
+              size?: "small" | "medium" | "large";
+              type?: "standard" | "icon";
+              shape?: "rectangular" | "pill" | "circle" | "square";
+              text?: "signin_with" | "signup_with" | "continue_with";
+              logo_alignment?: "left" | "center";
+              width?: number;
+            },
+          ) => void;
         };
       };
     };
@@ -29,14 +41,25 @@ export default function LoginPopup() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [referralCode, setReferralCode] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<AuthStep>("details");
+  // Held while the Google-signed-in user supplies their number. The cookie is
+  // already set at this point; this is only the payload for local state.
+  const [pendingSession, setPendingSession] = useState<{
+    token: string;
+    user: unknown;
+  } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+  const [googleReady, setGoogleReady] = useState(true);
+  /** Only a brand-new account can still be attributed to a referrer. */
+  const [googleIsNewUser, setGoogleIsNewUser] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   // Auto-focus the OTP field the moment the verify step appears.
@@ -57,11 +80,15 @@ export default function LoginPopup() {
       setStep("details");
       setName("");
       setEmail("");
+      setPhone("");
       setReferralCode("");
       setOtp("");
       setError("");
       setLoading(false);
       setGoogleLoading(false);
+      setGoogleReady(true);
+      setGoogleIsNewUser(false);
+      setPendingSession(null);
     } else {
       // Prefill the referral box from a `?ref=` link the user arrived through.
       try {
@@ -72,6 +99,12 @@ export default function LoginPopup() {
       }
     }
   }, [isOpen]);
+
+  /** Typed code wins; otherwise a code captured from a `?ref=` link. */
+  const capturedRef = (): string | undefined =>
+    referralCode.trim().toUpperCase() ||
+    localStorage.getItem("sochmat_ref") ||
+    undefined;
 
   const persistSession = (data: { token: string; user: unknown }) => {
     localStorage.setItem("userToken", data.token);
@@ -91,11 +124,8 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
-              // Typed code wins; otherwise use a code captured from a ?ref= link.
-              ref:
-                referralCode.trim().toUpperCase() ||
-                localStorage.getItem("sochmat_ref") ||
-                undefined,
+              phone,
+              ref: capturedRef(),
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -140,6 +170,38 @@ export default function LoginPopup() {
     }
   };
 
+  const handleSavePhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/users/phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Only a brand-new account may be attributed. Sending this
+        // unconditionally would let a stale `?ref=` code in localStorage
+        // attach itself to an existing account that simply lacked a phone.
+        body: JSON.stringify({
+          phone,
+          ref: googleIsNewUser ? capturedRef() : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        persistSession({
+          token: pendingSession?.token ?? "",
+          user: data.user,
+        });
+      } else {
+        setError(data.message || "Could not save that number");
+      }
+    } catch {
+      setError("Could not save that number. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleResendOTP = async () => {
     if (resendTimer > 0) return;
     setError("");
@@ -151,11 +213,8 @@ export default function LoginPopup() {
           ? {
               email: email.trim().toLowerCase(),
               name: name.trim(),
-              // Typed code wins; otherwise use a code captured from a ?ref= link.
-              ref:
-                referralCode.trim().toUpperCase() ||
-                localStorage.getItem("sochmat_ref") ||
-                undefined,
+              phone,
+              ref: capturedRef(),
             }
           : { email: email.trim().toLowerCase() };
       const res = await fetch(endpoint, {
@@ -181,12 +240,26 @@ export default function LoginPopup() {
     if (window.google?.accounts?.id) return;
 
     await new Promise<void>((resolve, reject) => {
+      // A tag that already finished loading fires neither event again, so this
+      // would wait forever if GSI loaded but never defined window.google —
+      // leaving the caller with no button and no error to show.
+      const timeout = setTimeout(
+        () => reject(new Error("Google script timed out")),
+        10000,
+      );
+      const settle = (fn: () => void) => () => {
+        clearTimeout(timeout);
+        fn();
+      };
+
       const existing = document.getElementById("google-identity-script") as HTMLScriptElement | null;
       if (existing) {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener("error", () => reject(new Error("Google script failed to load")), {
-          once: true,
-        });
+        existing.addEventListener("load", settle(resolve), { once: true });
+        existing.addEventListener(
+          "error",
+          settle(() => reject(new Error("Google script failed to load"))),
+          { once: true },
+        );
         return;
       }
 
@@ -195,67 +268,98 @@ export default function LoginPopup() {
       script.src = "https://accounts.google.com/gsi/client";
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Google script failed to load"));
+      script.onload = settle(resolve);
+      script.onerror = settle(() =>
+        reject(new Error("Google script failed to load")),
+      );
       document.head.appendChild(script);
     });
   };
 
-  const handleGoogleLogin = async () => {
-    if (!googleClientId) {
-      setError("Google login is not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID.");
+  const handleGoogleCredential = async (response: { credential?: string }) => {
+    const credential = response.credential;
+    if (!credential) {
+      setError("Google login failed. Please try again.");
       return;
     }
 
     setError("");
     setGoogleLoading(true);
-
     try {
-      await ensureGoogleScript();
-
-      if (!window.google?.accounts?.id) {
-        setError("Google login is unavailable right now.");
-        setGoogleLoading(false);
-        return;
-      }
-
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: async (response: { credential?: string }) => {
-          const credential = response.credential;
-          if (!credential) {
-            setError("Google login failed. Please try again.");
-            setGoogleLoading(false);
-            return;
-          }
-
-          try {
-            const res = await fetch("/api/users/google", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ credential }),
-            });
-            const data = await res.json();
-
-            if (data.success) {
-              persistSession({ token: data.token, user: data.user });
-            } else {
-              setError(data.message || "Google login failed");
-            }
-          } catch {
-            setError("Google login failed. Please try again.");
-          } finally {
-            setGoogleLoading(false);
-          }
-        },
+      const res = await fetch("/api/users/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // A code captured from a `?ref=` link attributes the signup without the
+        // user typing anything; the phone step below collects one otherwise.
+        body: JSON.stringify({ credential, ref: capturedRef() }),
       });
+      const data = await res.json();
 
-      window.google.accounts.id.prompt();
+      if (data.success && data.needsPhone) {
+        // Signed in, but Google gave us no number. The cookie is already
+        // set — collect the phone before handing over the UI.
+        setPendingSession({ token: data.token, user: data.user });
+        setGoogleIsNewUser(Boolean(data.isNewUser));
+        setStep("phone");
+        setError("");
+      } else if (data.success) {
+        persistSession({ token: data.token, user: data.user });
+      } else {
+        setError(data.message || "Google login failed");
+      }
     } catch {
-      setError("Unable to load Google login. Please try again.");
+      setError("Google login failed. Please try again.");
+    } finally {
       setGoogleLoading(false);
     }
   };
+
+  // Read through a ref so the render effect below never needs to re-run (and
+  // re-mount the button) just because this component re-rendered.
+  const onCredential = useRef(handleGoogleCredential);
+  useEffect(() => {
+    onCredential.current = handleGoogleCredential;
+  });
+
+  // Google's own rendered button, rather than One Tap's prompt().
+  //
+  // Since Chrome moved GSI onto FedCM, prompt() is silently suppressed for
+  // hours after a few dismissals — and it reports that through no callback we
+  // subscribe to, so the click simply did nothing. renderButton is not subject
+  // to that cooldown and gives the user something visible to press.
+  useEffect(() => {
+    if (!isOpen || step !== "details" || !googleClientId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await ensureGoogleScript();
+        const container = googleButtonRef.current;
+        if (cancelled || !container || !window.google?.accounts?.id) return;
+
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (response) => onCredential.current(response),
+        });
+        container.innerHTML = ""; // drop a button left by a previous render
+        window.google.accounts.id.renderButton(container, {
+          theme: "outline",
+          size: "large",
+          shape: "pill",
+          text: "continue_with",
+          logo_alignment: "center",
+          width: container.offsetWidth || 320,
+        });
+        if (!cancelled) setGoogleReady(true);
+      } catch {
+        if (!cancelled) setGoogleReady(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, step, googleClientId]);
 
   if (!isOpen) return null;
 
@@ -278,14 +382,71 @@ export default function LoginPopup() {
             {mode === "login" ? "Login" : "Register"}
           </h2>
           <p className="text-sm text-[#737373] mb-6">
-            {step === "details"
-              ? mode === "login"
-                ? "Enter your email to receive OTP"
-                : "Enter your name and email to create account"
-              : "Enter the 6-digit OTP sent to your email"}
+            {step === "phone"
+              ? "Almost there — add a phone number for delivery updates"
+              : step === "details"
+                ? mode === "login"
+                  ? "Enter your email to receive OTP"
+                  : "Enter your details to create account"
+                : "Enter the 6-digit OTP sent to your email"}
           </p>
 
-          {step === "details" ? (
+          {step === "phone" ? (
+            <form onSubmit={handleSavePhone} className="space-y-4">
+              <div>
+                <label htmlFor="login-popup-google-phone" className="sr-only">
+                  Phone number
+                </label>
+                <input
+                  id="login-popup-google-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  autoFocus
+                  value={phone}
+                  onChange={(e) =>
+                    setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                  }
+                  placeholder="10-digit mobile number"
+                  maxLength={10}
+                  className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] text-[#171717] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                  required
+                />
+                <p className="mt-2 text-xs text-[#737373]">
+                  One account per number.
+                </p>
+              </div>
+              {/* Only a brand-new account can still be attributed. An existing
+                  phoneless account reaches this step too, and `referredBy`'s
+                  set-once rule would silently discard anything it typed. */}
+              {googleIsNewUser && (
+                <div>
+                  <label htmlFor="login-popup-google-ref" className="sr-only">
+                    Referral code (optional)
+                  </label>
+                  <input
+                    id="login-popup-google-ref"
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) =>
+                      setReferralCode(e.target.value.toUpperCase())
+                    }
+                    placeholder="Referral code (optional)"
+                    autoCapitalize="characters"
+                    className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] uppercase tracking-wide text-[#171717] placeholder:text-[#a3a3a3] placeholder:normal-case placeholder:tracking-normal focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                  />
+                </div>
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              <button
+                type="submit"
+                disabled={loading || phone.length !== 10}
+                className="w-full py-3.5 rounded-xl bg-[var(--primary-green)] text-white font-semibold hover:bg-[#034030] disabled:opacity-50 transition-colors"
+              >
+                {loading ? "Saving..." : "Continue"}
+              </button>
+            </form>
+          ) : step === "details" ? (
             <form onSubmit={handleSendOTP} className="space-y-4">
               {mode === "register" && (
                 <div>
@@ -319,6 +480,27 @@ export default function LoginPopup() {
               </div>
               {mode === "register" && (
                 <div>
+                  <label htmlFor="login-popup-phone" className="sr-only">
+                    Phone number
+                  </label>
+                  <input
+                    id="login-popup-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) =>
+                      setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    }
+                    placeholder="10-digit mobile number"
+                    maxLength={10}
+                    className="w-full px-4 py-3.5 rounded-xl border border-[#e5e5e5] text-[#171717] placeholder:text-[#a3a3a3] focus:outline-none focus:ring-2 focus:ring-[var(--primary-green)] focus:border-transparent"
+                    required
+                  />
+                </div>
+              )}
+              {mode === "register" && (
+                <div>
                   <label htmlFor="login-popup-ref" className="sr-only">
                     Referral code (optional)
                   </label>
@@ -340,7 +522,11 @@ export default function LoginPopup() {
               )}
               <button
                 type="submit"
-                disabled={loading || googleLoading}
+                disabled={
+                  loading ||
+                  googleLoading ||
+                  (mode === "register" && phone.length !== 10)
+                }
                 className="w-full py-3.5 rounded-xl bg-[var(--primary-green)] text-white font-semibold hover:bg-[#034030] disabled:opacity-50 transition-colors"
               >
                 {loading ? "Sending..." : "Send OTP"}
@@ -407,14 +593,20 @@ export default function LoginPopup() {
                 <div className="h-px flex-1 bg-[#e5e5e5]" />
               </div>
 
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading || googleLoading}
-                className="w-full py-3.5 rounded-xl border border-[#e5e5e5] text-[#171717] font-semibold hover:bg-[#fafafa] disabled:opacity-50 transition-colors"
-              >
-                {googleLoading ? "Opening Google..." : "Continue with Google"}
-              </button>
+              {/* Google renders its own button in here. */}
+              <div className="flex justify-center min-h-[44px]">
+                <div ref={googleButtonRef} />
+              </div>
+              {googleLoading && (
+                <p className="mt-2 text-center text-sm text-[#737373]">
+                  Signing you in...
+                </p>
+              )}
+              {!googleReady && (
+                <p className="mt-2 text-center text-sm text-[#737373]">
+                  Google sign-in is unavailable right now. Use your email above.
+                </p>
+              )}
 
               <p className="mt-6 text-center text-sm text-[#737373]">
                 {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}

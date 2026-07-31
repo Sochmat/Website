@@ -1,4 +1,5 @@
 import { istMinutesOfDay, formatMinutesLabel } from "./ist";
+import { isOpenAt, nextOpenLabel, type WeeklyHours } from "./storeHours";
 
 // Default hours if the schedule is enabled but times were never set.
 export const DEFAULT_OPEN_MINUTES = 11 * 60; // 11:00
@@ -10,6 +11,17 @@ export interface StoreSettingsDoc {
   scheduleEnabled?: boolean;
   openMinutes?: number; // IST minutes since midnight
   closeMinutes?: number;
+  /**
+   * Day-wise hours, 7 entries from Sunday. When present it supersedes the
+   * openMinutes/closeMinutes pair above.
+   *
+   * The legacy pair is deliberately left in place rather than migrated: it
+   * permits a window that wraps past midnight, which the day-wise model has no
+   * faithful representation for, and a lossy auto-conversion is exactly the
+   * kind of thing that silently reopens a store at 1am. Installations keep the
+   * old behaviour byte for byte until someone saves on the new admin page.
+   */
+  weeklyHours?: WeeklyHours;
   overrideValue?: boolean | null; // state a manual tap forced
   overrideUntil?: Date | string | null; // when that override expires
 }
@@ -57,9 +69,12 @@ export function getEffectiveStoreOpen(
     };
   }
 
+  const weekly = store.weeklyHours;
   const openMin = store.openMinutes ?? DEFAULT_OPEN_MINUTES;
   const closeMin = store.closeMinutes ?? DEFAULT_CLOSE_MINUTES;
-  const scheduledOpen = isWithinWindow(istMinutesOfDay(now), openMin, closeMin);
+  const scheduledOpen = weekly
+    ? isOpenAt(weekly, now)
+    : isWithinWindow(istMinutesOfDay(now), openMin, closeMin);
 
   let open = scheduledOpen;
   let overrideActive = false;
@@ -80,7 +95,14 @@ export function getEffectiveStoreOpen(
     overrideActive,
     // Only advertise the reopen time when the closure is the plain schedule —
     // an override-driven closure reopens at its own boundary, so stay generic.
+    // Under day-wise hours the next opening may not be today, so the label can
+    // read "tomorrow at 11:00 AM" or "Monday at 11:00 AM"; it stays a plain
+    // string, so every consumer of this field is unaffected.
     opensAtLabel:
-      !open && !overrideActive ? formatMinutesLabel(openMin) : null,
+      !open && !overrideActive
+        ? weekly
+          ? nextOpenLabel(weekly, now)
+          : formatMinutesLabel(openMin)
+        : null,
   };
 }
