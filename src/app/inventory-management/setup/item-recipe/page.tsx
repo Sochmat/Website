@@ -189,6 +189,14 @@ export default function ItemRecipesPage() {
       render: (_: unknown, row) => (
         <span className="inline-flex items-center gap-2">
           <span className="font-medium text-gray-900">{row.menuItem.name}</span>
+          {row.menuItem.isAddOn && (
+            <span
+              className="inline-flex items-center rounded-md bg-[#024731]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#024731]"
+              title="An add-on. It is ordered as a product in its own right, so it needs its own components — editable here, or from the recipe of any item that offers it."
+            >
+              Add-on
+            </span>
+          )}
           {row.menuItem.hidden && (
             <span
               className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600"

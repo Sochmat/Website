@@ -311,6 +311,7 @@ export async function buildItemRecipeWorkbook(
 export async function buildItemRecipeTemplateWorkbook(
   materialNames: string[],
   productionNames: string[],
+  itemRecipeNames: string[] = [],
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const recipeSheet = newSheet(
@@ -341,7 +342,13 @@ export async function buildItemRecipeTemplateWorkbook(
     productionNames[0] ?? "Masala Base",
     250,
   ]);
-  for (const n of [2, 3]) {
+  componentSheet.addRow([
+    "Veg Thali",
+    COMPONENT_TYPE_LABELS.item,
+    itemRecipeNames[0] ?? "Plain Rice",
+    1,
+  ]);
+  for (const n of [2, 3, 4]) {
     componentSheet.getRow(n).font = {
       italic: true,
       color: { argb: "FF888888" },
@@ -360,11 +367,16 @@ export async function buildItemRecipeTemplateWorkbook(
     ["   spacing. A match updates that recipe; no match creates a new one."],
     ["4. A recipe's components are REPLACED by its rows on the Components"],
     ["   sheet. Every recipe needs at least one component row."],
-    [`5. Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}".`],
+    [`5. Type must be "${COMPONENT_TYPE_LABELS.raw}", "${COMPONENT_TYPE_LABELS.production}" or "${COMPONENT_TYPE_LABELS.item}".`],
     ["   It decides which list the Component name is looked up in, so a raw"],
     ["   material and a production item may safely share a name."],
-    ["6. Qty Used is in the component's own consumption unit."],
-    ["7. 'Costing (calculated)' is ignored on upload. The cost is always derived"],
+    [`6. A "${COMPONENT_TYPE_LABELS.item}" is another recipe from this sheet — use it for a combo`],
+    ["   rather than re-typing everything that item is made of. Selling the combo"],
+    ["   deducts what the named item is made of. It must ALREADY exist: upload it"],
+    ["   first, then upload the recipe that uses it."],
+    [`7. Qty Used is in the component's own consumption unit. For a "${COMPONENT_TYPE_LABELS.item}"`],
+    ["   it is a count of whole portions — 1, 2, 3 — never a fraction."],
+    ["8. 'Costing (calculated)' is ignored on upload. The cost is always derived"],
     ["   from the components, so editing it has no effect."],
   ]);
   notes.getRow(1).font = { bold: true, size: 14 };
@@ -379,6 +391,12 @@ export async function buildItemRecipeTemplateWorkbook(
     `Valid components — Type "${COMPONENT_TYPE_LABELS.production}":`,
     productionNames,
     "(none yet)",
+  );
+  addValidNames(
+    notes,
+    `Valid components — Type "${COMPONENT_TYPE_LABELS.item}":`,
+    itemRecipeNames,
+    "(none yet — add item recipes before building one on another)",
   );
 
   const buffer = await wb.xlsx.writeBuffer();

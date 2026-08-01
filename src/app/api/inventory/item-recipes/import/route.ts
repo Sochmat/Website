@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   componentCostsByKey,
+  itemRecipeDepsByNameKey,
+  itemRecipeGraph,
   itemRecipeIdsByNameKey,
   productionItemIdsByNameKey,
   rawMaterialIdsByNameKey,
@@ -54,13 +56,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [materialIds, productionIds, existingIds, componentsByKey] =
-      await Promise.all([
-        rawMaterialIdsByNameKey(),
-        productionItemIdsByNameKey(),
-        itemRecipeIdsByNameKey(),
-        componentCostsByKey(),
-      ]);
+    const [
+      materialIds,
+      productionIds,
+      existingIds,
+      componentsByKey,
+      graph,
+      storedDeps,
+    ] = await Promise.all([
+      rawMaterialIdsByNameKey(),
+      productionItemIdsByNameKey(),
+      itemRecipeIdsByNameKey(),
+      componentCostsByKey(),
+      itemRecipeGraph(),
+      itemRecipeDepsByNameKey(),
+    ]);
     const plan = planItemRecipeImport(
       recipeRows,
       componentRows,
@@ -68,6 +78,8 @@ export async function POST(request: NextRequest) {
       productionIds,
       existingIds,
       componentsByKey,
+      graph,
+      storedDeps,
     );
 
     return NextResponse.json({

@@ -17,6 +17,7 @@ import { useRecipeComponents } from "@/components/inventory/useRecipeComponents"
 const TYPE_LABEL: Record<ComponentType, string> = {
   raw: "Raw material",
   production: "Production item",
+  item: "Food item",
 };
 
 /**
@@ -35,11 +36,15 @@ export default function ViewItemRecipeModal({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const { optionsByKey, costsByKey, loading } = useRecipeComponents();
+  const { optionsByKey, costsByKey, itemCostsById, loading } =
+    useRecipeComponents();
 
   const breakdown = useMemo(
-    () => (recipe ? computeItemRecipeCost(recipe.lines, costsByKey) : null),
-    [recipe, costsByKey],
+    () =>
+      recipe
+        ? computeItemRecipeCost(recipe.lines, costsByKey, itemCostsById)
+        : null,
+    [recipe, costsByKey, itemCostsById],
   );
 
   const rows = useMemo(() => {
@@ -87,7 +92,9 @@ export default function ViewItemRecipeModal({
           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
             value === "production"
               ? "bg-[#024731]/10 text-[#024731]"
-              : "bg-gray-100 text-gray-700"
+              : value === "item"
+                ? "bg-amber-100 text-amber-800"
+                : "bg-gray-100 text-gray-700"
           }`}
         >
           {TYPE_LABEL[value]}

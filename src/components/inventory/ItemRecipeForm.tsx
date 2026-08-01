@@ -1,36 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Select, Table, message } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { DeleteOutlined, PlusOutlined, WarningOutlined } from "@ant-design/icons";
+import { Collapse, message } from "antd";
 import {
-  componentKey,
   computeItemRecipeCost,
-  type ComponentType,
+  itemRecipeDependencies,
   type ItemRecipe,
-  type ItemRecipeLine,
 } from "@/lib/itemRecipes";
-import { formatCurrency } from "@/lib/rawMaterials";
+import { formatCurrency, normalizeMaterialName } from "@/lib/rawMaterials";
+import type { MenuItemSummary } from "@/lib/menuRecipes";
 import { useRecipeComponents } from "@/components/inventory/useRecipeComponents";
+import ComponentLinesEditor, {
+  toLines,
+  type DraftLine,
+} from "@/components/inventory/ComponentLinesEditor";
 
 const LIST_PATH = "/inventory-management/setup/item-recipe";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]";
 
-/** A row while it's being edited — qty stays a string so partial input survives. */
-interface DraftLine {
-  refType: ComponentType;
-  refId: string;
-  qtyUsed: string;
-}
+/** Shared empty set, so an unblocked picker keeps a stable dependency. */
+const NOTHING_BLOCKED: ReadonlySet<string> = new Set();
 
-const TYPE_LABEL: Record<ComponentType, string> = {
-  raw: "Raw material",
-  production: "Production item",
-};
+/** One add-on of the menu item this recipe defines, with its own recipe. */
+interface AddOnTarget {
+  /** Menu item id of the add-on. */
+  id: string;
+  name: string;
+  /** Its existing item recipe, when someone has already mapped it. */
+  recipeId: string | null;
+}
 
 /**
  * Add/edit form for an item recipe, shared by /new and /[id]/edit.
@@ -38,6 +39,11 @@ const TYPE_LABEL: Record<ComponentType, string> = {
  * Unlike a production item there are no units, conversion or batch yield —
  * a recipe is a name plus components, and its costing is simply the sum of
  * the component costs.
+ *
+ * The menu item's add-ons are edited here too. An add-on is a menu item in its
+ * own right and an order records it as its own product line, so its components
+ * are saved as its OWN item recipe rather than folded into this one — see the
+ * add-ons section below.
  */
 export default function ItemRecipeForm({
   recipe,
@@ -51,7 +57,9 @@ export default function ItemRecipeForm({
 }) {
   const router = useRouter();
   const [messageApi, messageContextHolder] = message.useMessage();
-  const { options, optionsByKey, costsByKey, loading } = useRecipeComponents();
+  const components = useRecipeComponents();
+  const { optionsByKey, costsByKey, itemCostsById, itemLinesById, itemRecipes } =
+    components;
 
   const [name, setName] = useState(recipe?.name ?? initialName);
   const [lines, setLines] = useState<DraftLine[]>(
@@ -62,81 +70,197 @@ export default function ItemRecipeForm({
     })) ?? [],
   );
 
-  const [typeFilter, setTypeFilter] = useState<"" | ComponentType>("");
-  const [pickerValue, setPickerValue] = useState<string | undefined>(undefined);
-  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
+  /** Draft components per add-on, keyed by the add-on's menu item id. */
+  const [addOnLines, setAddOnLines] = useState<Record<string, DraftLine[]>>({});
+
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const highlightTimer = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
-      if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-    },
-    [],
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/inventory/menu-items", {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!cancelled && data.success) setMenuItems(data.items ?? []);
+      } catch {
+        /* the add-ons section simply stays empty */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const breakdown = useMemo(
+    () => computeItemRecipeCost(toLines(lines), costsByKey, itemCostsById),
+    [lines, costsByKey, itemCostsById],
   );
 
-  /** Recomputed on every keystroke — the same function the API stores with. */
-  const breakdown = useMemo(() => {
-    const parsed: ItemRecipeLine[] = lines.map((l) => ({
-      refType: l.refType,
-      refId: l.refId,
-      qtyUsed: Number(l.qtyUsed.replace(/,/g, "").trim()),
-    }));
-    return computeItemRecipeCost(parsed, costsByKey);
-  }, [lines, costsByKey]);
-
-  const costByKey = useMemo(
+  /** Recipes by the key a menu item resolves to, for finding an add-on's own. */
+  const recipeByNameKey = useMemo(
     () =>
       new Map(
-        breakdown.lines.map((l) => [componentKey(l.refType, l.refId), l]),
+        itemRecipes.map((r) => [
+          r.nameKey || normalizeMaterialName(r.name),
+          r,
+        ]),
       ),
-    [breakdown],
+    [itemRecipes],
   );
 
-  const addLine = useCallback(
-    (key: string) => {
-      setPickerValue(undefined);
-      const option = optionsByKey.get(key);
-      if (!option) return;
+  /**
+   * The add-ons of the menu item this recipe is for.
+   *
+   * Matched by name, the same link the rest of the screen uses — so typing a
+   * name on /new brings that item's add-ons into view before it is even saved.
+   */
+  const addOns = useMemo<AddOnTarget[]>(() => {
+    const key = normalizeMaterialName(name);
+    if (!key) return [];
 
-      if (lines.some((l) => componentKey(l.refType, l.refId) === key)) {
-        // Re-selecting something already in the recipe flashes its row rather
-        // than creating an ambiguous duplicate.
-        setHighlightKey(key);
-        if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-        highlightTimer.current = window.setTimeout(
-          () => setHighlightKey(null),
-          1600,
-        );
-        messageApi.info("That component is already in the recipe");
-        return;
+    const menuItem = menuItems.find(
+      (m) => normalizeMaterialName(m.name) === key,
+    );
+    if (!menuItem?.addOnIds?.length) return [];
+
+    const byId = new Map(menuItems.map((m) => [String(m._id), m]));
+    return menuItem.addOnIds
+      .map((id) => byId.get(id))
+      .filter((m): m is MenuItemSummary => !!m)
+      .map((m) => ({
+        id: String(m._id),
+        name: m.name,
+        recipeId:
+          recipeByNameKey.get(normalizeMaterialName(m.name))?._id ?? null,
+      }));
+  }, [name, menuItems, recipeByNameKey]);
+
+  /**
+   * The component graph as this form would leave it: what is stored, with the
+   * rows currently on screen standing in for the recipes being edited.
+   *
+   * The drafts matter because the recipe and its add-ons are saved together. A
+   * loop can be assembled out of two panels that are each innocent against
+   * stored data alone — put "Extra Jeera Rice" into the plate, then the plate
+   * into "Extra Jeera Rice" — and neither picker would see it coming from the
+   * stored graph.
+   */
+  const draftLinesById = useMemo(() => {
+    const graph = new Map(itemLinesById);
+    if (recipe?._id) graph.set(String(recipe._id), toLines(lines));
+    for (const addOn of addOns) {
+      if (addOn.recipeId) {
+        graph.set(addOn.recipeId, toLines(addOnLines[addOn.id] ?? []));
       }
-      setLines((current) => [
-        ...current,
-        { refType: option.refType, refId: option.refId, qtyUsed: "" },
-      ]);
-      setFormError(null);
-    },
-    [lines, optionsByKey, messageApi],
+    }
+    return graph;
+  }, [itemLinesById, recipe?._id, lines, addOns, addOnLines]);
+
+  /**
+   * Per recipe on this screen, the food items it may not be built on: itself,
+   * and anything that already leads back to it. Offering one and rejecting it
+   * on save would be a worse way to explain the same rule, so they never
+   * appear in the picker.
+   *
+   * A recipe that does not exist yet has nothing blocked — with no id, nothing
+   * can point at it, so no chain can come back.
+   */
+  const blockedByRecipeId = useMemo(() => {
+    const targets = [
+      ...(recipe?._id ? [String(recipe._id)] : []),
+      ...addOns.map((a) => a.recipeId).filter((id): id is string => !!id),
+    ];
+
+    const map = new Map<string, ReadonlySet<string>>();
+    for (const selfId of targets) {
+      const blocked = new Set<string>([selfId]);
+      for (const id of draftLinesById.keys()) {
+        if (itemRecipeDependencies(id, draftLinesById).has(selfId)) {
+          blocked.add(id);
+        }
+      }
+      map.set(selfId, blocked);
+    }
+    return map;
+  }, [draftLinesById, recipe?._id, addOns]);
+
+  const blockedFor = useCallback(
+    (id: string | null): ReadonlySet<string> =>
+      (id ? blockedByRecipeId.get(id) : undefined) ?? NOTHING_BLOCKED,
+    [blockedByRecipeId],
   );
 
-  const setQty = (key: string, value: string) => {
-    setLines((current) =>
-      current.map((l) =>
-        componentKey(l.refType, l.refId) === key ? { ...l, qtyUsed: value } : l,
-      ),
-    );
+  /**
+   * Seed each add-on's rows from its stored recipe, once.
+   *
+   * Keyed on the add-on id and never overwritten, so a reload of the recipe
+   * list mid-edit cannot wipe rows the user has just typed.
+   */
+  useEffect(() => {
+    setAddOnLines((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const addOn of addOns) {
+        if (next[addOn.id]) continue;
+        const stored = recipeByNameKey.get(normalizeMaterialName(addOn.name));
+        next[addOn.id] =
+          stored?.lines.map((l) => ({
+            refType: l.refType,
+            refId: l.refId,
+            qtyUsed: String(l.qtyUsed),
+          })) ?? [];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [addOns, recipeByNameKey]);
+
+  const setAddOn = useCallback((id: string, next: DraftLine[]) => {
+    setAddOnLines((current) => ({ ...current, [id]: next }));
     setFormError(null);
-  };
+  }, []);
 
-  const removeLine = (key: string) => {
-    setLines((current) =>
-      current.filter((l) => componentKey(l.refType, l.refId) !== key),
+  const notifyDuplicate = useCallback(
+    () => messageApi.info("That component is already in the recipe"),
+    [messageApi],
+  );
+
+  /** The first row anywhere with a quantity that is blank, junk or ≤ 0. */
+  const badQuantity = (draft: DraftLine[]) =>
+    draft.find((l) => {
+      const q = Number(l.qtyUsed.replace(/,/g, "").trim());
+      return !l.qtyUsed.trim() || !Number.isFinite(q) || q <= 0;
+    });
+
+  /**
+   * The first food-item row counted in part portions.
+   *
+   * A food item is counted in whole plates — half a portion is its own recipe,
+   * not a fraction of this line.
+   */
+  const fractionalItem = (draft: DraftLine[]) =>
+    draft.find(
+      (l) =>
+        l.refType === "item" &&
+        !Number.isInteger(Number(l.qtyUsed.replace(/,/g, "").trim())),
     );
-  };
 
+  const labelFor = (line: DraftLine) =>
+    optionsByKey.get(`${line.refType}:${line.refId}`)?.name ?? "a row";
+
+  /**
+   * Save the recipe, then every add-on that has components.
+   *
+   * The add-ons go through the bulk endpoint, which re-validates and costs each
+   * one exactly as the single-recipe endpoints do. An add-on cleared back to no
+   * components has its recipe deleted: an empty recipe cannot be stored, and
+   * leaving the old one would keep deducting components nobody still lists.
+   */
   const handleSave = async () => {
     setNameError(name.trim() ? null : "Name is required");
     if (!name.trim()) return;
@@ -145,15 +269,35 @@ export default function ItemRecipeForm({
       setFormError("Add at least one component to the recipe");
       return;
     }
-    const bad = lines.find((l) => {
-      const q = Number(l.qtyUsed.replace(/,/g, "").trim());
-      return !l.qtyUsed.trim() || !Number.isFinite(q) || q <= 0;
-    });
+
+    const bad = badQuantity(lines);
     if (bad) {
-      const label =
-        optionsByKey.get(componentKey(bad.refType, bad.refId))?.name ?? "a row";
-      setFormError(`Enter a quantity greater than 0 for ${label}`);
+      setFormError(`Enter a quantity greater than 0 for ${labelFor(bad)}`);
       return;
+    }
+
+    const fractional = fractionalItem(lines);
+    if (fractional) {
+      setFormError(`${labelFor(fractional)} must be a whole number of portions`);
+      return;
+    }
+
+    for (const addOn of addOns) {
+      const draft = addOnLines[addOn.id] ?? [];
+      const badAddOn = badQuantity(draft);
+      if (badAddOn) {
+        setFormError(
+          `Enter a quantity greater than 0 for ${labelFor(badAddOn)} in “${addOn.name}”`,
+        );
+        return;
+      }
+      const fractionalAddOn = fractionalItem(draft);
+      if (fractionalAddOn) {
+        setFormError(
+          `${labelFor(fractionalAddOn)} in “${addOn.name}” must be a whole number of portions`,
+        );
+        return;
+      }
     }
     setFormError(null);
 
@@ -181,6 +325,14 @@ export default function ItemRecipeForm({
         setFormError(data.message ?? "Could not save");
         return;
       }
+
+      const addOnError = await saveAddOns();
+      if (addOnError) {
+        // The recipe itself is saved; say so rather than implying nothing was.
+        setFormError(`Recipe saved, but its add-ons were not: ${addOnError}`);
+        return;
+      }
+
       messageApi.success(recipe?._id ? "Item recipe updated" : "Item recipe added");
       window.setTimeout(() => router.push(LIST_PATH), 350);
     } catch {
@@ -190,125 +342,58 @@ export default function ItemRecipeForm({
     }
   };
 
-  const pickerOptions = useMemo(
-    () =>
-      options
-        .filter((o) => !typeFilter || o.refType === typeFilter)
-        .map((o) => ({
-          value: o.key,
-          label: o.name,
-          // Searched against, so typing "production" or a category finds rows.
-          search: `${o.name} ${o.categoryName} ${TYPE_LABEL[o.refType]}`,
-        })),
-    [options, typeFilter],
-  );
+  /**
+   * Writes the add-on recipes. Returns a message on failure, null on success.
+   *
+   * One request per add-on, through the ordinary single-recipe endpoints
+   * rather than the bulk one. Bulk deliberately skips the self/loop check —
+   * it serves the importer, where a sheet may be in the middle of breaking an
+   * existing loop — and an add-on that can now name a food item needs exactly
+   * that check. There are only ever a handful of add-ons on a dish.
+   */
+  const saveAddOns = async (): Promise<string | null> => {
+    for (const addOn of addOns) {
+      const draft = addOnLines[addOn.id] ?? [];
+      const payload = draft.map((l) => ({
+        refType: l.refType,
+        refId: l.refId,
+        qtyUsed: l.qtyUsed,
+      }));
 
-  const rows = lines.map((l) => {
-    const key = componentKey(l.refType, l.refId);
-    const option = optionsByKey.get(key);
-    const cost = costByKey.get(key);
-    return {
-      key,
-      refType: l.refType,
-      name: option?.name ?? "(deleted component)",
-      categoryName: option?.categoryName ?? "",
-      unit: option?.consumptionUnit ?? "",
-      qtyUsed: l.qtyUsed,
-      cost: cost?.cost ?? 0,
-      found: cost?.found ?? false,
-    };
-  });
+      // Cleared back to nothing: drop the recipe rather than store an empty
+      // one, which could not be saved anyway and would keep deducting
+      // components nobody still lists.
+      if (payload.length === 0) {
+        if (!addOn.recipeId) continue;
+        const res = await fetch(
+          `/api/inventory/item-recipes/${addOn.recipeId}`,
+          { method: "DELETE" },
+        );
+        const data = await res.json();
+        if (!data.success) {
+          return `“${addOn.name}”: ${data.message ?? "could not be cleared"}`;
+        }
+        continue;
+      }
 
-  type Row = (typeof rows)[number];
+      const res = await fetch(
+        addOn.recipeId
+          ? `/api/inventory/item-recipes/${addOn.recipeId}`
+          : "/api/inventory/item-recipes",
+        {
+          method: addOn.recipeId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: addOn.name, lines: payload }),
+        },
+      );
+      const data = await res.json();
+      if (!data.success) {
+        return `“${addOn.name}”: ${data.message ?? "could not be saved"}`;
+      }
+    }
 
-  const columns: ColumnsType<Row> = [
-    {
-      title: "Component",
-      dataIndex: "name",
-      render: (value: string, row) => (
-        <span className="font-medium text-gray-900">
-          {value}
-          {!row.found && (
-            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-              <WarningOutlined /> missing
-            </span>
-          )}
-        </span>
-      ),
-    },
-    {
-      title: "Type",
-      dataIndex: "refType",
-      width: 150,
-      render: (value: ComponentType) => (
-        <span
-          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
-            value === "production"
-              ? "bg-[#024731]/10 text-[#024731]"
-              : "bg-gray-100 text-gray-700"
-          }`}
-        >
-          {TYPE_LABEL[value]}
-        </span>
-      ),
-    },
-    {
-      title: "Category",
-      dataIndex: "categoryName",
-      render: (value: string) =>
-        value ? (
-          <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-            {value}
-          </span>
-        ) : (
-          <span className="text-xs text-gray-400">—</span>
-        ),
-    },
-    {
-      title: "Qty Used",
-      dataIndex: "qtyUsed",
-      width: 170,
-      align: "right",
-      render: (value: string, row) => (
-        <span className="inline-flex items-center justify-end gap-1.5">
-          <input
-            value={value}
-            onChange={(e) => setQty(row.key, e.target.value)}
-            inputMode="decimal"
-            aria-label={`Quantity of ${row.name}`}
-            className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]"
-          />
-          <span className="text-sm text-gray-600">{row.unit}</span>
-        </span>
-      ),
-    },
-    {
-      title: "Cost",
-      dataIndex: "cost",
-      width: 130,
-      align: "right",
-      render: (value: number) => (
-        <span className="tabular-nums text-gray-800">{formatCurrency(value)}</span>
-      ),
-    },
-    {
-      title: "",
-      key: "remove",
-      width: 60,
-      align: "right",
-      render: (_, row) => (
-        <button
-          type="button"
-          onClick={() => removeLine(row.key)}
-          aria-label={`Remove ${row.name}`}
-          title="Remove"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-        >
-          <DeleteOutlined />
-        </button>
-      ),
-    },
-  ];
+    return null;
+  };
 
   return (
     <div>
@@ -355,97 +440,112 @@ export default function ItemRecipeForm({
               {formatCurrency(breakdown.totalCost)}
             </div>
             <div className="mt-0.5 text-xs text-gray-600">
-              across {rows.length} component{rows.length === 1 ? "" : "s"}
+              across {lines.length} component{lines.length === 1 ? "" : "s"}
             </div>
           </div>
         </section>
       </div>
 
       <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Components
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Raw materials and production items that make up this recipe — or
+            another food item, whose own components are then deducted with it.
+          </p>
+        </div>
+
+        <div className="mt-4">
+          <ComponentLinesEditor
+            lines={lines}
+            onChange={(next) => {
+              setLines(next);
+              setFormError(null);
+            }}
+            components={components}
+            allowItems
+            blockedItemIds={blockedFor(recipe?._id ? String(recipe._id) : null)}
+            onDuplicate={notifyDuplicate}
+          />
+        </div>
+      </section>
+
+      {addOns.length > 0 && (
+        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Components
+              Add-ons
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Raw materials and production items that make up this recipe.
+              Offered with this item on the menu. Each one is ordered as a
+              product in its own right, so it carries its own components and is
+              deducted separately — not as part of the plate above. When an
+              add-on is a portion of a dish you already have a recipe for, add
+              that dish as a food item instead of listing its ingredients again.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              className="min-w-[180px]"
-              value={typeFilter}
-              onChange={(v) => setTypeFilter(v)}
-              aria-label="Filter components by type"
-              options={[
-                { value: "", label: "All types" },
-                { value: "raw", label: "Raw materials" },
-                { value: "production", label: "Production items" },
-              ]}
-            />
-            <Select
-              className="min-w-[260px]"
-              value={pickerValue}
-              onChange={addLine}
-              loading={loading}
-              aria-label="Add a component to the recipe"
-              placeholder={loading ? "Loading components…" : "+ Add Component"}
-              showSearch
-              optionFilterProp="search"
-              options={pickerOptions}
-              notFoundContent={loading ? "Loading…" : "Nothing found"}
-              suffixIcon={<PlusOutlined />}
-            />
-          </div>
-        </div>
+          <Collapse
+            className="mt-4 bg-white"
+            items={addOns.map((addOn) => {
+              const draft = addOnLines[addOn.id] ?? [];
+              const cost = computeItemRecipeCost(
+                toLines(draft),
+                costsByKey,
+                itemCostsById,
+              ).totalCost;
 
-        <div className="mt-4 rounded-xl border border-gray-200 overflow-hidden">
-          <Table<Row>
-            columns={columns}
-            dataSource={rows}
-            pagination={false}
-            size="small"
-            scroll={{ x: "max-content" }}
-            rowClassName={(row) =>
-              row.key === highlightKey ? "bg-amber-100 transition-colors" : ""
-            }
-            locale={{
-              emptyText: (
-                <div className="py-8 text-center">
-                  <p className="text-sm font-medium text-gray-900">
-                    No components yet
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Use “+ Add Component” above to build the recipe.
-                  </p>
-                </div>
-              ),
-            }}
-            summary={() =>
-              rows.length > 0 ? (
-                <Table.Summary.Row className="bg-gray-50 font-semibold">
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <span className="text-gray-700">Total cost</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <span className="tabular-nums text-gray-900">
-                      {formatCurrency(breakdown.totalCost)}
+              return {
+                key: addOn.id,
+                label: (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pr-2">
+                    <span className="font-medium text-gray-900">
+                      {addOn.name}
                     </span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} />
-                </Table.Summary.Row>
-              ) : null
-            }
+                    <span className="flex items-center gap-2">
+                      {draft.length === 0 ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                          not mapped
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">
+                          {draft.length} component
+                          {draft.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      <span className="tabular-nums text-sm font-semibold text-[#024731]">
+                        {formatCurrency(cost)}
+                      </span>
+                    </span>
+                  </div>
+                ),
+                children: (
+                  <ComponentLinesEditor
+                    lines={draft}
+                    onChange={(next) => setAddOn(addOn.id, next)}
+                    components={components}
+                    // An add-on is often a portion of a dish you already have a
+                    // recipe for, so it may name a food item — one line, rather
+                    // than that dish's ingredients typed out a second time.
+                    allowItems
+                    blockedItemIds={blockedFor(addOn.recipeId)}
+                    onDuplicate={notifyDuplicate}
+                    dense
+                  />
+                ),
+              };
+            })}
           />
-        </div>
+        </section>
+      )}
 
-        {formError && (
-          <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-            {formError}
-          </div>
-        )}
-      </section>
+      {formError && (
+        <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+          {formError}
+        </div>
+      )}
 
       <div className="mt-5 flex items-center justify-end gap-2">
         <button

@@ -11,7 +11,7 @@ import {
   type ProductionItem,
   type ProductionRecipeLine,
 } from "@/lib/productionItems";
-import { componentKey, type ComponentType } from "@/lib/itemRecipes";
+import { componentKey, type StockComponentType } from "@/lib/itemRecipes";
 import {
   formatCurrency,
   formatUnitConversion,
@@ -30,12 +30,12 @@ const inputClass =
 /** A recipe row while it's being edited — qty is a string so partial input
  *  ("1.", "") survives typing without being coerced to 0. */
 interface DraftLine {
-  refType: ComponentType;
+  refType: StockComponentType;
   refId: string;
   qtyUsed: string;
 }
 
-const TYPE_LABEL: Record<ComponentType, string> = {
+const TYPE_LABEL: Record<StockComponentType, string> = {
   raw: "Raw material",
   production: "Production item",
 };
@@ -112,7 +112,7 @@ export default function ProductionItemForm({
     })) ?? [],
   );
 
-  const [typeFilter, setTypeFilter] = useState<ComponentType | "">("");
+  const [typeFilter, setTypeFilter] = useState<StockComponentType | "">("");
   const [pickerCategory, setPickerCategory] = useState("");
   const [pickerValue, setPickerValue] = useState<string | undefined>(undefined);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -172,6 +172,9 @@ export default function ProductionItemForm({
       setPickerValue(undefined);
       const option = optionsByKey.get(key);
       if (!option) return;
+      // optionsByKey knows food items, for the screen that can use them; a
+      // production item is never made from one, so it cannot arrive here.
+      if (option.refType === "item") return;
 
       if (lines.some((l) => componentKey(l.refType, l.refId) === key)) {
         // Re-selecting a component already in the recipe flashes its row
@@ -185,10 +188,10 @@ export default function ProductionItemForm({
         messageApi.info("That component is already in the recipe");
         return;
       }
-      setLines((current) => [
-        ...current,
-        { refType: option.refType, refId: option.refId, qtyUsed: "" },
-      ]);
+      // Read out here rather than inside the updater: the "item" guard above
+      // narrows refType at this point, and a closure would widen it again.
+      const { refType, refId } = option;
+      setLines((current) => [...current, { refType, refId, qtyUsed: "" }]);
       setFormError(null);
     },
     [lines, optionsByKey, messageApi],
@@ -380,7 +383,7 @@ export default function ProductionItemForm({
       title: "Type",
       dataIndex: "refType",
       width: 150,
-      render: (value: ComponentType) => (
+      render: (value: StockComponentType) => (
         <span
           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
             value === "production"

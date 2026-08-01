@@ -5,6 +5,8 @@ import {
   ITEM_RECIPES_COLLECTION,
   componentCostsByKey,
   isValidId,
+  itemRecipeGraph,
+  recalcItemRecipeCosts,
 } from "@/lib/inventoryDb";
 import { sanitizeItemRecipe, type ItemRecipeInput } from "@/lib/itemRecipes";
 import { normalizeMaterialName } from "@/lib/rawMaterials";
@@ -30,7 +32,8 @@ interface CommitBody {
  * total is recomputed by sanitizeItemRecipe, so any `totalCost` in the payload
  * is ignored.
  *
- * Nothing derives from an item recipe, so there is no cascade to settle here.
+ * One item recipe may now be built on another, so costs ARE settled afterwards
+ * — a batch that rewrites a plate leaves every combo containing it stale.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -51,7 +54,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const componentsByKey = await componentCostsByKey();
+    const [componentsByKey, graph] = await Promise.all([
+      componentCostsByKey(),
+      itemRecipeGraph(),
+    ]);
 
     const now = new Date();
     const ops: AnyBulkWriteOperation<Document>[] = [];
@@ -61,10 +67,14 @@ export async function POST(request: NextRequest) {
     const seen = new Set<string>();
 
     const build = (raw: unknown, id?: string) => {
+      // selfId stays unset even for an update: loops across the batch were
+      // settled while planning it, and a graph of the pre-import state would
+      // reject a sheet that is in the middle of breaking one.
       const { doc, error } = sanitizeItemRecipe(
         raw as ItemRecipeInput,
         componentsByKey,
         normalizeMaterialName,
+        graph,
       );
       if (error || !doc) {
         rejected.push(`${describe(raw)}: ${error ?? "invalid"}`);
@@ -121,6 +131,10 @@ export async function POST(request: NextRequest) {
     const result = await db
       .collection(ITEM_RECIPES_COLLECTION)
       .bulkWrite(ops, { ordered: false });
+
+    // Each row was costed against the graph as it stood before the batch; this
+    // re-settles anything built on a recipe the batch has just rewritten.
+    await recalcItemRecipeCosts();
 
     return NextResponse.json({
       success: true,

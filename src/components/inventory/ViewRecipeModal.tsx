@@ -6,11 +6,11 @@ import { Modal, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { EditOutlined, WarningOutlined } from "@ant-design/icons";
 import { computeCost, type ProductionItem } from "@/lib/productionItems";
-import { componentKey, type ComponentType } from "@/lib/itemRecipes";
+import { componentKey, type StockComponentType } from "@/lib/itemRecipes";
 import { formatCurrency } from "@/lib/rawMaterials";
 import { useRecipeComponents } from "./useRecipeComponents";
 
-const TYPE_LABEL: Record<ComponentType, string> = {
+const TYPE_LABEL: Record<StockComponentType, string> = {
   raw: "Raw material",
   production: "Production item",
 };
@@ -87,7 +87,7 @@ export default function ViewRecipeModal({
       title: "Type",
       dataIndex: "refType",
       width: 150,
-      render: (value: ComponentType) => (
+      render: (value: StockComponentType) => (
         <span
           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
             value === "production"

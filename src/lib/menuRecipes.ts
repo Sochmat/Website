@@ -22,6 +22,19 @@ export interface MenuItemSummary {
   type: string;
   /** Hidden on the storefront, but still worth costing. */
   hidden: boolean;
+  /**
+   * This item is itself an add-on, offered alongside a dish rather than
+   * ordered on its own. It is a menu item like any other and carries its own
+   * recipe — an order records it as a product in its own right.
+   */
+  isAddOn?: boolean;
+  /**
+   * Menu item ids of the add-ons offered with this item.
+   *
+   * Optional because only the Item Recipe screen asks for them; the costing
+   * views build a MenuItemSummary without ever needing the link.
+   */
+  addOnIds?: string[];
 }
 
 /** Shown when a menu item names no category, or one that no longer exists. */

@@ -23,6 +23,7 @@ import {
   componentKey,
   sanitizeItemRecipe,
   type ComponentType,
+  type ItemRecipeGraph,
   type ItemRecipeLine,
   type SanitizedItemRecipe,
 } from "./itemRecipes";
@@ -107,6 +108,7 @@ export const ITEM_RECIPE_COMPONENT_COLUMNS = [
 export const COMPONENT_TYPE_LABELS: Record<ComponentType, string> = {
   raw: "Raw Material",
   production: "Production Item",
+  item: "Food Item",
 };
 
 // ---------------------------------------------------------------------------
@@ -141,11 +143,12 @@ function rowNumberOf(row: SheetRow, index: number): number {
   return Number.isFinite(stamped) && stamped > 0 ? stamped : index + 2;
 }
 
-/** Tolerant of "raw", "Raw Material", "production", "Production Item". */
+/** Tolerant of the short and long spelling of each type. */
 function parseComponentType(value: unknown): ComponentType | null {
   const t = text(value).toLowerCase();
   if (t === "raw" || t === "raw material") return "raw";
   if (t === "production" || t === "production item") return "production";
+  if (t === "item" || t === "food item") return "item";
   return null;
 }
 
@@ -279,9 +282,14 @@ export function planProductionImport(
     // before, so a sheet that omits the column means what it always meant.
     const typeCell = text(row["Type"]);
     const refType = typeCell ? parseComponentType(typeCell) : "raw";
-    if (!refType) {
+    if (!refType || refType === "item") {
+      // A food item is assembled FROM what the kitchen makes; it can never be
+      // an ingredient of one. Worth its own message, since the word is valid
+      // on the item-recipe sheet and someone will paste rows between the two.
       return fail(
-        `Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}"`,
+        refType === "item"
+          ? `A production item cannot be made from a "${COMPONENT_TYPE_LABELS.item}"`
+          : `Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}"`,
       );
     }
 
@@ -420,10 +428,25 @@ export interface ItemRecipeImportPlan {
  * a Type as well as a name, because a raw material and a production item may
  * legitimately share a name and the two are costed from different collections.
  *
+ * A row may also name another item recipe, and the loop rule that governs
+ * nested production items governs these too: a recipe that ends up made from
+ * itself, directly or through a chain, is rejected along with everything else
+ * in that loop.
+ *
+ * A "Food Item" row must name a recipe that ALREADY exists — the same limit a
+ * nested production item has, and for the same reason: a recipe the sheet is
+ * about to create has no id yet for the line to point at.
+ *
  * @param rawMaterialIdsByNameKey     nameKey -> raw material id
  * @param productionItemIdsByNameKey  nameKey -> production item id
- * @param existingIdsByNameKey        nameKey -> existing item recipe id
+ * @param existingIdsByNameKey        nameKey -> existing item recipe id, which
+ *                                    doubles as the lookup for a Food Item row
  * @param componentsByKey             costing inputs keyed `type:id`
+ * @param graph                       stored recipes, for resolving and costing
+ *                                    a Food Item row
+ * @param storedDepsByNameKey         nameKey -> item-recipe nameKeys it is
+ *                                    already built on, for recipes the sheet
+ *                                    does not touch
  */
 export function planItemRecipeImport(
   recipeRows: SheetRow[],
@@ -432,12 +455,17 @@ export function planItemRecipeImport(
   productionItemIdsByNameKey: ReadonlyMap<string, string>,
   existingIdsByNameKey: ReadonlyMap<string, string>,
   componentsByKey: ReadonlyMap<string, CostingMaterial>,
+  graph?: ItemRecipeGraph,
+  storedDepsByNameKey: ReadonlyMap<string, readonly string[]> = new Map(),
 ): ItemRecipeImportPlan {
   const plan: ItemRecipeImportPlan = { creates: [], updates: [], errors: [] };
 
   const groups = new Map<string, LineGroup<ItemRecipeLine>>();
   const brokenRecipes = new Set<string>();
   const seenLine = new Set<string>();
+  // recipeKey -> the item-recipe nameKeys its sheet rows name, for the loop
+  // check across the whole batch.
+  const sheetDeps = new Map<string, string[]>();
 
   componentRows.forEach((row, index) => {
     const rowNumber = rowNumberOf(row, index);
@@ -459,15 +487,20 @@ export function planItemRecipeImport(
     const refType = parseComponentType(row["Type"]);
     if (!refType) {
       return fail(
-        `Type must be "${COMPONENT_TYPE_LABELS.raw}" or "${COMPONENT_TYPE_LABELS.production}"`,
+        `Type must be "${COMPONENT_TYPE_LABELS.raw}", "${COMPONENT_TYPE_LABELS.production}" or "${COMPONENT_TYPE_LABELS.item}"`,
       );
     }
 
     const componentName = text(row["Component"]);
     if (!componentName) return fail("Component is required");
+    const componentNameKey = normalizeMaterialName(componentName);
     const lookup =
-      refType === "raw" ? rawMaterialIdsByNameKey : productionItemIdsByNameKey;
-    const refId = lookup.get(normalizeMaterialName(componentName));
+      refType === "raw"
+        ? rawMaterialIdsByNameKey
+        : refType === "production"
+          ? productionItemIdsByNameKey
+          : existingIdsByNameKey;
+    const refId = lookup.get(componentNameKey);
     if (!refId) {
       return fail(
         `Unknown ${COMPONENT_TYPE_LABELS[refType].toLowerCase()} "${componentName}"`,
@@ -477,6 +510,11 @@ export function planItemRecipeImport(
     const qtyUsed = toNumber(row["Qty Used"]);
     if (qtyUsed === null) return fail("Qty Used is required");
     if (qtyUsed <= 0) return fail("Qty Used must be greater than 0");
+    if (refType === "item" && !Number.isInteger(qtyUsed)) {
+      return fail(
+        `Qty Used must be a whole number for a "${COMPONENT_TYPE_LABELS.item}"`,
+      );
+    }
 
     const lineKey = `${recipeKey}|${componentKey(refType, refId)}`;
     if (seenLine.has(lineKey)) {
@@ -491,7 +529,18 @@ export function planItemRecipeImport(
     };
     group.lines.push({ refType, refId, qtyUsed });
     groups.set(recipeKey, group);
+
+    if (refType === "item") {
+      sheetDeps.set(recipeKey, [
+        ...(sheetDeps.get(recipeKey) ?? []),
+        componentNameKey,
+      ]);
+    }
   });
+
+  // The graph the finished import would leave behind: what the sheet says for
+  // the recipes it touches, what is already stored for everything else.
+  const looped = loopedNameKeys(storedDepsByNameKey, sheetDeps);
 
   const claimed = new Set<string>();
   const seenRecipe = new Set<string>();
@@ -521,6 +570,12 @@ export function planItemRecipeImport(
       );
     }
 
+    if (looped.has(key)) {
+      return fail(
+        "Skipped — this item would end up made from itself, through the food items in its recipe",
+      );
+    }
+
     const lines = groups.get(key)?.lines ?? [];
     if (lines.length === 0) {
       return fail(
@@ -532,6 +587,9 @@ export function planItemRecipeImport(
       { name, lines },
       componentsByKey,
       normalizeMaterialName,
+      // No selfId: loops are checked above across the whole batch, where the
+      // one the sheet is about to create is visible.
+      graph,
     );
     if (error || !doc) return fail(error ?? "Invalid row");
 

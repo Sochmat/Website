@@ -23,7 +23,16 @@ export async function GET() {
         .collection("menuItems")
         .find(
           {},
-          { projection: { name: 1, category: 1, type: 1, hidden: 1 } },
+          {
+            projection: {
+              name: 1,
+              category: 1,
+              type: 1,
+              hidden: 1,
+              isAddOn: 1,
+              addOns: 1,
+            },
+          },
         )
         .sort({ name: 1 })
         .toArray(),
@@ -45,6 +54,11 @@ export async function GET() {
       categoryName: nameById.get(String(d.category ?? "")) ?? "",
       type: String(d.type ?? ""),
       hidden: !!d.hidden,
+      isAddOn: !!d.isAddOn,
+      // Stored as menu item ids on the dish that offers them.
+      addOnIds: Array.isArray(d.addOns)
+        ? d.addOns.map((id: unknown) => String(id ?? "")).filter(Boolean)
+        : [],
     }));
 
     return NextResponse.json(

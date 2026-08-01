@@ -3,6 +3,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import {
   ITEM_RECIPES_COLLECTION,
   componentCostsByKey,
+  itemRecipeGraph,
   listItemRecipes,
 } from "@/lib/inventoryDb";
 import { sanitizeItemRecipe } from "@/lib/itemRecipes";
@@ -37,16 +38,23 @@ export async function GET(request: NextRequest) {
  *
  * The cost is derived from the components' current prices, never taken from
  * the request — the same contract as production items.
+ *
+ * No selfId on the graph: a recipe that does not exist yet cannot be pointed
+ * at, so nothing it names can lead back to it.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const components = await componentCostsByKey();
+    const [components, graph] = await Promise.all([
+      componentCostsByKey(),
+      itemRecipeGraph(),
+    ]);
 
     const { doc, error } = sanitizeItemRecipe(
       body,
       components,
       normalizeMaterialName,
+      graph,
     );
     if (error || !doc) {
       return NextResponse.json(
