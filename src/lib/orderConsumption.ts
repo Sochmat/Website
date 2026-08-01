@@ -12,6 +12,7 @@ import { normalizeMaterialName } from "./rawMaterials";
 export interface StoredOrderItem {
   productId?: unknown;
   quantity?: unknown;
+  variantName?: unknown;
   addOns?: unknown;
 }
 
@@ -25,6 +26,11 @@ export interface OrderedProduct {
    * everywhere it can.
    */
   name: string;
+  /**
+   * The variant ordered, where the line named one. Carried through so the
+   * recipe match can pick the size actually sold.
+   */
+  variantName?: string;
   quantity: number;
 }
 
@@ -42,13 +48,26 @@ export interface OrderedProduct {
 export function orderedProducts(items: StoredOrderItem[]): OrderedProduct[] {
   const totals = new Map<string, OrderedProduct>();
 
-  const add = (productId: string, name: string, quantity: number) => {
+  const add = (
+    productId: string,
+    name: string,
+    quantity: number,
+    variantName?: string,
+  ) => {
     // Keyed by id where there is one, so a renamed product still sums as
-    // itself; by name otherwise, which is all an id-less add-on has.
-    const key = productId ? `id:${productId}` : `name:${normalizeMaterialName(name)}`;
+    // itself; by name otherwise, which is all an id-less add-on has. The
+    // variant joins the key: two sizes of one dish are two different recipes,
+    // so summing them into one line would lose which was sold.
+    const base = productId
+      ? `id:${productId}`
+      : `name:${normalizeMaterialName(name)}`;
+    const key = variantName
+      ? `${base}|${normalizeMaterialName(variantName)}`
+      : base;
+
     const existing = totals.get(key);
     if (existing) existing.quantity += quantity;
-    else totals.set(key, { productId, name, quantity });
+    else totals.set(key, { productId, name, variantName, quantity });
   };
 
   for (const item of items) {
@@ -56,7 +75,8 @@ export function orderedProducts(items: StoredOrderItem[]): OrderedProduct[] {
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
 
     const productId = String(item?.productId ?? "").trim();
-    if (productId) add(productId, "", quantity);
+    const variantName = String(item?.variantName ?? "").trim() || undefined;
+    if (productId) add(productId, "", quantity, variantName);
 
     const addOns = Array.isArray(item?.addOns)
       ? (item.addOns as Array<{ id?: unknown; name?: unknown; quantity?: unknown }>)

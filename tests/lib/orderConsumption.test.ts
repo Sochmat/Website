@@ -102,3 +102,58 @@ describe("orderedProducts", () => {
     expect(orderedProducts([])).toEqual([]);
   });
 });
+
+describe("orderedProducts with variants", () => {
+  it("carries the variant through to the product list", () => {
+    const [line] = orderedProducts([
+      { productId: "p1", quantity: 2, variantName: "Large" },
+    ]);
+
+    expect(line.variantName).toBe("Large");
+    expect(line.quantity).toBe(2);
+  });
+
+  it("keeps two sizes of one product as separate lines", () => {
+    const products = orderedProducts([
+      { productId: "p1", quantity: 2, variantName: "Large" },
+      { productId: "p1", quantity: 3, variantName: "Small" },
+    ]);
+
+    expect(products).toHaveLength(2);
+    expect(products.map((p) => p.variantName).sort()).toEqual([
+      "Large",
+      "Small",
+    ]);
+  });
+
+  it("still sums two lines of the same product at the same size", () => {
+    const products = orderedProducts([
+      { productId: "p1", quantity: 2, variantName: "Large" },
+      { productId: "p1", quantity: 1, variantName: "Large" },
+    ]);
+
+    expect(products).toHaveLength(1);
+    expect(products[0].quantity).toBe(3);
+  });
+
+  it("leaves the variant unset on a line that named none", () => {
+    const [line] = orderedProducts([{ productId: "p1", quantity: 1 }]);
+    expect(line.variantName).toBeUndefined();
+  });
+
+  it("does not give an add-on the variant of the line it sits on", () => {
+    // The size belongs to the dish; the papad is the same papad either way.
+    const products = orderedProducts([
+      {
+        productId: "p1",
+        quantity: 2,
+        variantName: "Large",
+        addOns: [{ id: "a1", name: "Papad", quantity: 1 }],
+      },
+    ]);
+
+    const addOn = products.find((p) => p.productId === "a1");
+    expect(addOn?.variantName).toBeUndefined();
+    expect(addOn?.quantity).toBe(2);
+  });
+});

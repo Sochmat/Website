@@ -9,7 +9,7 @@ import {
   type ItemRecipe,
 } from "@/lib/itemRecipes";
 import { formatCurrency, normalizeMaterialName } from "@/lib/rawMaterials";
-import type { MenuItemSummary } from "@/lib/menuRecipes";
+import { recipeLookupKey, type MenuItemSummary } from "@/lib/menuRecipes";
 import { useRecipeComponents } from "@/components/inventory/useRecipeComponents";
 import ComponentLinesEditor, {
   toLines,
@@ -31,6 +31,15 @@ interface AddOnTarget {
   name: string;
   /** Its existing item recipe, when someone has already mapped it. */
   recipeId: string | null;
+}
+
+/** One variant of this menu item, with the recipe that sizes it. */
+interface VariantTarget {
+  name: string;
+  /** Its own recipe, when someone has already mapped this size. */
+  recipeId: string | null;
+  /** Whether that recipe exists — a variant with none falls back to the base. */
+  mapped: boolean;
 }
 
 /**
@@ -73,6 +82,10 @@ export default function ItemRecipeForm({
   const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
   /** Draft components per add-on, keyed by the add-on's menu item id. */
   const [addOnLines, setAddOnLines] = useState<Record<string, DraftLine[]>>({});
+  /** Draft components per variant, keyed by the variant's label. */
+  const [variantLines, setVariantLines] = useState<Record<string, DraftLine[]>>(
+    {},
+  );
 
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -139,6 +152,76 @@ export default function ItemRecipeForm({
           recipeByNameKey.get(normalizeMaterialName(m.name))?._id ?? null,
       }));
   }, [name, menuItems, recipeByNameKey]);
+
+  /** Recipes by (name, variant), for finding the one that sizes a variant. */
+  const recipeByLookupKey = useMemo(
+    () =>
+      new Map(
+        itemRecipes.map((r) => [
+          recipeLookupKey(
+            r.nameKey || normalizeMaterialName(r.name),
+            r.variantKey ||
+              (r.variantName ? normalizeMaterialName(r.variantName) : ""),
+          ),
+          r,
+        ]),
+      ),
+    [itemRecipes],
+  );
+
+  /** The variants of the menu item this recipe is for, matched by name. */
+  const variants = useMemo<VariantTarget[]>(() => {
+    const key = normalizeMaterialName(name);
+    if (!key) return [];
+
+    const menuItem = menuItems.find(
+      (m) => normalizeMaterialName(m.name) === key,
+    );
+    return (menuItem?.variantNames ?? []).map((label) => {
+      const own = recipeByLookupKey.get(
+        recipeLookupKey(key, normalizeMaterialName(label)),
+      );
+      return {
+        name: label,
+        recipeId: own?._id ?? null,
+        mapped: !!own,
+      };
+    });
+  }, [name, menuItems, recipeByLookupKey]);
+
+  /** An item with sizes is defined by them, not by a list of its own. */
+  const hasVariants = variants.length > 0;
+
+  /**
+   * Seed the variants that already have a recipe of their own, once.
+   *
+   * A variant with no recipe is deliberately left out of state: its absence is
+   * what "this size follows the item's components" means, both on screen and
+   * at deduction time.
+   */
+  useEffect(() => {
+    setVariantLines((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const variant of variants) {
+        if (!variant.mapped || next[variant.name]) continue;
+        const stored = recipeByLookupKey.get(
+          recipeLookupKey(
+            normalizeMaterialName(name),
+            normalizeMaterialName(variant.name),
+          ),
+        );
+        next[variant.name] =
+          stored?.lines.map((l) => ({
+            refType: l.refType,
+            refId: l.refId,
+            qtyUsed: String(l.qtyUsed),
+          })) ?? [];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [variants, recipeByLookupKey, name]);
 
   /**
    * The component graph as this form would leave it: what is stored, with the
@@ -225,6 +308,55 @@ export default function ItemRecipeForm({
     setFormError(null);
   }, []);
 
+  /**
+   * The rows a size that nobody has mapped starts from: whatever the first
+   * mapped size says.
+   *
+   * This is the whole point of mapping one size and moving on — the second and
+   * third open already filled in, needing only their quantities changed rather
+   * than the entire list typed again.
+   */
+  const prefillLines = useMemo(() => {
+    for (const variant of variants) {
+      const own = variantLines[variant.name];
+      if (own?.length) return own;
+    }
+    return [] as DraftLine[];
+  }, [variants, variantLines]);
+
+  /** A size's rows: its own where it has them, the first mapped size's copy
+   *  otherwise. */
+  const variantDraft = useCallback(
+    (variant: VariantTarget): DraftLine[] =>
+      variantLines[variant.name] ?? prefillLines,
+    [variantLines, prefillLines],
+  );
+
+  const setVariant = useCallback((label: string, next: DraftLine[]) => {
+    setVariantLines((current) => ({ ...current, [label]: next }));
+    setFormError(null);
+  }, []);
+
+  /**
+   * What a variant item costs: one figure when every size comes to the same,
+   * a range otherwise. A single total would have to pick a size and not say
+   * which.
+   */
+  const variantCostLabel = useMemo(() => {
+    const costs = variants.map(
+      (v) =>
+        computeItemRecipeCost(toLines(variantDraft(v)), costsByKey, itemCostsById)
+          .totalCost,
+    );
+    if (costs.length === 0) return formatCurrency(0);
+
+    const low = Math.min(...costs);
+    const high = Math.max(...costs);
+    return low === high
+      ? formatCurrency(low)
+      : `${formatCurrency(low)} – ${formatCurrency(high)}`;
+  }, [variants, variantDraft, costsByKey, itemCostsById]);
+
   const notifyDuplicate = useCallback(
     () => messageApi.info("That component is already in the recipe"),
     [messageApi],
@@ -265,7 +397,14 @@ export default function ItemRecipeForm({
     setNameError(name.trim() ? null : "Name is required");
     if (!name.trim()) return;
 
-    if (lines.length === 0) {
+    // An item with sizes is defined BY its sizes — there is no item-level list
+    // to fill in, so the requirement moves onto them.
+    if (hasVariants) {
+      if (!variants.some((v) => variantDraft(v).length > 0)) {
+        setFormError("Add components to at least one variant");
+        return;
+      }
+    } else if (lines.length === 0) {
       setFormError("Add at least one component to the recipe");
       return;
     }
@@ -299,36 +438,66 @@ export default function ItemRecipeForm({
         return;
       }
     }
+
+    for (const variant of variants) {
+      const draft = variantDraft(variant);
+      const badVariant = badQuantity(draft);
+      if (badVariant) {
+        setFormError(
+          `Enter a quantity greater than 0 for ${labelFor(badVariant)} in “${variant.name}”`,
+        );
+        return;
+      }
+      const fractionalVariant = fractionalItem(draft);
+      if (fractionalVariant) {
+        setFormError(
+          `${labelFor(fractionalVariant)} in “${variant.name}” must be a whole number of portions`,
+        );
+        return;
+      }
+    }
     setFormError(null);
 
     setSaving(true);
     try {
-      const res = await fetch(
-        recipe?._id
-          ? `/api/inventory/item-recipes/${recipe._id}`
-          : "/api/inventory/item-recipes",
-        {
-          method: recipe?._id ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            lines: lines.map((l) => ({
-              refType: l.refType,
-              refId: l.refId,
-              qtyUsed: l.qtyUsed,
-            })),
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!data.success) {
-        setFormError(data.message ?? "Could not save");
+      // An item defined by its sizes has no item-level list to write. One
+      // written before the item had sizes is left exactly as it is: it still
+      // stands behind any size nobody has mapped, and silently rewriting or
+      // dropping it here would change what those sizes deduct.
+      if (lines.length > 0) {
+        const res = await fetch(
+          recipe?._id
+            ? `/api/inventory/item-recipes/${recipe._id}`
+            : "/api/inventory/item-recipes",
+          {
+            method: recipe?._id ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: name.trim(),
+              lines: lines.map((l) => ({
+                refType: l.refType,
+                refId: l.refId,
+                qtyUsed: l.qtyUsed,
+              })),
+            }),
+          },
+        );
+        const data = await res.json();
+        if (!data.success) {
+          setFormError(data.message ?? "Could not save");
+          return;
+        }
+      }
+
+      const variantError = await saveVariants();
+      if (variantError) {
+        // The recipe itself is saved; say so rather than implying nothing was.
+        setFormError(`Recipe saved, but its variants were not: ${variantError}`);
         return;
       }
 
       const addOnError = await saveAddOns();
       if (addOnError) {
-        // The recipe itself is saved; say so rather than implying nothing was.
         setFormError(`Recipe saved, but its add-ons were not: ${addOnError}`);
         return;
       }
@@ -340,6 +509,60 @@ export default function ItemRecipeForm({
     } finally {
       setSaving(false);
     }
+  };
+
+  /**
+   * Writes a recipe for every size that has components.
+   *
+   * A size showing a copy of another is written too, not just the one that was
+   * typed — the copy is what the screen promises that size is made of, and a
+   * size with no recipe of its own deducts nothing.
+   */
+  const saveVariants = async (): Promise<string | null> => {
+    for (const variant of variants) {
+      const draft = variantDraft(variant);
+      if (draft.length === 0 && !variant.recipeId) continue;
+
+      const payload = draft.map((l) => ({
+        refType: l.refType,
+        refId: l.refId,
+        qtyUsed: l.qtyUsed,
+      }));
+
+      // Cleared out: drop the recipe rather than store an empty one.
+      if (payload.length === 0) {
+        if (!variant.recipeId) continue;
+        const res = await fetch(
+          `/api/inventory/item-recipes/${variant.recipeId}`,
+          { method: "DELETE" },
+        );
+        const data = await res.json();
+        if (!data.success) {
+          return `“${variant.name}”: ${data.message ?? "could not be cleared"}`;
+        }
+        continue;
+      }
+
+      const res = await fetch(
+        variant.recipeId
+          ? `/api/inventory/item-recipes/${variant.recipeId}`
+          : "/api/inventory/item-recipes",
+        {
+          method: variant.recipeId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            variantName: variant.name,
+            lines: payload,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!data.success) {
+        return `“${variant.name}”: ${data.message ?? "could not be saved"}`;
+      }
+    }
+    return null;
   };
 
   /**
@@ -437,40 +660,131 @@ export default function ItemRecipeForm({
           </p>
           <div className="mt-4 rounded-lg bg-[#024731]/5 border border-[#024731]/20 px-4 py-3">
             <div className="text-2xl font-bold tabular-nums text-[#024731]">
-              {formatCurrency(breakdown.totalCost)}
+              {hasVariants ? variantCostLabel : formatCurrency(breakdown.totalCost)}
             </div>
             <div className="mt-0.5 text-xs text-gray-600">
-              across {lines.length} component{lines.length === 1 ? "" : "s"}
+              {hasVariants
+                ? `across ${variants.length} variant${variants.length === 1 ? "" : "s"}`
+                : `across ${lines.length} component${lines.length === 1 ? "" : "s"}`}
             </div>
           </div>
         </section>
       </div>
 
-      <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Components
-          </h2>
-          <p className="mt-1 text-xs text-gray-500">
-            Raw materials and production items that make up this recipe — or
-            another food item, whose own components are then deducted with it.
-          </p>
-        </div>
+      {/* An item is defined either by one list of components or by its sizes,
+          never by both — an empty Components table above a full set of
+          variants only invites the question of which one counts. */}
+      {!hasVariants && (
+        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Components
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Raw materials and production items that make up this recipe — or
+              another food item, whose own components are then deducted with it.
+            </p>
+          </div>
 
-        <div className="mt-4">
-          <ComponentLinesEditor
-            lines={lines}
-            onChange={(next) => {
-              setLines(next);
-              setFormError(null);
-            }}
-            components={components}
-            allowItems
-            blockedItemIds={blockedFor(recipe?._id ? String(recipe._id) : null)}
-            onDuplicate={notifyDuplicate}
+          <div className="mt-4">
+            <ComponentLinesEditor
+              lines={lines}
+              onChange={(next) => {
+                setLines(next);
+                setFormError(null);
+              }}
+              components={components}
+              allowItems
+              blockedItemIds={blockedFor(
+                recipe?._id ? String(recipe._id) : null,
+              )}
+              onDuplicate={notifyDuplicate}
+            />
+          </div>
+        </section>
+      )}
+
+      {hasVariants && (
+        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Variants
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              This item is ordered as one of these, so each carries its own
+              components. Map the first and the rest open already filled in with
+              a copy of it — change what differs.
+            </p>
+            {lines.length > 0 && (
+              <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                This item also has a recipe of its own, written before it had
+                variants. It is left untouched, and still stands behind any
+                variant with no components below.
+              </p>
+            )}
+          </div>
+
+          <Collapse
+            className="mt-4 bg-white"
+            items={variants.map((variant) => {
+              const draft = variantDraft(variant);
+              // Showing a copy of another size, which saving will make its own.
+              const copied = !variantLines[variant.name] && draft.length > 0;
+              const cost = computeItemRecipeCost(
+                toLines(draft),
+                costsByKey,
+                itemCostsById,
+              ).totalCost;
+
+              return {
+                key: variant.name,
+                label: (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pr-2">
+                    <span className="font-medium text-gray-900">
+                      {variant.name}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {draft.length === 0 ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                          not mapped
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">
+                          {copied ? "copied · " : ""}
+                          {draft.length} component
+                          {draft.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      <span className="tabular-nums text-sm font-semibold text-[#024731]">
+                        {formatCurrency(cost)}
+                      </span>
+                    </span>
+                  </div>
+                ),
+                children: (
+                  <div>
+                    {copied && (
+                      <p className="mb-3 text-xs text-gray-500">
+                        Copied from the first variant you mapped. Change what
+                        differs — saving gives this variant its own recipe.
+                      </p>
+                    )}
+                    <ComponentLinesEditor
+                      lines={draft}
+                      onChange={(next) => setVariant(variant.name, next)}
+                      components={components}
+                      allowItems
+                      blockedItemIds={blockedFor(variant.recipeId)}
+                      onDuplicate={notifyDuplicate}
+                      dense
+                    />
+                  </div>
+                ),
+              };
+            })}
           />
-        </div>
-      </section>
+        </section>
+      )}
 
       {addOns.length > 0 && (
         <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">

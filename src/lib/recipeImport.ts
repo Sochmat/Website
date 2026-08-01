@@ -27,7 +27,17 @@ import {
   type ItemRecipeLine,
   type SanitizedItemRecipe,
 } from "./itemRecipes";
+import { recipeLookupKey } from "./menuRecipes";
 import { ROW_NUMBER_KEY } from "./sheetUtils";
+
+/** The key a recipe row is grouped and matched under: name plus variant. */
+function rowLookupKey(name: string, variantName: string): string {
+  if (!name) return "";
+  return recipeLookupKey(
+    normalizeMaterialName(name),
+    variantName ? normalizeMaterialName(variantName) : "",
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Sheet shapes
@@ -94,11 +104,21 @@ export const PRODUCTION_RECIPE_REQUIRED_COLUMNS = [
 export const ITEM_RECIPE_SHEET = "Item Recipes";
 export const ITEM_RECIPE_COMPONENT_SHEET = "Components";
 
-export const ITEM_RECIPE_COLUMNS = ["Name", "Costing (calculated)"] as const;
+/**
+ * "Variant" is blank for an item's base recipe and carries the size otherwise.
+ * Two sizes of one dish share a Name, so without this column an export would
+ * write them as indistinguishable rows and re-importing would merge them.
+ */
+export const ITEM_RECIPE_COLUMNS = [
+  "Name",
+  "Variant",
+  "Costing (calculated)",
+] as const;
 export const ITEM_RECIPE_REQUIRED_COLUMNS = ["Name"] as const;
 
 export const ITEM_RECIPE_COMPONENT_COLUMNS = [
   "Recipe Name",
+  "Variant",
   "Type",
   "Component",
   "Qty Used",
@@ -470,7 +490,10 @@ export function planItemRecipeImport(
   componentRows.forEach((row, index) => {
     const rowNumber = rowNumberOf(row, index);
     const recipeName = text(row["Recipe Name"]);
-    const recipeKey = recipeName ? normalizeMaterialName(recipeName) : "";
+    // Blank Variant means the item's base recipe — which is what every sheet
+    // written before the column existed says on every row.
+    const rowVariant = text(row["Variant"]);
+    const recipeKey = rowLookupKey(recipeName, rowVariant);
 
     const fail = (message: string) => {
       plan.errors.push({
@@ -558,10 +581,17 @@ export function planItemRecipeImport(
 
     if (!name) return fail("Name is required");
 
-    const key = normalizeMaterialName(name);
+    const variantName = text(row["Variant"]);
+    const key = rowLookupKey(name, variantName);
     claimed.add(key);
 
-    if (seenRecipe.has(key)) return fail("Duplicate name in this file");
+    if (seenRecipe.has(key)) {
+      return fail(
+        variantName
+          ? `Duplicate name and variant "${variantName}" in this file`
+          : "Duplicate name in this file",
+      );
+    }
     seenRecipe.add(key);
 
     if (brokenRecipes.has(key)) {
@@ -584,7 +614,7 @@ export function planItemRecipeImport(
     }
 
     const { doc, error } = sanitizeItemRecipe(
-      { name, lines },
+      { name, variantName, lines },
       componentsByKey,
       normalizeMaterialName,
       // No selfId: loops are checked above across the whole batch, where the

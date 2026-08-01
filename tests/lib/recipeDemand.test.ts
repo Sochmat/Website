@@ -392,3 +392,101 @@ describe("an add-on built on an existing dish", () => {
     expect(unmapped).toEqual(["Extra Jeera Rice"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Variants
+// ---------------------------------------------------------------------------
+
+/** Same dish, one size bigger. */
+const variantRecipe = (
+  name: string,
+  variantName: string,
+  lines: ItemRecipeLine[],
+): ItemRecipe => ({
+  _id: `r-${name}-${variantName}`,
+  name,
+  nameKey: name.toLowerCase(),
+  variantName,
+  variantKey: variantName.toLowerCase(),
+  lines,
+  totalCost: 0,
+});
+
+describe("componentDemand with variants", () => {
+  const LARGE = variantRecipe("Dal Rice", "Large", [
+    raw("rice", 250),
+    production("dal", 300),
+  ]);
+  const SIZED = recipesByNameKey([DAL_RICE, LARGE]);
+
+  it("deducts the variant's own recipe when one is written", () => {
+    const { demand, unmapped } = componentDemand(
+      [{ name: "Dal Rice", variantName: "Large", quantity: 1 }],
+      SIZED,
+    );
+
+    expect(unmapped).toEqual([]);
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(250);
+    expect(demandByRefType(demand, "production").get("dal")).toBe(300);
+  });
+
+  it("falls back to the item's recipe for a size nobody has mapped", () => {
+    // "Small" has no recipe — it deducts the base, exactly as every variant
+    // did before sizes could be mapped at all.
+    const { demand, unmapped } = componentDemand(
+      [{ name: "Dal Rice", variantName: "Small", quantity: 1 }],
+      SIZED,
+    );
+
+    expect(unmapped).toEqual([]);
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(150);
+  });
+
+  it("keeps deducting the base recipe when no variant is named at all", () => {
+    const { demand } = componentDemand([item("Dal Rice", 1)], SIZED);
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(150);
+  });
+
+  it("matches a variant however it was capitalised or spaced", () => {
+    const { demand } = componentDemand(
+      [{ name: "Dal Rice", variantName: "  large ", quantity: 1 }],
+      SIZED,
+    );
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(250);
+  });
+
+  it("keeps two sizes of one dish apart on the same order", () => {
+    const { demand } = componentDemand(
+      [
+        { name: "Dal Rice", variantName: "Large", quantity: 2 },
+        { name: "Dal Rice", variantName: "Small", quantity: 3 },
+      ],
+      SIZED,
+    );
+
+    // 2 × 250 large + 3 × 150 falling back to the base.
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(950);
+    expect(demandByRefType(demand, "production").get("dal")).toBe(1200);
+  });
+
+  it("reports an unwritten item as unmapped even when a size is named", () => {
+    const { demand, unmapped } = componentDemand(
+      [{ name: "Ghost Dish", variantName: "Large", quantity: 1 }],
+      SIZED,
+    );
+
+    expect(demand).toEqual([]);
+    expect(unmapped).toEqual(["Ghost Dish"]);
+  });
+
+  it("falls back when the variant's recipe exists but lists nothing", () => {
+    const EMPTY_LARGE = variantRecipe("Dal Rice", "Large", []);
+    const { demand } = componentDemand(
+      [{ name: "Dal Rice", variantName: "Large", quantity: 1 }],
+      recipesByNameKey([DAL_RICE, EMPTY_LARGE]),
+    );
+
+    // An empty recipe says nothing about the size, so the item's own stands.
+    expect(demandByRefType(demand, "raw").get("rice")).toBe(150);
+  });
+});

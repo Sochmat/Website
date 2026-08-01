@@ -35,6 +35,11 @@ export interface MenuItemSummary {
    * views build a MenuItemSummary without ever needing the link.
    */
   addOnIds?: string[];
+  /**
+   * Variant labels offered for this item, e.g. Small/Medium/Large. Each may
+   * carry its own recipe; see recipeLookupKey.
+   */
+  variantNames?: string[];
 }
 
 /** Shown when a menu item names no category, or one that no longer exists. */
@@ -76,6 +81,17 @@ export function isMapped(
   return !!recipe && recipe.lines.length > 0;
 }
 
+/**
+ * The key a recipe is stored and found under.
+ *
+ * An item's base recipe keys on its name alone, exactly as before variants
+ * existed — so every recipe already written keeps the key it always had, and
+ * anything looking one up without a variant still finds it.
+ */
+export function recipeLookupKey(nameKey: string, variantKey?: string): string {
+  return variantKey ? `${nameKey}|${variantKey}` : nameKey;
+}
+
 /** Recipes keyed by the same normalized name a menu item resolves to. */
 export function recipesByNameKey(
   recipes: ItemRecipe[],
@@ -84,8 +100,14 @@ export function recipesByNameKey(
   for (const recipe of recipes) {
     // Prefer the stored nameKey, but fall back to deriving it: a recipe
     // written before nameKey existed still has a name.
-    const key = recipe.nameKey || normalizeMaterialName(recipe.name);
-    if (key && !byKey.has(key)) byKey.set(key, recipe);
+    const nameKey = recipe.nameKey || normalizeMaterialName(recipe.name);
+    if (!nameKey) continue;
+    const key = recipeLookupKey(
+      nameKey,
+      recipe.variantKey ||
+        (recipe.variantName ? normalizeMaterialName(recipe.variantName) : ""),
+    );
+    if (!byKey.has(key)) byKey.set(key, recipe);
   }
   return byKey;
 }

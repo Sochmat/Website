@@ -43,6 +43,18 @@ export interface ItemRecipe {
   _id?: string;
   name: string;
   nameKey: string;
+  /**
+   * The variant this recipe defines, when the menu item has variants — a Large
+   * is not a Small in bigger writing, it is a different quantity of the same
+   * things.
+   *
+   * Absent means the item's BASE recipe, which stands in for any variant
+   * nobody has mapped separately. That fallback is what keeps an item that had
+   * one recipe before variants existed deducting exactly as it always did.
+   */
+  variantName?: string;
+  /** normalizeName(variantName); absent/"" on the base recipe. */
+  variantKey?: string;
   lines: ItemRecipeLine[];
   /** Derived from the lines — never entered by hand. */
   totalCost: number;
@@ -254,6 +266,7 @@ export function itemRecipeCostsById(
 
 export interface ItemRecipeInput {
   name?: unknown;
+  variantName?: unknown;
   lines?: unknown;
 }
 
@@ -312,6 +325,13 @@ export function sanitizeItemRecipe(
     .replace(/\s+/g, " ")
     .trim();
   if (!name) return { error: "Name is required" };
+
+  // Blank, absent or whitespace all mean the same thing: this is the item's
+  // base recipe, not one variant of it.
+  const variantName = String(input.variantName ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const variantKey = variantName ? normalizeName(variantName) : "";
 
   if (!Array.isArray(input.lines) || input.lines.length === 0) {
     return { error: "Add at least one component" };
@@ -381,6 +401,13 @@ export function sanitizeItemRecipe(
   );
 
   return {
-    doc: { name, nameKey: normalizeName(name), lines, totalCost },
+    doc: {
+      name,
+      nameKey: normalizeName(name),
+      variantName: variantName || undefined,
+      variantKey: variantKey || undefined,
+      lines,
+      totalCost,
+    },
   };
 }

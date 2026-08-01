@@ -28,8 +28,8 @@ import { componentKey, type ItemRecipe } from "@/lib/itemRecipes";
 
 const PRODUCTION_ITEM_WIDTHS = [28, 18, 16, 16, 18, 14, 20];
 const PRODUCTION_RECIPE_WIDTHS = [28, 18, 30, 14];
-const ITEM_RECIPE_WIDTHS = [32, 20];
-const ITEM_RECIPE_COMPONENT_WIDTHS = [30, 18, 30, 14];
+const ITEM_RECIPE_WIDTHS = [32, 16, 20];
+const ITEM_RECIPE_COMPONENT_WIDTHS = [30, 16, 18, 30, 14];
 
 /** Case-insensitive sheet lookup — Excel preserves case, users don't. */
 function findSheet(
@@ -291,10 +291,14 @@ export async function buildItemRecipeWorkbook(
   );
 
   for (const recipe of recipes) {
-    recipeSheet.addRow([recipe.name, recipe.totalCost]);
+    // Blank Variant marks the item's base recipe; a size carries its label, so
+    // the two come back as two recipes rather than merging into one.
+    const variant = recipe.variantName ?? "";
+    recipeSheet.addRow([recipe.name, variant, recipe.totalCost]);
     for (const line of recipe.lines) {
       componentSheet.addRow([
         recipe.name,
+        variant,
         COMPONENT_TYPE_LABELS[line.refType],
         componentNameByKey.get(componentKey(line.refType, line.refId)) ?? "",
         line.qtyUsed,
@@ -302,7 +306,7 @@ export async function buildItemRecipeWorkbook(
     }
   }
 
-  recipeSheet.getColumn(2).numFmt = "#,##0.00";
+  recipeSheet.getColumn(3).numFmt = "#,##0.00";
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
@@ -327,28 +331,42 @@ export async function buildItemRecipeTemplateWorkbook(
     ITEM_RECIPE_COMPONENT_WIDTHS,
   );
 
-  recipeSheet.addRow(["Veg Thali", ""]);
-  recipeSheet.getRow(2).font = { italic: true, color: { argb: "FF888888" } };
+  recipeSheet.addRow(["Veg Thali", "", ""]);
+  recipeSheet.addRow(["Veg Thali", "Large", ""]);
+  for (const n of [2, 3]) {
+    recipeSheet.getRow(n).font = { italic: true, color: { argb: "FF888888" } };
+  }
 
   componentSheet.addRow([
     "Veg Thali",
+    "",
     COMPONENT_TYPE_LABELS.raw,
     materialNames[0] ?? "Onion",
     100,
   ]);
   componentSheet.addRow([
     "Veg Thali",
+    "",
     COMPONENT_TYPE_LABELS.production,
     productionNames[0] ?? "Masala Base",
     250,
   ]);
   componentSheet.addRow([
     "Veg Thali",
+    "",
     COMPONENT_TYPE_LABELS.item,
     itemRecipeNames[0] ?? "Plain Rice",
     1,
   ]);
-  for (const n of [2, 3, 4]) {
+  // The same dish at a bigger size: same components, more of them.
+  componentSheet.addRow([
+    "Veg Thali",
+    "Large",
+    COMPONENT_TYPE_LABELS.raw,
+    materialNames[0] ?? "Onion",
+    150,
+  ]);
+  for (const n of [2, 3, 4, 5]) {
     componentSheet.getRow(n).font = {
       italic: true,
       color: { argb: "FF888888" },
@@ -365,6 +383,10 @@ export async function buildItemRecipeTemplateWorkbook(
     ["   Recipe Name links the two — spell it identically on both sheets."],
     ["3. Name is matched against existing item recipes, ignoring case and"],
     ["   spacing. A match updates that recipe; no match creates a new one."],
+    ["3a. Variant is the size, for items that have them — leave it BLANK for the"],
+    ["   item's own recipe. A size with its own row is deducted at that size;"],
+    ["   one with no row follows the blank-Variant recipe. Name + Variant"],
+    ["   together identify a recipe, so the same Name may appear once per size."],
     ["4. A recipe's components are REPLACED by its rows on the Components"],
     ["   sheet. Every recipe needs at least one component row."],
     [`5. Type must be "${COMPONENT_TYPE_LABELS.raw}", "${COMPONENT_TYPE_LABELS.production}" or "${COMPONENT_TYPE_LABELS.item}".`],

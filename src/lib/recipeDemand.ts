@@ -23,13 +23,19 @@ import {
   type ItemRecipe,
   type StockComponentType,
 } from "./itemRecipes";
-import { isMapped } from "./menuRecipes";
+import { isMapped, recipeLookupKey } from "./menuRecipes";
 import { normalizeMaterialName } from "./rawMaterials";
 
 /** Something sold, named as the menu stands now. */
 export interface SoldItem {
   /** Menu item name; blank when the product no longer exists. */
   name: string;
+  /**
+   * The variant ordered, when the item has variants. A Large plate is a
+   * different quantity of the same things, so it resolves to its own recipe
+   * where one has been written.
+   */
+  variantName?: string;
   quantity: number;
 }
 
@@ -120,6 +126,32 @@ function explode(
 }
 
 /**
+ * The recipe behind one sale: the variant's own where someone has written one,
+ * the item's base recipe otherwise.
+ *
+ * The fallback is what makes variants safe to introduce. Every item mapped
+ * before variants existed has only a base recipe, and goes on deducting it for
+ * every size until each variant is mapped in its own right — rather than every
+ * such item silently deducting nothing the day the column appeared.
+ */
+function resolveRecipe(
+  item: SoldItem,
+  name: string,
+  recipesByNameKey: ReadonlyMap<string, ItemRecipe>,
+): ItemRecipe | null {
+  const nameKey = normalizeMaterialName(name);
+  const variant = String(item?.variantName ?? "").trim();
+
+  if (variant) {
+    const forVariant = recipesByNameKey.get(
+      recipeLookupKey(nameKey, normalizeMaterialName(variant)),
+    );
+    if (isMapped(forVariant)) return forVariant;
+  }
+  return recipesByNameKey.get(recipeLookupKey(nameKey)) ?? null;
+}
+
+/**
  * Everything a list of sales draws down, summed per component.
  *
  * Two items sharing an ingredient deduct once, and the same item sold twice
@@ -151,9 +183,7 @@ export function componentDemand(
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
 
     const name = String(item?.name ?? "").trim();
-    const recipe = name
-      ? recipesByNameKey.get(normalizeMaterialName(name))
-      : null;
+    const recipe = name ? resolveRecipe(item, name, recipesByNameKey) : null;
 
     // An empty recipe counts as unmapped: it says someone opened the form,
     // not what the item is made of.

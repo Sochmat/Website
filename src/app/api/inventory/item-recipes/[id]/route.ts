@@ -91,13 +91,20 @@ export async function PUT(
     const { db } = await connectToDatabase();
     const col = db.collection(ITEM_RECIPES_COLLECTION);
 
+    // Unique per (name, variant) — see the POST route.
     const clash = await col.findOne({
       nameKey: doc.nameKey,
+      variantKey: doc.variantKey ?? { $in: [null, ""] },
       _id: { $ne: new ObjectId(id) },
     });
     if (clash) {
       return NextResponse.json(
-        { success: false, message: "An item recipe with that name already exists" },
+        {
+          success: false,
+          message: doc.variantName
+            ? `A recipe for the “${doc.variantName}” variant of that item already exists`
+            : "An item recipe with that name already exists",
+        },
         { status: 409 },
       );
     }

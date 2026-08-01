@@ -23,7 +23,7 @@ import {
   type MenuItemSummary,
   type MenuRecipeRow,
 } from "@/lib/menuRecipes";
-import { formatCurrency } from "@/lib/rawMaterials";
+import { formatCurrency, normalizeMaterialName } from "@/lib/rawMaterials";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const BASE_PATH = "/inventory-management/setup/item-recipe";
@@ -176,6 +176,19 @@ export default function ItemRecipesPage() {
     }
   };
 
+  /** How many of a menu item's sizes carry a recipe of their own. */
+  const sizedVariantCount = (row: MenuRecipeRow) => {
+    const nameKey = normalizeMaterialName(row.menuItem.name);
+    return (row.menuItem.variantNames ?? []).filter((label) =>
+      recipes.some(
+        (r) =>
+          (r.nameKey || normalizeMaterialName(r.name)) === nameKey &&
+          normalizeMaterialName(r.variantName ?? "") ===
+            normalizeMaterialName(label),
+      ),
+    ).length;
+  };
+
   const handleImported = (text: string) => {
     setImportOpen(false);
     messageApi.success(`Import complete — ${text}`);
@@ -189,6 +202,14 @@ export default function ItemRecipesPage() {
       render: (_: unknown, row) => (
         <span className="inline-flex items-center gap-2">
           <span className="font-medium text-gray-900">{row.menuItem.name}</span>
+          {(row.menuItem.variantNames?.length ?? 0) > 0 && (
+            <span
+              className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-medium text-gray-600"
+              title={`${row.menuItem.variantNames!.join(", ")} — this item is ordered as one of these, and each carries its own components.`}
+            >
+              {sizedVariantCount(row)}/{row.menuItem.variantNames!.length} variants mapped
+            </span>
+          )}
           {row.menuItem.isAddOn && (
             <span
               className="inline-flex items-center rounded-md bg-[#024731]/10 px-1.5 py-0.5 text-[11px] font-medium text-[#024731]"
@@ -212,8 +233,30 @@ export default function ItemRecipesPage() {
       title: "Status",
       key: "status",
       width: 200,
-      render: (_: unknown, row) =>
-        row.mapped ? (
+      render: (_: unknown, row) => {
+        // An item with variants is accounted for when its variants are: it is
+        // never ordered as itself, so its own recipe says nothing about it.
+        const total = row.menuItem.variantNames?.length ?? 0;
+        if (total > 0) {
+          const sized = sizedVariantCount(row);
+          if (sized === total) {
+            return (
+              <span className="inline-flex items-center rounded-md border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+                Mapped
+              </span>
+            );
+          }
+          return (
+            <span
+              className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800"
+              title={`${total - sized} variant${total - sized === 1 ? "" : "s"} still without components`}
+            >
+              {sized === 0 ? "Unmapped" : `Unmapped · ${total - sized} left`}
+            </span>
+          );
+        }
+
+        return row.mapped ? (
           <span className="inline-flex items-center rounded-md border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
             Mapped
           </span>
@@ -228,7 +271,8 @@ export default function ItemRecipesPage() {
           >
             {row.recipe ? "Unmapped · empty recipe" : "Unmapped"}
           </span>
-        ),
+        );
+      },
     },
     {
       title: "Components",
@@ -302,8 +346,21 @@ export default function ItemRecipesPage() {
             }
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-[#024731] transition-colors"
           >
-            <PlusOutlined />
-            Map recipe
+            {/* A variant item has no recipe of its own to edit — its variants
+                carry the components — so the same route is how you get back to
+                them, and calling that "Map recipe" once some are mapped would
+                misdescribe it. */}
+            {sizedVariantCount(row) > 0 ? (
+              <>
+                <EditOutlined />
+                Edit variants
+              </>
+            ) : (
+              <>
+                <PlusOutlined />
+                Map recipe
+              </>
+            )}
           </button>
         ),
     },

@@ -39,6 +39,7 @@ import {
   type ItemRecipeGraph,
   type ItemRecipeLine,
 } from "@/lib/itemRecipes";
+import { recipeLookupKey } from "@/lib/menuRecipes";
 
 export const CATEGORIES_COLLECTION = "inventoryCategories";
 export const BRANDS_COLLECTION = "inventoryBrands";
@@ -372,8 +373,27 @@ export function productionItemIdsByNameKey(): Promise<Map<string, string>> {
   return idsByNameKey(PRODUCTION_ITEMS_COLLECTION);
 }
 
-export function itemRecipeIdsByNameKey(): Promise<Map<string, string>> {
-  return idsByNameKey(ITEM_RECIPES_COLLECTION);
+/**
+ * Item recipe ids, keyed the way one is looked up — name, plus variant where
+ * there is one.
+ *
+ * Not the plain nameKey helper the other two collections use: two sizes of one
+ * dish share a name, so keying on that alone would let an import overwrite the
+ * Large with the Small.
+ */
+export async function itemRecipeIdsByNameKey(): Promise<Map<string, string>> {
+  const { db } = await connectToDatabase();
+  const docs = await db
+    .collection(ITEM_RECIPES_COLLECTION)
+    .find({}, { projection: { nameKey: 1, variantKey: 1 } })
+    .toArray();
+
+  return new Map(
+    docs.map((d) => [
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
+      String(d._id),
+    ]),
+  );
 }
 
 /** id -> display name for every raw material, for writing recipe sheets. */
@@ -759,6 +779,10 @@ export async function listItemRecipes(search?: string): Promise<ItemRecipe[]> {
     _id: String(d._id),
     name: String(d.name ?? ""),
     nameKey: String(d.nameKey ?? ""),
+    // Absent on every recipe written before variants — which is exactly what
+    // "this is the item's base recipe" means.
+    variantName: d.variantName ? String(d.variantName) : undefined,
+    variantKey: d.variantKey ? String(d.variantKey) : undefined,
     lines: toItemRecipeLines(d.lines),
     totalCost: Number(d.totalCost ?? 0),
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
@@ -805,16 +829,21 @@ export async function itemRecipeDepsByNameKey(): Promise<
   const { db } = await connectToDatabase();
   const docs = await db
     .collection(ITEM_RECIPES_COLLECTION)
-    .find({}, { projection: { nameKey: 1, lines: 1 } })
+    .find({}, { projection: { nameKey: 1, variantKey: 1, lines: 1 } })
     .toArray();
 
+  // Keyed the way the importer groups rows — name plus variant — so the loop
+  // check compares like with like.
   const nameKeyById = new Map(
-    docs.map((d) => [String(d._id), String(d.nameKey ?? "")]),
+    docs.map((d) => [
+      String(d._id),
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
+    ]),
   );
 
   return new Map(
     docs.map((d) => [
-      String(d.nameKey ?? ""),
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
       toItemRecipeLines(d.lines)
         .filter((line) => line.refType === "item")
         // A line pointing at a deleted recipe names nothing that could close a

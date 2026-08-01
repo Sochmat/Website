@@ -66,9 +66,21 @@ export async function POST(request: NextRequest) {
     const { db } = await connectToDatabase();
     const col = db.collection(ITEM_RECIPES_COLLECTION);
 
-    if (await col.findOne({ nameKey: doc.nameKey })) {
+    // A name is unique per variant, not outright: "Dal Thali — Large" and
+    // "Dal Thali — Small" are the same dish written down twice, at two sizes.
+    if (
+      await col.findOne({
+        nameKey: doc.nameKey,
+        variantKey: doc.variantKey ?? { $in: [null, ""] },
+      })
+    ) {
       return NextResponse.json(
-        { success: false, message: "An item recipe with that name already exists" },
+        {
+          success: false,
+          message: doc.variantName
+            ? `A recipe for the “${doc.variantName}” variant of that item already exists`
+            : "An item recipe with that name already exists",
+        },
         { status: 409 },
       );
     }

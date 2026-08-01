@@ -9,6 +9,7 @@ import {
   recalcItemRecipeCosts,
 } from "@/lib/inventoryDb";
 import { sanitizeItemRecipe, type ItemRecipeInput } from "@/lib/itemRecipes";
+import { recipeLookupKey } from "@/lib/menuRecipes";
 import { normalizeMaterialName } from "@/lib/rawMaterials";
 
 // Admin-only; enforced by the admin session check in src/middleware.ts.
@@ -80,11 +81,13 @@ export async function POST(request: NextRequest) {
         rejected.push(`${describe(raw)}: ${error ?? "invalid"}`);
         return;
       }
-      if (seen.has(doc.nameKey)) {
+      // Identity is (name, variant): two sizes of one dish are two recipes.
+      const identity = recipeLookupKey(doc.nameKey, doc.variantKey);
+      if (seen.has(identity)) {
         rejected.push(`${doc.name}: duplicate in this batch`);
         return;
       }
-      seen.add(doc.nameKey);
+      seen.add(identity);
 
       if (id) {
         ops.push({
@@ -99,7 +102,10 @@ export async function POST(request: NextRequest) {
       // the preview and this commit, update it instead of failing.
       ops.push({
         updateOne: {
-          filter: { nameKey: doc.nameKey },
+          filter: {
+            nameKey: doc.nameKey,
+            variantKey: doc.variantKey ?? { $in: [null, ""] },
+          },
           update: {
             $set: { ...doc, updatedAt: now },
             $setOnInsert: { createdAt: now },

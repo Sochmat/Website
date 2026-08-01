@@ -31,6 +31,7 @@ export async function GET() {
               hidden: 1,
               isAddOn: 1,
               addOns: 1,
+              variants: 1,
             },
           },
         )
@@ -58,6 +59,13 @@ export async function GET() {
       // Stored as menu item ids on the dish that offers them.
       addOnIds: Array.isArray(d.addOns)
         ? d.addOns.map((id: unknown) => String(id ?? "")).filter(Boolean)
+        : [],
+      // Only the labels: a variant's price is the menu's business, not the
+      // recipe's.
+      variantNames: Array.isArray(d.variants)
+        ? d.variants
+            .map((v: { name?: unknown }) => String(v?.name ?? "").trim())
+            .filter(Boolean)
         : [],
     }));
 
