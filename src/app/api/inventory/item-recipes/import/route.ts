@@ -43,9 +43,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { recipeRows, componentRows, error } = await parseItemRecipeWorkbook(
-      await file.arrayBuffer(),
-    );
+    const { recipeRows, componentRows, packagingRows, error } =
+      await parseItemRecipeWorkbook(await file.arrayBuffer());
     if (error) {
       return NextResponse.json({ success: false, message: error }, { status: 400 });
     }
@@ -80,6 +79,7 @@ export async function POST(request: NextRequest) {
       componentsByKey,
       graph,
       storedDeps,
+      packagingRows,
     );
 
     return NextResponse.json({

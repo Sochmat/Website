@@ -32,8 +32,10 @@ import {
 } from "@/lib/productionItems";
 import {
   componentKey,
+  computeItemRecipeCost,
   itemRecipeCostsById,
   toItemRecipeLines,
+  toPackagingLines,
   type ComponentType,
   type ItemRecipe,
   type ItemRecipeGraph,
@@ -785,6 +787,8 @@ export async function listItemRecipes(search?: string): Promise<ItemRecipe[]> {
     variantKey: d.variantKey ? String(d.variantKey) : undefined,
     lines: toItemRecipeLines(d.lines),
     totalCost: Number(d.totalCost ?? 0),
+    packagingLines: toPackagingLines(d.packagingLines),
+    packagingCost: Number(d.packagingCost ?? 0),
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
     updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
   }));
@@ -879,15 +883,25 @@ export async function componentCostsByKey(): Promise<
   return combined;
 }
 
-/** How many item recipes reference a given component. */
+/**
+ * How many item recipes reference a given component, as a component or as
+ * packaging.
+ *
+ * Packaging counts because it is consumed just as a component is — a raw
+ * material nothing cooks with but every takeaway box needs is still in use,
+ * and deleting it would leave those recipes deducting nothing for it.
+ */
 export async function itemRecipesUsing(
   refType: ComponentType,
   refId: string,
 ): Promise<number> {
   const { db } = await connectToDatabase();
-  return db
-    .collection(ITEM_RECIPES_COLLECTION)
-    .countDocuments({ lines: { $elemMatch: { refType, refId } } });
+  return db.collection(ITEM_RECIPES_COLLECTION).countDocuments({
+    $or: [
+      { lines: { $elemMatch: { refType, refId } } },
+      { packagingLines: { $elemMatch: { refType, refId } } },
+    ],
+  });
 }
 
 /**
@@ -920,12 +934,24 @@ export async function recalcItemRecipeCosts(): Promise<number> {
 
   const ops = recipes.flatMap((recipe) => {
     const totalCost = costs.get(String(recipe._id)) ?? 0;
-    if (totalCost === recipe.totalCost) return [];
+    // Packaging is raw materials only, so it settles in one pass off the same
+    // component prices — no nesting to walk, unlike the food cost above.
+    const packagingCost = computeItemRecipeCost(
+      recipe.packagingLines ?? [],
+      components,
+    ).totalCost;
+
+    if (
+      totalCost === recipe.totalCost &&
+      packagingCost === (recipe.packagingCost ?? 0)
+    ) {
+      return [];
+    }
     return [
       {
         updateOne: {
           filter: { _id: new ObjectId(recipe._id) },
-          update: { $set: { totalCost, updatedAt: now } },
+          update: { $set: { totalCost, packagingCost, updatedAt: now } },
         },
       },
     ];

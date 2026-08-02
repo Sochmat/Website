@@ -16,6 +16,11 @@
 // until it reaches something a shelf actually has. The rule underneath both is
 // one and the same — stop at what is stocked, expand what is not.
 //
+// Packaging is deducted too, but only for the recipe actually SOLD — never for
+// a recipe reached through an `item` line. A combo ships in the combo's box;
+// the plates inside it were not packed separately, so pulling their packaging
+// down as well would take boxes off the shelf that nobody used.
+//
 // Pure logic — see recipeDemand.test.ts.
 
 import {
@@ -206,6 +211,14 @@ export function componentDemand(
 
     for (const part of perPortion.values()) {
       addTo(totals, part.refType, part.refId, part.qty * quantity);
+    }
+
+    // Packaging rides on the same sale, but is not part of `perPortion` —
+    // explode() walks components only, so nesting never reaches it.
+    for (const line of recipe?.packagingLines ?? []) {
+      const qtyUsed = Number(line?.qtyUsed);
+      if (!line?.refId || !Number.isFinite(qtyUsed) || qtyUsed <= 0) continue;
+      addTo(totals, "raw", line.refId, qtyUsed * quantity);
     }
   }
 

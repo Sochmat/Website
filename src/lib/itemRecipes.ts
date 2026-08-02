@@ -58,6 +58,21 @@ export interface ItemRecipe {
   lines: ItemRecipeLine[];
   /** Derived from the lines — never entered by hand. */
   totalCost: number;
+  /**
+   * What the item is packed in: containers, lids, bags, cutlery.
+   *
+   * Raw materials only — packaging is bought and stocked, never cooked, so
+   * there is no production item or food item that could belong here.
+   *
+   * Kept apart from `lines` rather than folded into them because it is not
+   * part of what the dish costs to make: `totalCost` is the food cost, and
+   * packaging is priced separately as `packagingCost`. It is still consumed
+   * per portion sold, so it is deducted alongside the components — see
+   * recipeDemand.ts.
+   */
+  packagingLines?: ItemRecipeLine[];
+  /** Derived from packagingLines. Excluded from totalCost, deliberately. */
+  packagingCost?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -100,6 +115,18 @@ export function toItemRecipeLine(value: unknown): ItemRecipeLine {
 /** A stored `lines` array, normalized. Anything else reads as no components. */
 export function toItemRecipeLines(value: unknown): ItemRecipeLine[] {
   return Array.isArray(value) ? value.map(toItemRecipeLine) : [];
+}
+
+/**
+ * A stored `packagingLines` array, normalized.
+ *
+ * Read as raw materials whatever the stored type says: nothing but a raw
+ * material can be written here, so a row claiming otherwise is a bad write
+ * rather than a component of another kind, and costing it as a production item
+ * of the same id would be worse than reading it as what it must have been.
+ */
+export function toPackagingLines(value: unknown): ItemRecipeLine[] {
+  return toItemRecipeLines(value).map((line) => ({ ...line, refType: "raw" }));
 }
 
 /**
@@ -268,6 +295,15 @@ export interface ItemRecipeInput {
   name?: unknown;
   variantName?: unknown;
   lines?: unknown;
+  /**
+   * Packaging rows, raw materials only.
+   *
+   * ABSENT and EMPTY mean different things. An empty array clears the recipe's
+   * packaging; leaving the key out says nothing about it, so the stored rows
+   * are left alone — which is what lets the spreadsheet importer, whose sheet
+   * has no packaging column, update a recipe without wiping it.
+   */
+  packagingLines?: unknown;
 }
 
 export type SanitizedItemRecipe = Omit<
@@ -287,6 +323,61 @@ function toNumber(value: unknown): number | null {
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Validate the packaging rows of a recipe.
+ *
+ * Undefined input returns undefined lines — "not specified", which the caller
+ * turns into leaving the stored rows untouched. An empty array is a real
+ * answer and comes back as an empty list.
+ */
+function sanitizePackagingLines(
+  value: unknown,
+  componentsByKey: ReadonlyMap<string, CostingMaterial>,
+): { lines?: ItemRecipeLine[]; error?: string } {
+  if (value === undefined || value === null) return {};
+  if (!Array.isArray(value)) return { error: "Packaging must be a list" };
+
+  const lines: ItemRecipeLine[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    const row = (entry ?? {}) as {
+      refType?: unknown;
+      refId?: unknown;
+      qtyUsed?: unknown;
+    };
+
+    // Anything but a raw material is refused outright rather than coerced:
+    // a production item reaching here means the caller is confused about what
+    // packaging is, and silently re-typing it would hide that.
+    if (row.refType !== undefined && row.refType !== "raw") {
+      return { error: "Packaging can only be raw materials" };
+    }
+
+    const refId = String(row.refId ?? "").trim();
+    if (!refId) return { error: "A packaging row has nothing selected" };
+
+    const key = componentKey("raw", refId);
+    if (!componentsByKey.has(key)) {
+      return { error: "Unknown raw material in packaging" };
+    }
+    if (seen.has(key)) {
+      return { error: "The same packaging material is listed twice" };
+    }
+    seen.add(key);
+
+    const qtyUsed = toNumber(row.qtyUsed);
+    if (qtyUsed === null) return { error: "Every packaging row needs a quantity" };
+    if (qtyUsed <= 0) {
+      return { error: "Packaging quantities must be greater than 0" };
+    }
+
+    lines.push({ refType: "raw", refId, qtyUsed });
+  }
+
+  return { lines };
 }
 
 /** What validating an `item` line needs: the other recipes, and who we are. */
@@ -394,20 +485,33 @@ export function sanitizeItemRecipe(
     lines.push({ refType: row.refType, refId, qtyUsed });
   }
 
+  const packaging = sanitizePackagingLines(input.packagingLines, componentsByKey);
+  if (packaging.error) return { error: packaging.error };
+
   const { totalCost } = computeItemRecipeCost(
     lines,
     componentsByKey,
     graph?.costsById,
   );
 
-  return {
-    doc: {
-      name,
-      nameKey: normalizeName(name),
-      variantName: variantName || undefined,
-      variantKey: variantKey || undefined,
-      lines,
-      totalCost,
-    },
+  const doc: SanitizedItemRecipe = {
+    name,
+    nameKey: normalizeName(name),
+    variantName: variantName || undefined,
+    variantKey: variantKey || undefined,
+    lines,
+    totalCost,
   };
+
+  // Added only when the caller said something about packaging, so a $set of
+  // this document leaves stored rows alone when it did not.
+  if (packaging.lines) {
+    doc.packagingLines = packaging.lines;
+    doc.packagingCost = computeItemRecipeCost(
+      packaging.lines,
+      componentsByKey,
+    ).totalCost;
+  }
+
+  return { doc };
 }

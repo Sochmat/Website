@@ -490,3 +490,72 @@ describe("componentDemand with variants", () => {
     expect(demandByRefType(demand, "raw").get("rice")).toBe(150);
   });
 });
+
+describe("componentDemand with packaging", () => {
+  const packed = (
+    name: string,
+    lines: ItemRecipeLine[],
+    packagingLines: ItemRecipeLine[],
+  ): ItemRecipe => ({ ...recipe(name, lines), packagingLines });
+
+  const BOWL = packed("Bowl", [raw("rice", 100)], [raw("box", 1), raw("lid", 1)]);
+
+  it("draws packaging down with the components, scaled by quantity", () => {
+    const { demand } = componentDemand([item("Bowl", 3)], recipesByNameKey([BOWL]));
+
+    expect(demand).toEqual([
+      { refType: "raw", refId: "rice", qty: 300 },
+      { refType: "raw", refId: "box", qty: 3 },
+      { refType: "raw", refId: "lid", qty: 3 },
+    ]);
+  });
+
+  it("sums packaging shared by two items into one figure", () => {
+    const OTHER = packed("Other", [raw("dal", 50)], [raw("box", 2)]);
+    const { demand } = componentDemand(
+      [item("Bowl", 1), item("Other", 1)],
+      recipesByNameKey([BOWL, OTHER]),
+    );
+
+    expect(demandByRefType(demand, "raw").get("box")).toBe(3);
+  });
+
+  // A combo ships in the combo's box; the plates inside it were never packed
+  // separately, so their packaging must not come off the shelf as well.
+  it("ignores the packaging of a food item reached through a component line", () => {
+    const COMBO = packed(
+      "Combo",
+      [{ refType: "item", refId: BOWL._id!, qtyUsed: 2 }],
+      [raw("bag", 1)],
+    );
+    const { demand } = componentDemand(
+      [item("Combo", 1)],
+      recipesByNameKey([BOWL, COMBO]),
+    );
+
+    const owed = demandByRefType(demand, "raw");
+    expect(owed.get("rice")).toBe(200); // the two bowls' contents
+    expect(owed.get("bag")).toBe(1); // the combo's own packaging
+    expect(owed.has("box")).toBe(false); // the bowls' boxes: never used
+    expect(owed.has("lid")).toBe(false);
+  });
+
+  it("deducts no packaging for an item whose recipe is unmapped", () => {
+    const EMPTY = packed("Empty", [], [raw("box", 1)]);
+    const { demand, unmapped } = componentDemand(
+      [item("Empty", 4)],
+      recipesByNameKey([EMPTY]),
+    );
+
+    expect(unmapped).toEqual(["Empty"]);
+    expect(demand).toEqual([]);
+  });
+
+  it("leaves a recipe with no packaging exactly as it was", () => {
+    const { demand } = componentDemand([item("Jeera Rice", 1)], RECIPES);
+    expect(demand).toEqual([
+      { refType: "raw", refId: "rice", qty: 180 },
+      { refType: "raw", refId: "jeera", qty: 2 },
+    ]);
+  });
+});

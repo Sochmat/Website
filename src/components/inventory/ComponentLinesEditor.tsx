@@ -42,28 +42,38 @@ export function toLines(draft: DraftLine[]): ItemRecipeLine[] {
  * The component list of one recipe: pick things, give each a quantity, see what
  * it costs.
  *
- * Extracted from the item-recipe form because an item's add-ons each need the
- * same editor, and they all read one shared load of the component lists —
- * `components` is passed in rather than fetched here, or a dish with six
- * add-ons would fetch the same three endpoints seven times.
+ * Extracted from the item-recipe form because each of an item's variants needs
+ * the same editor, and they all read one shared load of the component lists —
+ * `components` is passed in rather than fetched here, or a dish with three
+ * variants would fetch the same three endpoints four times.
+ *
+ * `allowItems` and `allowProduction` narrow what may be picked. Packaging uses
+ * both: it is bought and stocked, never cooked, so raw materials are the only
+ * thing that can go in a box list.
  */
 export default function ComponentLinesEditor({
   lines,
   onChange,
   components,
   allowItems,
+  allowProduction = true,
   blockedItemIds,
   onDuplicate,
+  noun = "Component",
   dense = false,
 }: {
   lines: DraftLine[];
   onChange: (next: DraftLine[]) => void;
   components: RecipeComponents;
-  /** Offer food items. False for an add-on, which is only ever raw or made. */
+  /** Offer food items. */
   allowItems: boolean;
+  /** Offer production items. False for packaging, which is only ever raw. */
+  allowProduction?: boolean;
   /** Food items that would close a loop — never offered. */
   blockedItemIds?: ReadonlySet<string>;
   onDuplicate?: () => void;
+  /** What a row is called, capitalised, for the picker and the empty state. */
+  noun?: string;
   /** Tighter presentation for a panel nested inside the main form. */
   dense?: boolean;
 }) {
@@ -143,6 +153,7 @@ export default function ComponentLinesEditor({
   const pickerOptions = useMemo(
     () =>
       [...options, ...(allowItems ? itemOptions : [])]
+        .filter((o) => allowProduction || o.refType !== "production")
         .filter((o) => !typeFilter || o.refType === typeFilter)
         .filter((o) => o.refType !== "item" || !blockedItemIds?.has(o.refId))
         .map((o) => ({
@@ -151,8 +162,11 @@ export default function ComponentLinesEditor({
           // Searched against, so typing "production" or a category finds rows.
           search: `${o.name} ${o.categoryName} ${TYPE_LABEL[o.refType]}`,
         })),
-    [options, itemOptions, allowItems, typeFilter, blockedItemIds],
+    [options, itemOptions, allowItems, allowProduction, typeFilter, blockedItemIds],
   );
+
+  /** With only one kind on offer there is nothing for a filter to narrow. */
+  const showTypeFilter = allowProduction || allowItems;
 
   const rows = lines.map((l) => {
     const key = componentKey(l.refType, l.refId);
@@ -174,7 +188,7 @@ export default function ComponentLinesEditor({
 
   const columns: ColumnsType<Row> = [
     {
-      title: "Component",
+      title: noun,
       dataIndex: "name",
       render: (value: string, row) => (
         <span className="font-medium text-gray-900">
@@ -187,24 +201,30 @@ export default function ComponentLinesEditor({
         </span>
       ),
     },
-    {
-      title: "Type",
-      dataIndex: "refType",
-      width: 150,
-      render: (value: ComponentType) => (
-        <span
-          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
-            value === "production"
-              ? "bg-[#024731]/10 text-[#024731]"
-              : value === "item"
-                ? "bg-amber-100 text-amber-800"
-                : "bg-gray-100 text-gray-700"
-          }`}
-        >
-          {TYPE_LABEL[value]}
-        </span>
-      ),
-    },
+    // Dropped when only one kind can be picked: a column of identical badges
+    // labels nothing.
+    ...(showTypeFilter
+      ? ([
+          {
+            title: "Type",
+            dataIndex: "refType",
+            width: 150,
+            render: (value: ComponentType) => (
+              <span
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                  value === "production"
+                    ? "bg-[#024731]/10 text-[#024731]"
+                    : value === "item"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                {TYPE_LABEL[value]}
+              </span>
+            ),
+          },
+        ] as ColumnsType<Row>)
+      : []),
     {
       title: "Category",
       dataIndex: "categoryName",
@@ -266,29 +286,33 @@ export default function ComponentLinesEditor({
   return (
     <div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Select
-          className="min-w-[160px]"
-          size={dense ? "small" : "middle"}
-          value={typeFilter}
-          onChange={(v) => setTypeFilter(v)}
-          aria-label="Filter components by type"
-          options={[
-            { value: "", label: "All types" },
-            { value: "raw", label: "Raw materials" },
-            { value: "production", label: "Production items" },
-            ...(allowItems
-              ? [{ value: "item", label: "Food items" }]
-              : []),
-          ]}
-        />
+        {showTypeFilter && (
+          <Select
+            className="min-w-[160px]"
+            size={dense ? "small" : "middle"}
+            value={typeFilter}
+            onChange={(v) => setTypeFilter(v)}
+            aria-label="Filter components by type"
+            options={[
+              { value: "", label: "All types" },
+              { value: "raw", label: "Raw materials" },
+              ...(allowProduction
+                ? [{ value: "production", label: "Production items" }]
+                : []),
+              ...(allowItems
+                ? [{ value: "item", label: "Food items" }]
+                : []),
+            ]}
+          />
+        )}
         <Select
           className="min-w-[240px]"
           size={dense ? "small" : "middle"}
           value={pickerValue}
           onChange={addLine}
           loading={loading}
-          aria-label="Add a component"
-          placeholder={loading ? "Loading components…" : "+ Add Component"}
+          aria-label={`Add a ${noun.toLowerCase()}`}
+          placeholder={loading ? "Loading…" : `+ Add ${noun}`}
           showSearch
           optionFilterProp="search"
           options={pickerOptions}
@@ -311,10 +335,10 @@ export default function ComponentLinesEditor({
             emptyText: (
               <div className={dense ? "py-4 text-center" : "py-8 text-center"}>
                 <p className="text-sm font-medium text-gray-900">
-                  No components yet
+                  No {noun.toLowerCase()}s yet
                 </p>
                 <p className="mt-1 text-sm text-gray-500">
-                  Use “+ Add Component” above to build it.
+                  Use “+ Add {noun}” above to build it.
                 </p>
               </div>
             ),
@@ -322,15 +346,17 @@ export default function ComponentLinesEditor({
           summary={() =>
             rows.length > 0 ? (
               <Table.Summary.Row className="bg-gray-50 font-semibold">
-                <Table.Summary.Cell index={0} colSpan={4}>
+                {/* Everything up to the Cost column, whether or not Type is
+                    among them. */}
+                <Table.Summary.Cell index={0} colSpan={columns.length - 2}>
                   <span className="text-gray-700">Total cost</span>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={4} align="right">
+                <Table.Summary.Cell index={1} align="right">
                   <span className="tabular-nums text-gray-900">
                     {formatCurrency(breakdown.totalCost)}
                   </span>
                 </Table.Summary.Cell>
-                <Table.Summary.Cell index={5} />
+                <Table.Summary.Cell index={2} />
               </Table.Summary.Row>
             ) : null
           }

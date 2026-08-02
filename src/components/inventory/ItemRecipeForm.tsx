@@ -24,15 +24,6 @@ const inputClass =
 /** Shared empty set, so an unblocked picker keeps a stable dependency. */
 const NOTHING_BLOCKED: ReadonlySet<string> = new Set();
 
-/** One add-on of the menu item this recipe defines, with its own recipe. */
-interface AddOnTarget {
-  /** Menu item id of the add-on. */
-  id: string;
-  name: string;
-  /** Its existing item recipe, when someone has already mapped it. */
-  recipeId: string | null;
-}
-
 /** One variant of this menu item, with the recipe that sizes it. */
 interface VariantTarget {
   name: string;
@@ -49,10 +40,15 @@ interface VariantTarget {
  * a recipe is a name plus components, and its costing is simply the sum of
  * the component costs.
  *
- * The menu item's add-ons are edited here too. An add-on is a menu item in its
- * own right and an order records it as its own product line, so its components
- * are saved as its OWN item recipe rather than folded into this one — see the
- * add-ons section below.
+ * An add-on is a menu item in its own right and an order records it as its own
+ * product line, so it carries its own item recipe and is mapped from its own
+ * row on the list — never from the dish that offers it.
+ *
+ * Packaging is edited here too, as one list for the whole item. It is not part
+ * of the food cost, so it is priced on its own; it IS consumed per portion, so
+ * saving writes the same list onto every recipe this form stores — the base
+ * one, and each variant — because a sale deducts from whichever recipe it
+ * resolved to. See recipeDemand.ts.
  */
 export default function ItemRecipeForm({
   recipe,
@@ -79,9 +75,18 @@ export default function ItemRecipeForm({
     })) ?? [],
   );
 
+  /** One packaging list for the whole item, variants included. */
+  const [packaging, setPackaging] = useState<DraftLine[]>(
+    (recipe?.packagingLines ?? []).map((l) => ({
+      refType: l.refType,
+      refId: l.refId,
+      qtyUsed: String(l.qtyUsed),
+    })),
+  );
+  /** Whether the user has touched packaging — see the seeding effect below. */
+  const [packagingTouched, setPackagingTouched] = useState(false);
+
   const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
-  /** Draft components per add-on, keyed by the add-on's menu item id. */
-  const [addOnLines, setAddOnLines] = useState<Record<string, DraftLine[]>>({});
   /** Draft components per variant, keyed by the variant's label. */
   const [variantLines, setVariantLines] = useState<Record<string, DraftLine[]>>(
     {},
@@ -101,7 +106,7 @@ export default function ItemRecipeForm({
         const data = await res.json();
         if (!cancelled && data.success) setMenuItems(data.items ?? []);
       } catch {
-        /* the add-ons section simply stays empty */
+        /* the variants section simply stays empty */
       }
     })();
     return () => {
@@ -113,45 +118,6 @@ export default function ItemRecipeForm({
     () => computeItemRecipeCost(toLines(lines), costsByKey, itemCostsById),
     [lines, costsByKey, itemCostsById],
   );
-
-  /** Recipes by the key a menu item resolves to, for finding an add-on's own. */
-  const recipeByNameKey = useMemo(
-    () =>
-      new Map(
-        itemRecipes.map((r) => [
-          r.nameKey || normalizeMaterialName(r.name),
-          r,
-        ]),
-      ),
-    [itemRecipes],
-  );
-
-  /**
-   * The add-ons of the menu item this recipe is for.
-   *
-   * Matched by name, the same link the rest of the screen uses — so typing a
-   * name on /new brings that item's add-ons into view before it is even saved.
-   */
-  const addOns = useMemo<AddOnTarget[]>(() => {
-    const key = normalizeMaterialName(name);
-    if (!key) return [];
-
-    const menuItem = menuItems.find(
-      (m) => normalizeMaterialName(m.name) === key,
-    );
-    if (!menuItem?.addOnIds?.length) return [];
-
-    const byId = new Map(menuItems.map((m) => [String(m._id), m]));
-    return menuItem.addOnIds
-      .map((id) => byId.get(id))
-      .filter((m): m is MenuItemSummary => !!m)
-      .map((m) => ({
-        id: String(m._id),
-        name: m.name,
-        recipeId:
-          recipeByNameKey.get(normalizeMaterialName(m.name))?._id ?? null,
-      }));
-  }, [name, menuItems, recipeByNameKey]);
 
   /** Recipes by (name, variant), for finding the one that sizes a variant. */
   const recipeByLookupKey = useMemo(
@@ -224,25 +190,60 @@ export default function ItemRecipeForm({
   }, [variants, recipeByLookupKey, name]);
 
   /**
-   * The component graph as this form would leave it: what is stored, with the
-   * rows currently on screen standing in for the recipes being edited.
+   * Seed packaging from whatever is already stored against this item's name.
    *
-   * The drafts matter because the recipe and its add-ons are saved together. A
-   * loop can be assembled out of two panels that are each innocent against
-   * stored data alone — put "Extra Jeera Rice" into the plate, then the plate
-   * into "Extra Jeera Rice" — and neither picker would see it coming from the
-   * stored graph.
+   * An item defined by its variants has no base recipe for the page to load,
+   * so the form arrives with `recipe` null and the packaging sitting on the
+   * variant recipes instead. Guarded on "has the user touched it" rather than
+   * on emptiness alone, or deleting the last row would fill it straight back in.
+   */
+  useEffect(() => {
+    if (packagingTouched || packaging.length > 0) return;
+
+    const key = normalizeMaterialName(name);
+    if (!key) return;
+
+    const stored = itemRecipes.find(
+      (r) =>
+        (r.nameKey || normalizeMaterialName(r.name)) === key &&
+        (r.packagingLines?.length ?? 0) > 0,
+    );
+    if (!stored?.packagingLines) return;
+
+    setPackaging(
+      stored.packagingLines.map((l) => ({
+        refType: l.refType,
+        refId: l.refId,
+        qtyUsed: String(l.qtyUsed),
+      })),
+    );
+  }, [name, itemRecipes, packagingTouched, packaging.length]);
+
+  const changePackaging = useCallback((next: DraftLine[]) => {
+    setPackaging(next);
+    setPackagingTouched(true);
+    setFormError(null);
+  }, []);
+
+  const packagingBreakdown = useMemo(
+    () => computeItemRecipeCost(toLines(packaging), costsByKey),
+    [packaging, costsByKey],
+  );
+
+  /**
+   * The component graph as this form would leave it: what is stored, with the
+   * rows currently on screen standing in for the recipe being edited.
+   *
+   * The draft matters because a loop can be assembled out of rows that are
+   * innocent against stored data alone — put a food item into this recipe here,
+   * having just pointed that item at this one, and the stored graph would not
+   * yet show the chain coming back.
    */
   const draftLinesById = useMemo(() => {
     const graph = new Map(itemLinesById);
     if (recipe?._id) graph.set(String(recipe._id), toLines(lines));
-    for (const addOn of addOns) {
-      if (addOn.recipeId) {
-        graph.set(addOn.recipeId, toLines(addOnLines[addOn.id] ?? []));
-      }
-    }
     return graph;
-  }, [itemLinesById, recipe?._id, lines, addOns, addOnLines]);
+  }, [itemLinesById, recipe?._id, lines]);
 
   /**
    * Per recipe on this screen, the food items it may not be built on: itself,
@@ -254,10 +255,7 @@ export default function ItemRecipeForm({
    * can point at it, so no chain can come back.
    */
   const blockedByRecipeId = useMemo(() => {
-    const targets = [
-      ...(recipe?._id ? [String(recipe._id)] : []),
-      ...addOns.map((a) => a.recipeId).filter((id): id is string => !!id),
-    ];
+    const targets = recipe?._id ? [String(recipe._id)] : [];
 
     const map = new Map<string, ReadonlySet<string>>();
     for (const selfId of targets) {
@@ -270,43 +268,13 @@ export default function ItemRecipeForm({
       map.set(selfId, blocked);
     }
     return map;
-  }, [draftLinesById, recipe?._id, addOns]);
+  }, [draftLinesById, recipe?._id]);
 
   const blockedFor = useCallback(
     (id: string | null): ReadonlySet<string> =>
       (id ? blockedByRecipeId.get(id) : undefined) ?? NOTHING_BLOCKED,
     [blockedByRecipeId],
   );
-
-  /**
-   * Seed each add-on's rows from its stored recipe, once.
-   *
-   * Keyed on the add-on id and never overwritten, so a reload of the recipe
-   * list mid-edit cannot wipe rows the user has just typed.
-   */
-  useEffect(() => {
-    setAddOnLines((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const addOn of addOns) {
-        if (next[addOn.id]) continue;
-        const stored = recipeByNameKey.get(normalizeMaterialName(addOn.name));
-        next[addOn.id] =
-          stored?.lines.map((l) => ({
-            refType: l.refType,
-            refId: l.refId,
-            qtyUsed: String(l.qtyUsed),
-          })) ?? [];
-        changed = true;
-      }
-      return changed ? next : current;
-    });
-  }, [addOns, recipeByNameKey]);
-
-  const setAddOn = useCallback((id: string, next: DraftLine[]) => {
-    setAddOnLines((current) => ({ ...current, [id]: next }));
-    setFormError(null);
-  }, []);
 
   /**
    * The rows a size that nobody has mapped starts from: whatever the first
@@ -386,13 +354,18 @@ export default function ItemRecipeForm({
     optionsByKey.get(`${line.refType}:${line.refId}`)?.name ?? "a row";
 
   /**
-   * Save the recipe, then every add-on that has components.
+   * Packaging as the API takes it, sent with every recipe this form writes.
    *
-   * The add-ons go through the bulk endpoint, which re-validates and costs each
-   * one exactly as the single-recipe endpoints do. An add-on cleared back to no
-   * components has its recipe deleted: an empty recipe cannot be stored, and
-   * leaving the old one would keep deducting components nobody still lists.
+   * Always sent, empty included — an empty list is how packaging gets cleared,
+   * and the API only leaves stored rows alone when the key is absent entirely.
    */
+  const packagingPayload = packaging.map((l) => ({
+    refType: l.refType,
+    refId: l.refId,
+    qtyUsed: l.qtyUsed,
+  }));
+
+  /** Save the recipe, then every variant that has components. */
   const handleSave = async () => {
     setNameError(name.trim() ? null : "Name is required");
     if (!name.trim()) return;
@@ -421,24 +394,6 @@ export default function ItemRecipeForm({
       return;
     }
 
-    for (const addOn of addOns) {
-      const draft = addOnLines[addOn.id] ?? [];
-      const badAddOn = badQuantity(draft);
-      if (badAddOn) {
-        setFormError(
-          `Enter a quantity greater than 0 for ${labelFor(badAddOn)} in “${addOn.name}”`,
-        );
-        return;
-      }
-      const fractionalAddOn = fractionalItem(draft);
-      if (fractionalAddOn) {
-        setFormError(
-          `${labelFor(fractionalAddOn)} in “${addOn.name}” must be a whole number of portions`,
-        );
-        return;
-      }
-    }
-
     for (const variant of variants) {
       const draft = variantDraft(variant);
       const badVariant = badQuantity(draft);
@@ -455,6 +410,14 @@ export default function ItemRecipeForm({
         );
         return;
       }
+    }
+
+    const badPackaging = badQuantity(packaging);
+    if (badPackaging) {
+      setFormError(
+        `Enter a quantity greater than 0 for ${labelFor(badPackaging)} in packaging`,
+      );
+      return;
     }
     setFormError(null);
 
@@ -479,6 +442,7 @@ export default function ItemRecipeForm({
                 refId: l.refId,
                 qtyUsed: l.qtyUsed,
               })),
+              packagingLines: packagingPayload,
             }),
           },
         );
@@ -493,12 +457,6 @@ export default function ItemRecipeForm({
       if (variantError) {
         // The recipe itself is saved; say so rather than implying nothing was.
         setFormError(`Recipe saved, but its variants were not: ${variantError}`);
-        return;
-      }
-
-      const addOnError = await saveAddOns();
-      if (addOnError) {
-        setFormError(`Recipe saved, but its add-ons were not: ${addOnError}`);
         return;
       }
 
@@ -554,6 +512,9 @@ export default function ItemRecipeForm({
             name: name.trim(),
             variantName: variant.name,
             lines: payload,
+            // Every size ships in the same box, so each variant recipe carries
+            // its own copy — a sale deducts from whichever one it resolved to.
+            packagingLines: packagingPayload,
           }),
         },
       );
@@ -562,59 +523,6 @@ export default function ItemRecipeForm({
         return `“${variant.name}”: ${data.message ?? "could not be saved"}`;
       }
     }
-    return null;
-  };
-
-  /**
-   * Writes the add-on recipes. Returns a message on failure, null on success.
-   *
-   * One request per add-on, through the ordinary single-recipe endpoints
-   * rather than the bulk one. Bulk deliberately skips the self/loop check —
-   * it serves the importer, where a sheet may be in the middle of breaking an
-   * existing loop — and an add-on that can now name a food item needs exactly
-   * that check. There are only ever a handful of add-ons on a dish.
-   */
-  const saveAddOns = async (): Promise<string | null> => {
-    for (const addOn of addOns) {
-      const draft = addOnLines[addOn.id] ?? [];
-      const payload = draft.map((l) => ({
-        refType: l.refType,
-        refId: l.refId,
-        qtyUsed: l.qtyUsed,
-      }));
-
-      // Cleared back to nothing: drop the recipe rather than store an empty
-      // one, which could not be saved anyway and would keep deducting
-      // components nobody still lists.
-      if (payload.length === 0) {
-        if (!addOn.recipeId) continue;
-        const res = await fetch(
-          `/api/inventory/item-recipes/${addOn.recipeId}`,
-          { method: "DELETE" },
-        );
-        const data = await res.json();
-        if (!data.success) {
-          return `“${addOn.name}”: ${data.message ?? "could not be cleared"}`;
-        }
-        continue;
-      }
-
-      const res = await fetch(
-        addOn.recipeId
-          ? `/api/inventory/item-recipes/${addOn.recipeId}`
-          : "/api/inventory/item-recipes",
-        {
-          method: addOn.recipeId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: addOn.name, lines: payload }),
-        },
-      );
-      const data = await res.json();
-      if (!data.success) {
-        return `“${addOn.name}”: ${data.message ?? "could not be saved"}`;
-      }
-    }
-
     return null;
   };
 
@@ -667,6 +575,21 @@ export default function ItemRecipeForm({
                 ? `across ${variants.length} variant${variants.length === 1 ? "" : "s"}`
                 : `across ${lines.length} component${lines.length === 1 ? "" : "s"}`}
             </div>
+          </div>
+
+          {/* Packaging is not food cost, so it is quoted beside the figure
+              above rather than folded into it — a food-cost percentage that
+              silently included boxes would not be one. */}
+          <div className="mt-3 flex items-baseline justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5">
+            <span className="text-xs font-medium text-gray-600">
+              Packaging
+              <span className="ml-1 text-gray-400">
+                ({packaging.length} material{packaging.length === 1 ? "" : "s"})
+              </span>
+            </span>
+            <span className="tabular-nums text-sm font-semibold text-gray-900">
+              {formatCurrency(packagingBreakdown.totalCost)}
+            </span>
           </div>
         </section>
       </div>
@@ -786,74 +709,36 @@ export default function ItemRecipeForm({
         </section>
       )}
 
-      {addOns.length > 0 && (
-        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-              Add-ons
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Offered with this item on the menu. Each one is ordered as a
-              product in its own right, so it carries its own components and is
-              deducted separately — not as part of the plate above. When an
-              add-on is a portion of a dish you already have a recipe for, add
-              that dish as a food item instead of listing its ingredients again.
-            </p>
-          </div>
+      {/* Shown for every item, variants or not: the box a dish goes out in is
+          the same box whatever size was ordered, so it is one list either way. */}
+      <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Packaging
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            What this item is packed in — containers, lids, bags, cutlery. Raw
+            materials only, since packaging is bought rather than cooked. It is
+            deducted per portion sold like any component, but kept out of the
+            costing above: this is packaging cost, not food cost.
+            {hasVariants && " One list for every variant."}
+          </p>
+        </div>
 
-          <Collapse
-            className="mt-4 bg-white"
-            items={addOns.map((addOn) => {
-              const draft = addOnLines[addOn.id] ?? [];
-              const cost = computeItemRecipeCost(
-                toLines(draft),
-                costsByKey,
-                itemCostsById,
-              ).totalCost;
-
-              return {
-                key: addOn.id,
-                label: (
-                  <div className="flex flex-wrap items-center justify-between gap-2 pr-2">
-                    <span className="font-medium text-gray-900">
-                      {addOn.name}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      {draft.length === 0 ? (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                          not mapped
-                        </span>
-                      ) : (
-                        <span className="text-xs text-gray-600">
-                          {draft.length} component
-                          {draft.length === 1 ? "" : "s"}
-                        </span>
-                      )}
-                      <span className="tabular-nums text-sm font-semibold text-[#024731]">
-                        {formatCurrency(cost)}
-                      </span>
-                    </span>
-                  </div>
-                ),
-                children: (
-                  <ComponentLinesEditor
-                    lines={draft}
-                    onChange={(next) => setAddOn(addOn.id, next)}
-                    components={components}
-                    // An add-on is often a portion of a dish you already have a
-                    // recipe for, so it may name a food item — one line, rather
-                    // than that dish's ingredients typed out a second time.
-                    allowItems
-                    blockedItemIds={blockedFor(addOn.recipeId)}
-                    onDuplicate={notifyDuplicate}
-                    dense
-                  />
-                ),
-              };
-            })}
+        <div className="mt-4">
+          <ComponentLinesEditor
+            lines={packaging}
+            onChange={changePackaging}
+            components={components}
+            allowItems={false}
+            allowProduction={false}
+            noun="Packaging material"
+            onDuplicate={() =>
+              messageApi.info("That material is already in the packaging")
+            }
           />
-        </section>
-      )}
+        </div>
+      </section>
 
       {formError && (
         <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">

@@ -10,6 +10,8 @@ import {
   ITEM_RECIPE_COLUMNS,
   ITEM_RECIPE_COMPONENT_COLUMNS,
   ITEM_RECIPE_COMPONENT_SHEET,
+  ITEM_RECIPE_PACKAGING_COLUMNS,
+  ITEM_RECIPE_PACKAGING_SHEET,
   ITEM_RECIPE_REQUIRED_COLUMNS,
   ITEM_RECIPE_SHEET,
   PRODUCTION_ITEM_COLUMNS,
@@ -30,6 +32,7 @@ const PRODUCTION_ITEM_WIDTHS = [28, 18, 16, 16, 18, 14, 20];
 const PRODUCTION_RECIPE_WIDTHS = [28, 18, 30, 14];
 const ITEM_RECIPE_WIDTHS = [32, 16, 20];
 const ITEM_RECIPE_COMPONENT_WIDTHS = [30, 16, 18, 30, 14];
+const ITEM_RECIPE_PACKAGING_WIDTHS = [30, 16, 30, 14];
 
 /** Case-insensitive sheet lookup — Excel preserves case, users don't. */
 function findSheet(
@@ -272,6 +275,14 @@ export async function parseProductionWorkbook(data: ArrayBuffer): Promise<{
 /** Display name for every component an item recipe may reference, by `type:id`. */
 export type ComponentNames = ReadonlyMap<string, string>;
 
+/**
+ * Export item recipes to xlsx — recipes, their components, their packaging.
+ *
+ * The Packaging sheet is always written, even with nothing on it: an upload
+ * treats a present-but-empty sheet as "these recipes pack in nothing", so
+ * leaving it out of an export with no packaging would make a round-trip of
+ * that file mean something different from the file itself.
+ */
 export async function buildItemRecipeWorkbook(
   recipes: ItemRecipe[],
   componentNameByKey: ComponentNames,
@@ -289,6 +300,12 @@ export async function buildItemRecipeWorkbook(
     ITEM_RECIPE_COMPONENT_COLUMNS,
     ITEM_RECIPE_COMPONENT_WIDTHS,
   );
+  const packagingSheet = newSheet(
+    wb,
+    ITEM_RECIPE_PACKAGING_SHEET,
+    ITEM_RECIPE_PACKAGING_COLUMNS,
+    ITEM_RECIPE_PACKAGING_WIDTHS,
+  );
 
   for (const recipe of recipes) {
     // Blank Variant marks the item's base recipe; a size carries its label, so
@@ -301,6 +318,14 @@ export async function buildItemRecipeWorkbook(
         variant,
         COMPONENT_TYPE_LABELS[line.refType],
         componentNameByKey.get(componentKey(line.refType, line.refId)) ?? "",
+        line.qtyUsed,
+      ]);
+    }
+    for (const line of recipe.packagingLines ?? []) {
+      packagingSheet.addRow([
+        recipe.name,
+        variant,
+        componentNameByKey.get(componentKey("raw", line.refId)) ?? "",
         line.qtyUsed,
       ]);
     }
@@ -329,6 +354,12 @@ export async function buildItemRecipeTemplateWorkbook(
     ITEM_RECIPE_COMPONENT_SHEET,
     ITEM_RECIPE_COMPONENT_COLUMNS,
     ITEM_RECIPE_COMPONENT_WIDTHS,
+  );
+  const packagingSheet = newSheet(
+    wb,
+    ITEM_RECIPE_PACKAGING_SHEET,
+    ITEM_RECIPE_PACKAGING_COLUMNS,
+    ITEM_RECIPE_PACKAGING_WIDTHS,
   );
 
   recipeSheet.addRow(["Veg Thali", "", ""]);
@@ -373,14 +404,26 @@ export async function buildItemRecipeTemplateWorkbook(
     };
   }
 
+  // Both sizes go out in the same box, which is why each carries its own row
+  // rather than the base recipe's standing in for the pair.
+  packagingSheet.addRow(["Veg Thali", "", materialNames[0] ?? "Meal Tray", 1]);
+  packagingSheet.addRow(["Veg Thali", "Large", materialNames[0] ?? "Meal Tray", 1]);
+  for (const n of [2, 3]) {
+    packagingSheet.getRow(n).font = {
+      italic: true,
+      color: { argb: "FF888888" },
+    };
+  }
+
   const notes = wb.addWorksheet("Instructions");
   notes.getColumn(1).width = 100;
   notes.addRows([
     ["How to use this template"],
     [""],
-    ["1. Delete the example rows on BOTH sheets before uploading."],
-    [`2. '${ITEM_RECIPE_SHEET}' lists the recipes; '${ITEM_RECIPE_COMPONENT_SHEET}' lists what goes into them.`],
-    ["   Recipe Name links the two — spell it identically on both sheets."],
+    ["1. Delete the example rows on ALL THREE sheets before uploading."],
+    [`2. '${ITEM_RECIPE_SHEET}' lists the recipes; '${ITEM_RECIPE_COMPONENT_SHEET}' lists what goes into them;`],
+    [`   '${ITEM_RECIPE_PACKAGING_SHEET}' lists what they go out in.`],
+    ["   Recipe Name links them — spell it identically on every sheet."],
     ["3. Name is matched against existing item recipes, ignoring case and"],
     ["   spacing. A match updates that recipe; no match creates a new one."],
     ["3a. Variant is the size, for items that have them — leave it BLANK for the"],
@@ -400,6 +443,20 @@ export async function buildItemRecipeTemplateWorkbook(
     ["   it is a count of whole portions — 1, 2, 3 — never a fraction."],
     ["8. 'Costing (calculated)' is ignored on upload. The cost is always derived"],
     ["   from the components, so editing it has no effect."],
+    [`9. '${ITEM_RECIPE_PACKAGING_SHEET}' is the container, lid, bag or cutlery an item goes out in.`],
+    [`   Material must match a "${COMPONENT_TYPE_LABELS.raw}" name from the list below —`],
+    ["   packaging is bought and stocked, never cooked, so there is no Type column."],
+    ["10. Packaging is deducted from stock per portion sold, exactly like a"],
+    ["   component, but it is NOT part of 'Costing (calculated)'. That figure is"],
+    ["   food cost; packaging is costed on its own."],
+    [`11. A recipe's packaging is REPLACED by its rows on the '${ITEM_RECIPE_PACKAGING_SHEET}' sheet,`],
+    ["   so a recipe with no rows there ends up with no packaging. Unlike the"],
+    [`   ${ITEM_RECIPE_COMPONENT_SHEET} sheet, that is allowed — plenty of items are not packed.`],
+    [`12. Leaving the '${ITEM_RECIPE_PACKAGING_SHEET}' sheet out of the file ENTIRELY is different: stored`],
+    ["   packaging is then left exactly as it is. That is what lets a file"],
+    [`   exported before the '${ITEM_RECIPE_PACKAGING_SHEET}' sheet existed still upload safely.`],
+    ["13. An item with sizes packs each size separately — give every Variant its"],
+    ["   own row, even when they all use the same box."],
   ]);
   notes.getRow(1).font = { bold: true, size: 14 };
   addValidNames(
@@ -420,14 +477,33 @@ export async function buildItemRecipeTemplateWorkbook(
     itemRecipeNames,
     "(none yet — add item recipes before building one on another)",
   );
+  // The same list as the raw materials above, repeated under its own heading:
+  // whoever is filling in the Packaging sheet should not have to work out that
+  // "Material" there and Type "Raw Material" here draw on one list.
+  addValidNames(
+    notes,
+    `Valid materials — '${ITEM_RECIPE_PACKAGING_SHEET}' sheet:`,
+    materialNames,
+    "(none yet — add raw materials before mapping packaging)",
+  );
 
   const buffer = await wb.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
 
+/**
+ * Read an item-recipe workbook.
+ *
+ * `packagingRows` comes back undefined when the workbook has no Packaging
+ * sheet at all, which the importer reads as "says nothing about packaging" and
+ * leaves the stored rows alone. A sheet that is present but has no data rows
+ * comes back as an empty array, which means something quite different — see
+ * planItemRecipeImport.
+ */
 export async function parseItemRecipeWorkbook(data: ArrayBuffer): Promise<{
   recipeRows: SheetRow[];
   componentRows: SheetRow[];
+  packagingRows?: SheetRow[];
   error?: string;
 }> {
   const empty = { recipeRows: [], componentRows: [] };
@@ -460,7 +536,25 @@ export async function parseItemRecipeWorkbook(data: ArrayBuffer): Promise<{
   );
   if (components.error) return { ...empty, error: components.error };
 
-  return { recipeRows: recipes.rows, componentRows: components.rows };
+  // Optional, unlike the two above: a workbook exported before this sheet
+  // existed is still a valid upload.
+  const packagingSheet = findSheet(wb, ITEM_RECIPE_PACKAGING_SHEET);
+  let packagingRows: SheetRow[] | undefined;
+  if (packagingSheet) {
+    const packaging = readSheetRows(
+      packagingSheet,
+      ITEM_RECIPE_PACKAGING_COLUMNS,
+      ITEM_RECIPE_PACKAGING_COLUMNS,
+    );
+    if (packaging.error) return { ...empty, error: packaging.error };
+    packagingRows = packaging.rows;
+  }
+
+  return {
+    recipeRows: recipes.rows,
+    componentRows: components.rows,
+    packagingRows,
+  };
 }
 
 // ---------------------------------------------------------------------------

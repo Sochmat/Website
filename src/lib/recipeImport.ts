@@ -103,6 +103,7 @@ export const PRODUCTION_RECIPE_REQUIRED_COLUMNS = [
 
 export const ITEM_RECIPE_SHEET = "Item Recipes";
 export const ITEM_RECIPE_COMPONENT_SHEET = "Components";
+export const ITEM_RECIPE_PACKAGING_SHEET = "Packaging";
 
 /**
  * "Variant" is blank for an item's base recipe and carries the size otherwise.
@@ -121,6 +122,22 @@ export const ITEM_RECIPE_COMPONENT_COLUMNS = [
   "Variant",
   "Type",
   "Component",
+  "Qty Used",
+] as const;
+
+/**
+ * Packaging lives on its own sheet rather than as a fourth Type on the
+ * Components sheet.
+ *
+ * Type there decides which list a name is looked up in, and packaging is not a
+ * fourth list — it is raw materials again, kept apart because it is not part of
+ * what the dish costs to make. A sheet of its own says that plainly, and needs
+ * no Type column at all.
+ */
+export const ITEM_RECIPE_PACKAGING_COLUMNS = [
+  "Recipe Name",
+  "Variant",
+  "Material",
   "Qty Used",
 ] as const;
 
@@ -467,6 +484,14 @@ export interface ItemRecipeImportPlan {
  * @param storedDepsByNameKey         nameKey -> item-recipe nameKeys it is
  *                                    already built on, for recipes the sheet
  *                                    does not touch
+ * @param packagingRows               rows of the Packaging sheet, or undefined
+ *                                    when the workbook has none. UNDEFINED AND
+ *                                    EMPTY DIFFER: undefined leaves stored
+ *                                    packaging alone, so a sheet exported
+ *                                    before that sheet existed still uploads
+ *                                    without wiping it; an empty list is a
+ *                                    present sheet saying every recipe it
+ *                                    covers now packs in nothing.
  */
 export function planItemRecipeImport(
   recipeRows: SheetRow[],
@@ -477,10 +502,13 @@ export function planItemRecipeImport(
   componentsByKey: ReadonlyMap<string, CostingMaterial>,
   graph?: ItemRecipeGraph,
   storedDepsByNameKey: ReadonlyMap<string, readonly string[]> = new Map(),
+  packagingRows?: SheetRow[],
 ): ItemRecipeImportPlan {
   const plan: ItemRecipeImportPlan = { creates: [], updates: [], errors: [] };
 
   const groups = new Map<string, LineGroup<ItemRecipeLine>>();
+  const packagingGroups = new Map<string, LineGroup<ItemRecipeLine>>();
+  const seenPackaging = new Set<string>();
   const brokenRecipes = new Set<string>();
   const seenLine = new Set<string>();
   // recipeKey -> the item-recipe nameKeys its sheet rows name, for the loop
@@ -561,6 +589,53 @@ export function planItemRecipeImport(
     }
   });
 
+  // Packaging: raw materials only, so no Type to read and no loop to check —
+  // nothing here can name another recipe.
+  (packagingRows ?? []).forEach((row, index) => {
+    const rowNumber = rowNumberOf(row, index);
+    const recipeName = text(row["Recipe Name"]);
+    const rowVariant = text(row["Variant"]);
+    const recipeKey = rowLookupKey(recipeName, rowVariant);
+
+    const fail = (message: string) => {
+      plan.errors.push({
+        sheet: ITEM_RECIPE_PACKAGING_SHEET,
+        rowNumber,
+        name: recipeName,
+        message,
+      });
+      if (recipeKey) brokenRecipes.add(recipeKey);
+    };
+
+    if (!recipeName) return fail("Recipe Name is required");
+
+    const materialName = text(row["Material"]);
+    if (!materialName) return fail("Material is required");
+
+    const refId = rawMaterialIdsByNameKey.get(
+      normalizeMaterialName(materialName),
+    );
+    if (!refId) return fail(`Unknown raw material "${materialName}"`);
+
+    const qtyUsed = toNumber(row["Qty Used"]);
+    if (qtyUsed === null) return fail("Qty Used is required");
+    if (qtyUsed <= 0) return fail("Qty Used must be greater than 0");
+
+    const lineKey = `${recipeKey}|${refId}`;
+    if (seenPackaging.has(lineKey)) {
+      return fail(`"${materialName}" is listed twice for this recipe`);
+    }
+    seenPackaging.add(lineKey);
+
+    const group = packagingGroups.get(recipeKey) ?? {
+      lines: [],
+      rowNumber,
+      name: recipeName,
+    };
+    group.lines.push({ refType: "raw", refId, qtyUsed });
+    packagingGroups.set(recipeKey, group);
+  });
+
   // The graph the finished import would leave behind: what the sheet says for
   // the recipes it touches, what is already stored for everything else.
   const looped = loopedNameKeys(storedDepsByNameKey, sheetDeps);
@@ -614,7 +689,17 @@ export function planItemRecipeImport(
     }
 
     const { doc, error } = sanitizeItemRecipe(
-      { name, variantName, lines },
+      {
+        name,
+        variantName,
+        lines,
+        // Omitted entirely when the workbook has no Packaging sheet, which is
+        // what keeps stored packaging from being wiped by an older sheet. A
+        // recipe with no rows on a sheet that IS there packs in nothing.
+        ...(packagingRows
+          ? { packagingLines: packagingGroups.get(key)?.lines ?? [] }
+          : {}),
+      },
       componentsByKey,
       normalizeMaterialName,
       // No selfId: loops are checked above across the whole batch, where the
@@ -632,6 +717,18 @@ export function planItemRecipeImport(
     if (claimed.has(key) || brokenRecipes.has(key)) continue;
     plan.errors.push({
       sheet: ITEM_RECIPE_COMPONENT_SHEET,
+      rowNumber: group.rowNumber,
+      name: group.name,
+      message: `No matching row on the ${ITEM_RECIPE_SHEET} sheet`,
+    });
+  }
+
+  // Packaging for a recipe the sheet never lists would otherwise be typed and
+  // silently dropped — the same trap the loop above catches for components.
+  for (const [key, group] of packagingGroups) {
+    if (claimed.has(key) || brokenRecipes.has(key)) continue;
+    plan.errors.push({
+      sheet: ITEM_RECIPE_PACKAGING_SHEET,
       rowNumber: group.rowNumber,
       name: group.name,
       message: `No matching row on the ${ITEM_RECIPE_SHEET} sheet`,

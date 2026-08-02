@@ -372,3 +372,84 @@ describe("sanitizeItemRecipe with a food item", () => {
     ).toBe("Unknown food item in recipe");
   });
 });
+
+describe("sanitizeItemRecipe packaging", () => {
+  const sanitize = (packagingLines?: unknown) =>
+    sanitizeItemRecipe(
+      {
+        name: "Dal Thali",
+        lines: [{ refType: "raw", refId: "dal", qtyUsed: 100 }],
+        ...(packagingLines === undefined ? {} : { packagingLines }),
+      },
+      COMPONENTS,
+      normalizeMaterialName,
+    );
+
+  it("accepts raw materials and prices them apart from the food cost", () => {
+    const { doc, error } = sanitize([
+      { refType: "raw", refId: "dal", qtyUsed: 50 }, // 50 × 0.12 = ₹6
+    ]);
+    expect(error).toBeUndefined();
+    expect(doc?.packagingCost).toBe(6);
+    // The food cost is the components alone — packaging is not folded in.
+    expect(doc?.totalCost).toBe(12);
+  });
+
+  it("defaults a row with no type to a raw material", () => {
+    expect(sanitize([{ refId: "dal", qtyUsed: 1 }]).doc?.packagingLines).toEqual([
+      { refType: "raw", refId: "dal", qtyUsed: 1 },
+    ]);
+  });
+
+  it("refuses a production item", () => {
+    expect(sanitize([{ refType: "production", refId: "base", qtyUsed: 1 }]).error)
+      .toBe("Packaging can only be raw materials");
+  });
+
+  it("refuses a food item", () => {
+    expect(sanitize([{ refType: "item", refId: "thali", qtyUsed: 1 }]).error).toBe(
+      "Packaging can only be raw materials",
+    );
+  });
+
+  it("refuses an unknown raw material", () => {
+    expect(sanitize([{ refType: "raw", refId: "nope", qtyUsed: 1 }]).error).toBe(
+      "Unknown raw material in packaging",
+    );
+  });
+
+  it("refuses the same material twice", () => {
+    expect(
+      sanitize([
+        { refType: "raw", refId: "dal", qtyUsed: 1 },
+        { refType: "raw", refId: "dal", qtyUsed: 2 },
+      ]).error,
+    ).toBe("The same packaging material is listed twice");
+  });
+
+  it("refuses a quantity of zero or less", () => {
+    expect(sanitize([{ refType: "raw", refId: "dal", qtyUsed: 0 }]).error).toBe(
+      "Packaging quantities must be greater than 0",
+    );
+  });
+
+  it("refuses a missing quantity", () => {
+    expect(sanitize([{ refType: "raw", refId: "dal" }]).error).toBe(
+      "Every packaging row needs a quantity",
+    );
+  });
+
+  it("clears packaging on an empty list", () => {
+    const { doc } = sanitize([]);
+    expect(doc?.packagingLines).toEqual([]);
+    expect(doc?.packagingCost).toBe(0);
+  });
+
+  // The importer's sheet has no packaging column, so its rows omit the key —
+  // the stored rows must survive a $set of this document.
+  it("says nothing about packaging when the key is absent", () => {
+    const { doc } = sanitize();
+    expect(doc).not.toHaveProperty("packagingLines");
+    expect(doc).not.toHaveProperty("packagingCost");
+  });
+});
