@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -19,25 +19,9 @@ import {
   CloseOutlined,
 } from "@ant-design/icons";
 import { useAdminRole } from "@/lib/useAdminRole";
+import { inventoryGateRedirect, useAdminToken } from "@/lib/adminClientAuth";
 
 const SETUP_PREFIX = "/inventory-management/setup";
-
-// Read the admin token the same way `useAdminRole` reads the role: through
-// useSyncExternalStore, so the server snapshot is null and the client picks up
-// the real value on hydration. This replaces the usual mounted-flag effect and
-// keeps the component free of set-state-in-effect.
-const subscribeToken = () => () => {};
-const getTokenSnapshot = (): string | null =>
-  typeof window === "undefined" ? null : window.localStorage.getItem("adminToken");
-const getTokenServerSnapshot = (): string | null => null;
-
-function useAdminToken(): string | null {
-  return useSyncExternalStore(
-    subscribeToken,
-    getTokenSnapshot,
-    getTokenServerSnapshot,
-  );
-}
 
 // Sidebar navigation, in display order. A `children` entry renders as a
 // collapsible group; everything else is a plain link.
@@ -116,15 +100,13 @@ export default function InventoryManagementLayout({
   const setupActive = pathname.startsWith(SETUP_PREFIX);
   const setupOpen = setupToggled ?? setupActive;
 
+  // `token` is undefined until localStorage has actually been read (the server
+  // render and the hydration pass that matches it), and inventoryGateRedirect
+  // stays put for that state. Redirecting there is what used to bounce a
+  // perfectly valid session to the login page on every reload.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!token) {
-      router.replace("/admin/login");
-      return;
-    }
-    // The shop role is scoped to Menu and Orders in the admin console; it has
-    // no business in inventory. Send it back to where it belongs.
-    if (role === "shop") router.replace("/admin/orders");
+    const target = inventoryGateRedirect(token, role);
+    if (target) router.replace(target);
   }, [token, role, router]);
 
   const handleLogout = async () => {
@@ -139,9 +121,9 @@ export default function InventoryManagementLayout({
     router.replace("/admin/login");
   };
 
-  // Null on the server and during hydration; the real value arrives on the
-  // client render, at which point the effect above has already redirected if
-  // there is no session.
+  // Undefined on the server and during hydration (so the two renders agree);
+  // the real value arrives on the client render right after, at which point the
+  // effect above has redirected if there is genuinely no session.
   if (!token) return null;
 
   const linkClass = (active: boolean, indented = false) =>
