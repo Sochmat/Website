@@ -80,8 +80,10 @@ async function namedOrderItems(
 
   const nameById = new Map(docs.map((d) => [String(d._id), String(d.name ?? "")]));
 
-  return products.map(({ productId, name, quantity }) => ({
+  return products.map(({ productId, name, variantName, quantity }) => ({
     name: (productId ? nameById.get(productId) : "") || name,
+    // Carried through untouched: the size sold is what picks the recipe.
+    variantName,
     quantity,
   }));
 }

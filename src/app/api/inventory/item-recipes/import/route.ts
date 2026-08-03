@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   componentCostsByKey,
+  itemRecipeDepsByNameKey,
+  itemRecipeGraph,
   itemRecipeIdsByNameKey,
   productionItemIdsByNameKey,
   rawMaterialIdsByNameKey,
@@ -41,9 +43,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { recipeRows, componentRows, error } = await parseItemRecipeWorkbook(
-      await file.arrayBuffer(),
-    );
+    const { recipeRows, componentRows, packagingRows, error } =
+      await parseItemRecipeWorkbook(await file.arrayBuffer());
     if (error) {
       return NextResponse.json({ success: false, message: error }, { status: 400 });
     }
@@ -54,13 +55,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [materialIds, productionIds, existingIds, componentsByKey] =
-      await Promise.all([
-        rawMaterialIdsByNameKey(),
-        productionItemIdsByNameKey(),
-        itemRecipeIdsByNameKey(),
-        componentCostsByKey(),
-      ]);
+    const [
+      materialIds,
+      productionIds,
+      existingIds,
+      componentsByKey,
+      graph,
+      storedDeps,
+    ] = await Promise.all([
+      rawMaterialIdsByNameKey(),
+      productionItemIdsByNameKey(),
+      itemRecipeIdsByNameKey(),
+      componentCostsByKey(),
+      itemRecipeGraph(),
+      itemRecipeDepsByNameKey(),
+    ]);
     const plan = planItemRecipeImport(
       recipeRows,
       componentRows,
@@ -68,6 +77,9 @@ export async function POST(request: NextRequest) {
       productionIds,
       existingIds,
       componentsByKey,
+      graph,
+      storedDeps,
+      packagingRows,
     );
 
     return NextResponse.json({

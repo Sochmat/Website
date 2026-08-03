@@ -1,36 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Select, Table, message } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { DeleteOutlined, PlusOutlined, WarningOutlined } from "@ant-design/icons";
+import { Collapse, message } from "antd";
 import {
-  componentKey,
   computeItemRecipeCost,
-  type ComponentType,
+  itemRecipeDependencies,
   type ItemRecipe,
-  type ItemRecipeLine,
 } from "@/lib/itemRecipes";
-import { formatCurrency } from "@/lib/rawMaterials";
+import { formatCurrency, normalizeMaterialName } from "@/lib/rawMaterials";
+import { recipeLookupKey, type MenuItemSummary } from "@/lib/menuRecipes";
 import { useRecipeComponents } from "@/components/inventory/useRecipeComponents";
+import ComponentLinesEditor, {
+  toLines,
+  type DraftLine,
+} from "@/components/inventory/ComponentLinesEditor";
 
 const LIST_PATH = "/inventory-management/setup/item-recipe";
 
 const inputClass =
   "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]";
 
-/** A row while it's being edited — qty stays a string so partial input survives. */
-interface DraftLine {
-  refType: ComponentType;
-  refId: string;
-  qtyUsed: string;
-}
+/** Shared empty set, so an unblocked picker keeps a stable dependency. */
+const NOTHING_BLOCKED: ReadonlySet<string> = new Set();
 
-const TYPE_LABEL: Record<ComponentType, string> = {
-  raw: "Raw material",
-  production: "Production item",
-};
+/** One variant of this menu item, with the recipe that sizes it. */
+interface VariantTarget {
+  name: string;
+  /** Its own recipe, when someone has already mapped this size. */
+  recipeId: string | null;
+  /** Whether that recipe exists — a variant with none falls back to the base. */
+  mapped: boolean;
+}
 
 /**
  * Add/edit form for an item recipe, shared by /new and /[id]/edit.
@@ -38,6 +39,16 @@ const TYPE_LABEL: Record<ComponentType, string> = {
  * Unlike a production item there are no units, conversion or batch yield —
  * a recipe is a name plus components, and its costing is simply the sum of
  * the component costs.
+ *
+ * An add-on is a menu item in its own right and an order records it as its own
+ * product line, so it carries its own item recipe and is mapped from its own
+ * row on the list — never from the dish that offers it.
+ *
+ * Packaging is edited here too, as one list for the whole item. It is not part
+ * of the food cost, so it is priced on its own; it IS consumed per portion, so
+ * saving writes the same list onto every recipe this form stores — the base
+ * one, and each variant — because a sale deducts from whichever recipe it
+ * resolved to. See recipeDemand.ts.
  */
 export default function ItemRecipeForm({
   recipe,
@@ -51,7 +62,9 @@ export default function ItemRecipeForm({
 }) {
   const router = useRouter();
   const [messageApi, messageContextHolder] = message.useMessage();
-  const { options, optionsByKey, costsByKey, loading } = useRecipeComponents();
+  const components = useRecipeComponents();
+  const { optionsByKey, costsByKey, itemCostsById, itemLinesById, itemRecipes } =
+    components;
 
   const [name, setName] = useState(recipe?.name ?? initialName);
   const [lines, setLines] = useState<DraftLine[]>(
@@ -62,125 +75,391 @@ export default function ItemRecipeForm({
     })) ?? [],
   );
 
-  const [typeFilter, setTypeFilter] = useState<"" | ComponentType>("");
-  const [pickerValue, setPickerValue] = useState<string | undefined>(undefined);
-  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  /** One packaging list for the whole item, variants included. */
+  const [packaging, setPackaging] = useState<DraftLine[]>(
+    (recipe?.packagingLines ?? []).map((l) => ({
+      refType: l.refType,
+      refId: l.refId,
+      qtyUsed: String(l.qtyUsed),
+    })),
+  );
+  /** Whether the user has touched packaging — see the seeding effect below. */
+  const [packagingTouched, setPackagingTouched] = useState(false);
+
+  const [menuItems, setMenuItems] = useState<MenuItemSummary[]>([]);
+  /** Draft components per variant, keyed by the variant's label. */
+  const [variantLines, setVariantLines] = useState<Record<string, DraftLine[]>>(
+    {},
+  );
+
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const highlightTimer = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
-      if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-    },
-    [],
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/inventory/menu-items", {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (!cancelled && data.success) setMenuItems(data.items ?? []);
+      } catch {
+        /* the variants section simply stays empty */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const breakdown = useMemo(
+    () => computeItemRecipeCost(toLines(lines), costsByKey, itemCostsById),
+    [lines, costsByKey, itemCostsById],
   );
 
-  /** Recomputed on every keystroke — the same function the API stores with. */
-  const breakdown = useMemo(() => {
-    const parsed: ItemRecipeLine[] = lines.map((l) => ({
-      refType: l.refType,
-      refId: l.refId,
-      qtyUsed: Number(l.qtyUsed.replace(/,/g, "").trim()),
-    }));
-    return computeItemRecipeCost(parsed, costsByKey);
-  }, [lines, costsByKey]);
-
-  const costByKey = useMemo(
+  /** Recipes by (name, variant), for finding the one that sizes a variant. */
+  const recipeByLookupKey = useMemo(
     () =>
       new Map(
-        breakdown.lines.map((l) => [componentKey(l.refType, l.refId), l]),
+        itemRecipes.map((r) => [
+          recipeLookupKey(
+            r.nameKey || normalizeMaterialName(r.name),
+            r.variantKey ||
+              (r.variantName ? normalizeMaterialName(r.variantName) : ""),
+          ),
+          r,
+        ]),
       ),
-    [breakdown],
+    [itemRecipes],
   );
 
-  const addLine = useCallback(
-    (key: string) => {
-      setPickerValue(undefined);
-      const option = optionsByKey.get(key);
-      if (!option) return;
+  /** The variants of the menu item this recipe is for, matched by name. */
+  const variants = useMemo<VariantTarget[]>(() => {
+    const key = normalizeMaterialName(name);
+    if (!key) return [];
 
-      if (lines.some((l) => componentKey(l.refType, l.refId) === key)) {
-        // Re-selecting something already in the recipe flashes its row rather
-        // than creating an ambiguous duplicate.
-        setHighlightKey(key);
-        if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-        highlightTimer.current = window.setTimeout(
-          () => setHighlightKey(null),
-          1600,
+    const menuItem = menuItems.find(
+      (m) => normalizeMaterialName(m.name) === key,
+    );
+    return (menuItem?.variantNames ?? []).map((label) => {
+      const own = recipeByLookupKey.get(
+        recipeLookupKey(key, normalizeMaterialName(label)),
+      );
+      return {
+        name: label,
+        recipeId: own?._id ?? null,
+        mapped: !!own,
+      };
+    });
+  }, [name, menuItems, recipeByLookupKey]);
+
+  /** An item with sizes is defined by them, not by a list of its own. */
+  const hasVariants = variants.length > 0;
+
+  /**
+   * Seed the variants that already have a recipe of their own, once.
+   *
+   * A variant with no recipe is deliberately left out of state: its absence is
+   * what "this size follows the item's components" means, both on screen and
+   * at deduction time.
+   */
+  useEffect(() => {
+    setVariantLines((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const variant of variants) {
+        if (!variant.mapped || next[variant.name]) continue;
+        const stored = recipeByLookupKey.get(
+          recipeLookupKey(
+            normalizeMaterialName(name),
+            normalizeMaterialName(variant.name),
+          ),
         );
-        messageApi.info("That component is already in the recipe");
-        return;
+        next[variant.name] =
+          stored?.lines.map((l) => ({
+            refType: l.refType,
+            refId: l.refId,
+            qtyUsed: String(l.qtyUsed),
+          })) ?? [];
+        changed = true;
       }
-      setLines((current) => [
-        ...current,
-        { refType: option.refType, refId: option.refId, qtyUsed: "" },
-      ]);
-      setFormError(null);
-    },
-    [lines, optionsByKey, messageApi],
+      return changed ? next : current;
+    });
+  }, [variants, recipeByLookupKey, name]);
+
+  /**
+   * Seed packaging from whatever is already stored against this item's name.
+   *
+   * An item defined by its variants has no base recipe for the page to load,
+   * so the form arrives with `recipe` null and the packaging sitting on the
+   * variant recipes instead. Guarded on "has the user touched it" rather than
+   * on emptiness alone, or deleting the last row would fill it straight back in.
+   */
+  useEffect(() => {
+    if (packagingTouched || packaging.length > 0) return;
+
+    const key = normalizeMaterialName(name);
+    if (!key) return;
+
+    const stored = itemRecipes.find(
+      (r) =>
+        (r.nameKey || normalizeMaterialName(r.name)) === key &&
+        (r.packagingLines?.length ?? 0) > 0,
+    );
+    if (!stored?.packagingLines) return;
+
+    setPackaging(
+      stored.packagingLines.map((l) => ({
+        refType: l.refType,
+        refId: l.refId,
+        qtyUsed: String(l.qtyUsed),
+      })),
+    );
+  }, [name, itemRecipes, packagingTouched, packaging.length]);
+
+  const changePackaging = useCallback((next: DraftLine[]) => {
+    setPackaging(next);
+    setPackagingTouched(true);
+    setFormError(null);
+  }, []);
+
+  const packagingBreakdown = useMemo(
+    () => computeItemRecipeCost(toLines(packaging), costsByKey),
+    [packaging, costsByKey],
   );
 
-  const setQty = (key: string, value: string) => {
-    setLines((current) =>
-      current.map((l) =>
-        componentKey(l.refType, l.refId) === key ? { ...l, qtyUsed: value } : l,
-      ),
-    );
+  /**
+   * The component graph as this form would leave it: what is stored, with the
+   * rows currently on screen standing in for the recipe being edited.
+   *
+   * The draft matters because a loop can be assembled out of rows that are
+   * innocent against stored data alone — put a food item into this recipe here,
+   * having just pointed that item at this one, and the stored graph would not
+   * yet show the chain coming back.
+   */
+  const draftLinesById = useMemo(() => {
+    const graph = new Map(itemLinesById);
+    if (recipe?._id) graph.set(String(recipe._id), toLines(lines));
+    return graph;
+  }, [itemLinesById, recipe?._id, lines]);
+
+  /**
+   * Per recipe on this screen, the food items it may not be built on: itself,
+   * and anything that already leads back to it. Offering one and rejecting it
+   * on save would be a worse way to explain the same rule, so they never
+   * appear in the picker.
+   *
+   * A recipe that does not exist yet has nothing blocked — with no id, nothing
+   * can point at it, so no chain can come back.
+   */
+  const blockedByRecipeId = useMemo(() => {
+    const targets = recipe?._id ? [String(recipe._id)] : [];
+
+    const map = new Map<string, ReadonlySet<string>>();
+    for (const selfId of targets) {
+      const blocked = new Set<string>([selfId]);
+      for (const id of draftLinesById.keys()) {
+        if (itemRecipeDependencies(id, draftLinesById).has(selfId)) {
+          blocked.add(id);
+        }
+      }
+      map.set(selfId, blocked);
+    }
+    return map;
+  }, [draftLinesById, recipe?._id]);
+
+  const blockedFor = useCallback(
+    (id: string | null): ReadonlySet<string> =>
+      (id ? blockedByRecipeId.get(id) : undefined) ?? NOTHING_BLOCKED,
+    [blockedByRecipeId],
+  );
+
+  /**
+   * The rows a size that nobody has mapped starts from: whatever the first
+   * mapped size says.
+   *
+   * This is the whole point of mapping one size and moving on — the second and
+   * third open already filled in, needing only their quantities changed rather
+   * than the entire list typed again.
+   */
+  const prefillLines = useMemo(() => {
+    for (const variant of variants) {
+      const own = variantLines[variant.name];
+      if (own?.length) return own;
+    }
+    return [] as DraftLine[];
+  }, [variants, variantLines]);
+
+  /** A size's rows: its own where it has them, the first mapped size's copy
+   *  otherwise. */
+  const variantDraft = useCallback(
+    (variant: VariantTarget): DraftLine[] =>
+      variantLines[variant.name] ?? prefillLines,
+    [variantLines, prefillLines],
+  );
+
+  const setVariant = useCallback((label: string, next: DraftLine[]) => {
+    setVariantLines((current) => ({ ...current, [label]: next }));
     setFormError(null);
-  };
+  }, []);
 
-  const removeLine = (key: string) => {
-    setLines((current) =>
-      current.filter((l) => componentKey(l.refType, l.refId) !== key),
+  /**
+   * What a variant item costs: one figure when every size comes to the same,
+   * a range otherwise. A single total would have to pick a size and not say
+   * which.
+   */
+  const variantCostLabel = useMemo(() => {
+    const costs = variants.map(
+      (v) =>
+        computeItemRecipeCost(toLines(variantDraft(v)), costsByKey, itemCostsById)
+          .totalCost,
     );
-  };
+    if (costs.length === 0) return formatCurrency(0);
 
+    const low = Math.min(...costs);
+    const high = Math.max(...costs);
+    return low === high
+      ? formatCurrency(low)
+      : `${formatCurrency(low)} – ${formatCurrency(high)}`;
+  }, [variants, variantDraft, costsByKey, itemCostsById]);
+
+  const notifyDuplicate = useCallback(
+    () => messageApi.info("That component is already in the recipe"),
+    [messageApi],
+  );
+
+  /** The first row anywhere with a quantity that is blank, junk or ≤ 0. */
+  const badQuantity = (draft: DraftLine[]) =>
+    draft.find((l) => {
+      const q = Number(l.qtyUsed.replace(/,/g, "").trim());
+      return !l.qtyUsed.trim() || !Number.isFinite(q) || q <= 0;
+    });
+
+  /**
+   * The first food-item row counted in part portions.
+   *
+   * A food item is counted in whole plates — half a portion is its own recipe,
+   * not a fraction of this line.
+   */
+  const fractionalItem = (draft: DraftLine[]) =>
+    draft.find(
+      (l) =>
+        l.refType === "item" &&
+        !Number.isInteger(Number(l.qtyUsed.replace(/,/g, "").trim())),
+    );
+
+  const labelFor = (line: DraftLine) =>
+    optionsByKey.get(`${line.refType}:${line.refId}`)?.name ?? "a row";
+
+  /**
+   * Packaging as the API takes it, sent with every recipe this form writes.
+   *
+   * Always sent, empty included — an empty list is how packaging gets cleared,
+   * and the API only leaves stored rows alone when the key is absent entirely.
+   */
+  const packagingPayload = packaging.map((l) => ({
+    refType: l.refType,
+    refId: l.refId,
+    qtyUsed: l.qtyUsed,
+  }));
+
+  /** Save the recipe, then every variant that has components. */
   const handleSave = async () => {
     setNameError(name.trim() ? null : "Name is required");
     if (!name.trim()) return;
 
-    if (lines.length === 0) {
+    // An item with sizes is defined BY its sizes — there is no item-level list
+    // to fill in, so the requirement moves onto them.
+    if (hasVariants) {
+      if (!variants.some((v) => variantDraft(v).length > 0)) {
+        setFormError("Add components to at least one variant");
+        return;
+      }
+    } else if (lines.length === 0) {
       setFormError("Add at least one component to the recipe");
       return;
     }
-    const bad = lines.find((l) => {
-      const q = Number(l.qtyUsed.replace(/,/g, "").trim());
-      return !l.qtyUsed.trim() || !Number.isFinite(q) || q <= 0;
-    });
+
+    const bad = badQuantity(lines);
     if (bad) {
-      const label =
-        optionsByKey.get(componentKey(bad.refType, bad.refId))?.name ?? "a row";
-      setFormError(`Enter a quantity greater than 0 for ${label}`);
+      setFormError(`Enter a quantity greater than 0 for ${labelFor(bad)}`);
+      return;
+    }
+
+    const fractional = fractionalItem(lines);
+    if (fractional) {
+      setFormError(`${labelFor(fractional)} must be a whole number of portions`);
+      return;
+    }
+
+    for (const variant of variants) {
+      const draft = variantDraft(variant);
+      const badVariant = badQuantity(draft);
+      if (badVariant) {
+        setFormError(
+          `Enter a quantity greater than 0 for ${labelFor(badVariant)} in “${variant.name}”`,
+        );
+        return;
+      }
+      const fractionalVariant = fractionalItem(draft);
+      if (fractionalVariant) {
+        setFormError(
+          `${labelFor(fractionalVariant)} in “${variant.name}” must be a whole number of portions`,
+        );
+        return;
+      }
+    }
+
+    const badPackaging = badQuantity(packaging);
+    if (badPackaging) {
+      setFormError(
+        `Enter a quantity greater than 0 for ${labelFor(badPackaging)} in packaging`,
+      );
       return;
     }
     setFormError(null);
 
     setSaving(true);
     try {
-      const res = await fetch(
-        recipe?._id
-          ? `/api/inventory/item-recipes/${recipe._id}`
-          : "/api/inventory/item-recipes",
-        {
-          method: recipe?._id ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            lines: lines.map((l) => ({
-              refType: l.refType,
-              refId: l.refId,
-              qtyUsed: l.qtyUsed,
-            })),
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!data.success) {
-        setFormError(data.message ?? "Could not save");
+      // An item defined by its sizes has no item-level list to write. One
+      // written before the item had sizes is left exactly as it is: it still
+      // stands behind any size nobody has mapped, and silently rewriting or
+      // dropping it here would change what those sizes deduct.
+      if (lines.length > 0) {
+        const res = await fetch(
+          recipe?._id
+            ? `/api/inventory/item-recipes/${recipe._id}`
+            : "/api/inventory/item-recipes",
+          {
+            method: recipe?._id ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: name.trim(),
+              lines: lines.map((l) => ({
+                refType: l.refType,
+                refId: l.refId,
+                qtyUsed: l.qtyUsed,
+              })),
+              packagingLines: packagingPayload,
+            }),
+          },
+        );
+        const data = await res.json();
+        if (!data.success) {
+          setFormError(data.message ?? "Could not save");
+          return;
+        }
+      }
+
+      const variantError = await saveVariants();
+      if (variantError) {
+        // The recipe itself is saved; say so rather than implying nothing was.
+        setFormError(`Recipe saved, but its variants were not: ${variantError}`);
         return;
       }
+
       messageApi.success(recipe?._id ? "Item recipe updated" : "Item recipe added");
       window.setTimeout(() => router.push(LIST_PATH), 350);
     } catch {
@@ -190,125 +469,62 @@ export default function ItemRecipeForm({
     }
   };
 
-  const pickerOptions = useMemo(
-    () =>
-      options
-        .filter((o) => !typeFilter || o.refType === typeFilter)
-        .map((o) => ({
-          value: o.key,
-          label: o.name,
-          // Searched against, so typing "production" or a category finds rows.
-          search: `${o.name} ${o.categoryName} ${TYPE_LABEL[o.refType]}`,
-        })),
-    [options, typeFilter],
-  );
+  /**
+   * Writes a recipe for every size that has components.
+   *
+   * A size showing a copy of another is written too, not just the one that was
+   * typed — the copy is what the screen promises that size is made of, and a
+   * size with no recipe of its own deducts nothing.
+   */
+  const saveVariants = async (): Promise<string | null> => {
+    for (const variant of variants) {
+      const draft = variantDraft(variant);
+      if (draft.length === 0 && !variant.recipeId) continue;
 
-  const rows = lines.map((l) => {
-    const key = componentKey(l.refType, l.refId);
-    const option = optionsByKey.get(key);
-    const cost = costByKey.get(key);
-    return {
-      key,
-      refType: l.refType,
-      name: option?.name ?? "(deleted component)",
-      categoryName: option?.categoryName ?? "",
-      unit: option?.consumptionUnit ?? "",
-      qtyUsed: l.qtyUsed,
-      cost: cost?.cost ?? 0,
-      found: cost?.found ?? false,
-    };
-  });
+      const payload = draft.map((l) => ({
+        refType: l.refType,
+        refId: l.refId,
+        qtyUsed: l.qtyUsed,
+      }));
 
-  type Row = (typeof rows)[number];
+      // Cleared out: drop the recipe rather than store an empty one.
+      if (payload.length === 0) {
+        if (!variant.recipeId) continue;
+        const res = await fetch(
+          `/api/inventory/item-recipes/${variant.recipeId}`,
+          { method: "DELETE" },
+        );
+        const data = await res.json();
+        if (!data.success) {
+          return `“${variant.name}”: ${data.message ?? "could not be cleared"}`;
+        }
+        continue;
+      }
 
-  const columns: ColumnsType<Row> = [
-    {
-      title: "Component",
-      dataIndex: "name",
-      render: (value: string, row) => (
-        <span className="font-medium text-gray-900">
-          {value}
-          {!row.found && (
-            <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-              <WarningOutlined /> missing
-            </span>
-          )}
-        </span>
-      ),
-    },
-    {
-      title: "Type",
-      dataIndex: "refType",
-      width: 150,
-      render: (value: ComponentType) => (
-        <span
-          className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
-            value === "production"
-              ? "bg-[#024731]/10 text-[#024731]"
-              : "bg-gray-100 text-gray-700"
-          }`}
-        >
-          {TYPE_LABEL[value]}
-        </span>
-      ),
-    },
-    {
-      title: "Category",
-      dataIndex: "categoryName",
-      render: (value: string) =>
-        value ? (
-          <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-            {value}
-          </span>
-        ) : (
-          <span className="text-xs text-gray-400">—</span>
-        ),
-    },
-    {
-      title: "Qty Used",
-      dataIndex: "qtyUsed",
-      width: 170,
-      align: "right",
-      render: (value: string, row) => (
-        <span className="inline-flex items-center justify-end gap-1.5">
-          <input
-            value={value}
-            onChange={(e) => setQty(row.key, e.target.value)}
-            inputMode="decimal"
-            aria-label={`Quantity of ${row.name}`}
-            className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[#024731] focus:ring-1 focus:ring-[#024731]"
-          />
-          <span className="text-sm text-gray-600">{row.unit}</span>
-        </span>
-      ),
-    },
-    {
-      title: "Cost",
-      dataIndex: "cost",
-      width: 130,
-      align: "right",
-      render: (value: number) => (
-        <span className="tabular-nums text-gray-800">{formatCurrency(value)}</span>
-      ),
-    },
-    {
-      title: "",
-      key: "remove",
-      width: 60,
-      align: "right",
-      render: (_, row) => (
-        <button
-          type="button"
-          onClick={() => removeLine(row.key)}
-          aria-label={`Remove ${row.name}`}
-          title="Remove"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-        >
-          <DeleteOutlined />
-        </button>
-      ),
-    },
-  ];
+      const res = await fetch(
+        variant.recipeId
+          ? `/api/inventory/item-recipes/${variant.recipeId}`
+          : "/api/inventory/item-recipes",
+        {
+          method: variant.recipeId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            variantName: variant.name,
+            lines: payload,
+            // Every size ships in the same box, so each variant recipe carries
+            // its own copy — a sale deducts from whichever one it resolved to.
+            packagingLines: packagingPayload,
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!data.success) {
+        return `“${variant.name}”: ${data.message ?? "could not be saved"}`;
+      }
+    }
+    return null;
+  };
 
   return (
     <div>
@@ -352,100 +568,183 @@ export default function ItemRecipeForm({
           </p>
           <div className="mt-4 rounded-lg bg-[#024731]/5 border border-[#024731]/20 px-4 py-3">
             <div className="text-2xl font-bold tabular-nums text-[#024731]">
-              {formatCurrency(breakdown.totalCost)}
+              {hasVariants ? variantCostLabel : formatCurrency(breakdown.totalCost)}
             </div>
             <div className="mt-0.5 text-xs text-gray-600">
-              across {rows.length} component{rows.length === 1 ? "" : "s"}
+              {hasVariants
+                ? `across ${variants.length} variant${variants.length === 1 ? "" : "s"}`
+                : `across ${lines.length} component${lines.length === 1 ? "" : "s"}`}
             </div>
+          </div>
+
+          {/* Packaging is not food cost, so it is quoted beside the figure
+              above rather than folded into it — a food-cost percentage that
+              silently included boxes would not be one. */}
+          <div className="mt-3 flex items-baseline justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5">
+            <span className="text-xs font-medium text-gray-600">
+              Packaging
+              <span className="ml-1 text-gray-400">
+                ({packaging.length} material{packaging.length === 1 ? "" : "s"})
+              </span>
+            </span>
+            <span className="tabular-nums text-sm font-semibold text-gray-900">
+              {formatCurrency(packagingBreakdown.totalCost)}
+            </span>
           </div>
         </section>
       </div>
 
-      <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* An item is defined either by one list of components or by its sizes,
+          never by both — an empty Components table above a full set of
+          variants only invites the question of which one counts. */}
+      {!hasVariants && (
+        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
               Components
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Raw materials and production items that make up this recipe.
+              Raw materials and production items that make up this recipe — or
+              another food item, whose own components are then deducted with it.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              className="min-w-[180px]"
-              value={typeFilter}
-              onChange={(v) => setTypeFilter(v)}
-              aria-label="Filter components by type"
-              options={[
-                { value: "", label: "All types" },
-                { value: "raw", label: "Raw materials" },
-                { value: "production", label: "Production items" },
-              ]}
-            />
-            <Select
-              className="min-w-[260px]"
-              value={pickerValue}
-              onChange={addLine}
-              loading={loading}
-              aria-label="Add a component to the recipe"
-              placeholder={loading ? "Loading components…" : "+ Add Component"}
-              showSearch
-              optionFilterProp="search"
-              options={pickerOptions}
-              notFoundContent={loading ? "Loading…" : "Nothing found"}
-              suffixIcon={<PlusOutlined />}
+          <div className="mt-4">
+            <ComponentLinesEditor
+              lines={lines}
+              onChange={(next) => {
+                setLines(next);
+                setFormError(null);
+              }}
+              components={components}
+              allowItems
+              blockedItemIds={blockedFor(
+                recipe?._id ? String(recipe._id) : null,
+              )}
+              onDuplicate={notifyDuplicate}
             />
           </div>
+        </section>
+      )}
+
+      {hasVariants && (
+        <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Variants
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              This item is ordered as one of these, so each carries its own
+              components. Map the first and the rest open already filled in with
+              a copy of it — change what differs.
+            </p>
+            {lines.length > 0 && (
+              <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                This item also has a recipe of its own, written before it had
+                variants. It is left untouched, and still stands behind any
+                variant with no components below.
+              </p>
+            )}
+          </div>
+
+          <Collapse
+            className="mt-4 bg-white"
+            items={variants.map((variant) => {
+              const draft = variantDraft(variant);
+              // Showing a copy of another size, which saving will make its own.
+              const copied = !variantLines[variant.name] && draft.length > 0;
+              const cost = computeItemRecipeCost(
+                toLines(draft),
+                costsByKey,
+                itemCostsById,
+              ).totalCost;
+
+              return {
+                key: variant.name,
+                label: (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pr-2">
+                    <span className="font-medium text-gray-900">
+                      {variant.name}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {draft.length === 0 ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                          not mapped
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600">
+                          {copied ? "copied · " : ""}
+                          {draft.length} component
+                          {draft.length === 1 ? "" : "s"}
+                        </span>
+                      )}
+                      <span className="tabular-nums text-sm font-semibold text-[#024731]">
+                        {formatCurrency(cost)}
+                      </span>
+                    </span>
+                  </div>
+                ),
+                children: (
+                  <div>
+                    {copied && (
+                      <p className="mb-3 text-xs text-gray-500">
+                        Copied from the first variant you mapped. Change what
+                        differs — saving gives this variant its own recipe.
+                      </p>
+                    )}
+                    <ComponentLinesEditor
+                      lines={draft}
+                      onChange={(next) => setVariant(variant.name, next)}
+                      components={components}
+                      allowItems
+                      blockedItemIds={blockedFor(variant.recipeId)}
+                      onDuplicate={notifyDuplicate}
+                      dense
+                    />
+                  </div>
+                ),
+              };
+            })}
+          />
+        </section>
+      )}
+
+      {/* Shown for every item, variants or not: the box a dish goes out in is
+          the same box whatever size was ordered, so it is one list either way. */}
+      <section className="mt-5 rounded-xl border border-gray-200 bg-white p-5">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Packaging
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            What this item is packed in — containers, lids, bags, cutlery. Raw
+            materials only, since packaging is bought rather than cooked. It is
+            deducted per portion sold like any component, but kept out of the
+            costing above: this is packaging cost, not food cost.
+            {hasVariants && " One list for every variant."}
+          </p>
         </div>
 
-        <div className="mt-4 rounded-xl border border-gray-200 overflow-hidden">
-          <Table<Row>
-            columns={columns}
-            dataSource={rows}
-            pagination={false}
-            size="small"
-            scroll={{ x: "max-content" }}
-            rowClassName={(row) =>
-              row.key === highlightKey ? "bg-amber-100 transition-colors" : ""
-            }
-            locale={{
-              emptyText: (
-                <div className="py-8 text-center">
-                  <p className="text-sm font-medium text-gray-900">
-                    No components yet
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Use “+ Add Component” above to build the recipe.
-                  </p>
-                </div>
-              ),
-            }}
-            summary={() =>
-              rows.length > 0 ? (
-                <Table.Summary.Row className="bg-gray-50 font-semibold">
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <span className="text-gray-700">Total cost</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <span className="tabular-nums text-gray-900">
-                      {formatCurrency(breakdown.totalCost)}
-                    </span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} />
-                </Table.Summary.Row>
-              ) : null
+        <div className="mt-4">
+          <ComponentLinesEditor
+            lines={packaging}
+            onChange={changePackaging}
+            components={components}
+            allowItems={false}
+            allowProduction={false}
+            noun="Packaging material"
+            onDuplicate={() =>
+              messageApi.info("That material is already in the packaging")
             }
           />
         </div>
-
-        {formError && (
-          <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-            {formError}
-          </div>
-        )}
       </section>
+
+      {formError && (
+        <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+          {formError}
+        </div>
+      )}
 
       <div className="mt-5 flex items-center justify-end gap-2">
         <button

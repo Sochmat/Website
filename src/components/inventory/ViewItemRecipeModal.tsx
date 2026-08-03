@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Modal, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -10,6 +10,7 @@ import {
   computeItemRecipeCost,
   type ComponentType,
   type ItemRecipe,
+  type ItemRecipeCostLine,
 } from "@/lib/itemRecipes";
 import { formatCurrency } from "@/lib/rawMaterials";
 import { useRecipeComponents } from "@/components/inventory/useRecipeComponents";
@@ -17,6 +18,7 @@ import { useRecipeComponents } from "@/components/inventory/useRecipeComponents"
 const TYPE_LABEL: Record<ComponentType, string> = {
   raw: "Raw material",
   production: "Production item",
+  item: "Food item",
 };
 
 /**
@@ -35,31 +37,55 @@ export default function ViewItemRecipeModal({
   onClose: () => void;
 }) {
   const router = useRouter();
-  const { optionsByKey, costsByKey, loading } = useRecipeComponents();
+  const { optionsByKey, costsByKey, itemCostsById, loading } =
+    useRecipeComponents();
 
   const breakdown = useMemo(
-    () => (recipe ? computeItemRecipeCost(recipe.lines, costsByKey) : null),
+    () =>
+      recipe
+        ? computeItemRecipeCost(recipe.lines, costsByKey, itemCostsById)
+        : null,
+    [recipe, costsByKey, itemCostsById],
+  );
+
+  /** Packaging is raw materials only, so it needs no item costs to price. */
+  const packaging = useMemo(
+    () =>
+      recipe
+        ? computeItemRecipeCost(recipe.packagingLines ?? [], costsByKey)
+        : null,
     [recipe, costsByKey],
   );
 
-  const rows = useMemo(() => {
-    if (!breakdown) return [];
-    return breakdown.lines.map((line) => {
-      const key = componentKey(line.refType, line.refId);
-      const option = optionsByKey.get(key);
-      return {
-        key,
-        refType: line.refType,
-        name: option?.name ?? "(deleted component)",
-        categoryName: option?.categoryName ?? "",
-        unit: option?.consumptionUnit ?? "",
-        qtyUsed: line.qtyUsed,
-        cost: line.cost,
-        share: line.share,
-        found: line.found,
-      };
-    });
-  }, [breakdown, optionsByKey]);
+  const toRows = useCallback(
+    (lines: ItemRecipeCostLine[]) =>
+      lines.map((line) => {
+        const key = componentKey(line.refType, line.refId);
+        const option = optionsByKey.get(key);
+        return {
+          key,
+          refType: line.refType,
+          name: option?.name ?? "(deleted component)",
+          categoryName: option?.categoryName ?? "",
+          unit: option?.consumptionUnit ?? "",
+          qtyUsed: line.qtyUsed,
+          cost: line.cost,
+          share: line.share,
+          found: line.found,
+        };
+      }),
+    [optionsByKey],
+  );
+
+  const rows = useMemo(
+    () => (breakdown ? toRows(breakdown.lines) : []),
+    [breakdown, toRows],
+  );
+
+  const packagingRows = useMemo(
+    () => (packaging ? toRows(packaging.lines) : []),
+    [packaging, toRows],
+  );
 
   type Row = (typeof rows)[number];
 
@@ -87,7 +113,9 @@ export default function ViewItemRecipeModal({
           className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
             value === "production"
               ? "bg-[#024731]/10 text-[#024731]"
-              : "bg-gray-100 text-gray-700"
+              : value === "item"
+                ? "bg-amber-100 text-amber-800"
+                : "bg-gray-100 text-gray-700"
           }`}
         >
           {TYPE_LABEL[value]}
@@ -136,6 +164,15 @@ export default function ViewItemRecipeModal({
       ),
     },
   ];
+
+  /**
+   * The same table minus the columns packaging cannot vary in: every row is a
+   * raw material, and a share of a total that is itself quoted apart from the
+   * food cost measures nothing anyone asked for.
+   */
+  const packagingColumns: ColumnsType<Row> = columns.filter(
+    (c) => c.title !== "Type" && c.title !== "% of total",
+  );
 
   return (
     <Modal
@@ -204,6 +241,42 @@ export default function ViewItemRecipeModal({
               ) : null
             }
           />
+        </div>
+      )}
+
+      {/* Only when there is some: an empty packaging table under every recipe
+          would read as a gap to fill rather than a thing not used here. */}
+      {recipe && packaging && packagingRows.length > 0 && (
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Packaging
+          </h3>
+          <p className="mt-1 text-xs text-gray-500">
+            Deducted per portion sold, and costed separately from the components
+            above.
+          </p>
+          <div className="mt-3 rounded-xl border border-gray-200 overflow-hidden">
+            <Table<Row>
+              columns={packagingColumns}
+              dataSource={packagingRows}
+              loading={loading}
+              pagination={false}
+              size="small"
+              scroll={{ x: "max-content" }}
+              summary={() => (
+                <Table.Summary.Row className="bg-gray-50 font-semibold">
+                  <Table.Summary.Cell index={0} colSpan={3}>
+                    <span className="text-gray-700">Packaging cost</span>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={3} align="right">
+                    <span className="tabular-nums text-gray-900">
+                      {formatCurrency(packaging.totalCost)}
+                    </span>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              )}
+            />
+          </div>
         </div>
       )}
     </Modal>

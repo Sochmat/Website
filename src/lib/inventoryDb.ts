@@ -33,10 +33,15 @@ import {
 import {
   componentKey,
   computeItemRecipeCost,
+  itemRecipeCostsById,
+  toItemRecipeLines,
+  toPackagingLines,
   type ComponentType,
   type ItemRecipe,
+  type ItemRecipeGraph,
   type ItemRecipeLine,
 } from "@/lib/itemRecipes";
+import { recipeLookupKey } from "@/lib/menuRecipes";
 
 export const CATEGORIES_COLLECTION = "inventoryCategories";
 export const BRANDS_COLLECTION = "inventoryBrands";
@@ -370,8 +375,27 @@ export function productionItemIdsByNameKey(): Promise<Map<string, string>> {
   return idsByNameKey(PRODUCTION_ITEMS_COLLECTION);
 }
 
-export function itemRecipeIdsByNameKey(): Promise<Map<string, string>> {
-  return idsByNameKey(ITEM_RECIPES_COLLECTION);
+/**
+ * Item recipe ids, keyed the way one is looked up — name, plus variant where
+ * there is one.
+ *
+ * Not the plain nameKey helper the other two collections use: two sizes of one
+ * dish share a name, so keying on that alone would let an import overwrite the
+ * Large with the Small.
+ */
+export async function itemRecipeIdsByNameKey(): Promise<Map<string, string>> {
+  const { db } = await connectToDatabase();
+  const docs = await db
+    .collection(ITEM_RECIPES_COLLECTION)
+    .find({}, { projection: { nameKey: 1, variantKey: 1 } })
+    .toArray();
+
+  return new Map(
+    docs.map((d) => [
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
+      String(d._id),
+    ]),
+  );
 }
 
 /** id -> display name for every raw material, for writing recipe sheets. */
@@ -387,11 +411,16 @@ export async function rawMaterialNamesById(): Promise<Map<string, string>> {
 /**
  * Display name for everything an item recipe may reference, keyed by the same
  * composite `type:id` its lines use.
+ *
+ * Item recipes are in here too, because one may now name another: without them
+ * an export would write a blank Component cell, and a blank cell reads back as
+ * something else entirely.
  */
 export async function componentNamesByKey(): Promise<Map<string, string>> {
-  const [materials, productionItems] = await Promise.all([
+  const [materials, productionItems, itemRecipes] = await Promise.all([
     rawMaterialNamesById(),
     listProductionItems(),
+    listItemRecipes(),
   ]);
 
   const combined = new Map<string, string>();
@@ -400,6 +429,9 @@ export async function componentNamesByKey(): Promise<Map<string, string>> {
   }
   for (const item of productionItems) {
     combined.set(componentKey("production", String(item._id)), item.name);
+  }
+  for (const recipe of itemRecipes) {
+    combined.set(componentKey("item", String(recipe._id)), recipe.name);
   }
   return combined;
 }
@@ -749,21 +781,81 @@ export async function listItemRecipes(search?: string): Promise<ItemRecipe[]> {
     _id: String(d._id),
     name: String(d.name ?? ""),
     nameKey: String(d.nameKey ?? ""),
-    lines: Array.isArray(d.lines)
-      ? d.lines.map(
-          (l: { refType?: unknown; refId?: unknown; qtyUsed?: unknown }) => ({
-            refType: (l?.refType === "production"
-              ? "production"
-              : "raw") as ComponentType,
-            refId: String(l?.refId ?? ""),
-            qtyUsed: Number(l?.qtyUsed ?? 0),
-          }),
-        )
-      : [],
+    // Absent on every recipe written before variants — which is exactly what
+    // "this is the item's base recipe" means.
+    variantName: d.variantName ? String(d.variantName) : undefined,
+    variantKey: d.variantKey ? String(d.variantKey) : undefined,
+    lines: toItemRecipeLines(d.lines),
     totalCost: Number(d.totalCost ?? 0),
+    packagingLines: toPackagingLines(d.packagingLines),
+    packagingCost: Number(d.packagingCost ?? 0),
     createdAt: d.createdAt ? new Date(d.createdAt).toISOString() : undefined,
     updatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
   }));
+}
+
+/**
+ * What sanitizeItemRecipe needs to resolve an `item` line: every stored
+ * recipe's components, and every stored recipe's settled cost.
+ *
+ * A search filter must NOT be applied here — the loop check has to see recipes
+ * the user is not currently looking at, or a chain could be closed through one
+ * that happens to be filtered out of the table.
+ */
+export async function itemRecipeGraph(
+  selfId?: string,
+): Promise<ItemRecipeGraph> {
+  const [recipes, components] = await Promise.all([
+    listItemRecipes(),
+    componentCostsByKey(),
+  ]);
+
+  const linesById = new Map<string, ItemRecipeLine[]>(
+    recipes.map((r) => [String(r._id), r.lines]),
+  );
+  return {
+    linesById,
+    costsById: itemRecipeCostsById(recipes, components),
+    selfId,
+  };
+}
+
+/**
+ * Which item recipes each stored recipe is built on, by nameKey.
+ *
+ * The importer's view of the graph itemRecipeGraph serves the form — a
+ * spreadsheet matches on name, so its loop check has to run on names. Mirrors
+ * productionDepsByNameKey one level up.
+ */
+export async function itemRecipeDepsByNameKey(): Promise<
+  Map<string, string[]>
+> {
+  const { db } = await connectToDatabase();
+  const docs = await db
+    .collection(ITEM_RECIPES_COLLECTION)
+    .find({}, { projection: { nameKey: 1, variantKey: 1, lines: 1 } })
+    .toArray();
+
+  // Keyed the way the importer groups rows — name plus variant — so the loop
+  // check compares like with like.
+  const nameKeyById = new Map(
+    docs.map((d) => [
+      String(d._id),
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
+    ]),
+  );
+
+  return new Map(
+    docs.map((d) => [
+      recipeLookupKey(String(d.nameKey ?? ""), String(d.variantKey ?? "")),
+      toItemRecipeLines(d.lines)
+        .filter((line) => line.refType === "item")
+        // A line pointing at a deleted recipe names nothing that could close a
+        // loop, so it drops out rather than becoming a blank node.
+        .map((line) => nameKeyById.get(line.refId) ?? "")
+        .filter(Boolean),
+    ]),
+  );
 }
 
 /**
@@ -791,15 +883,25 @@ export async function componentCostsByKey(): Promise<
   return combined;
 }
 
-/** How many item recipes reference a given component. */
+/**
+ * How many item recipes reference a given component, as a component or as
+ * packaging.
+ *
+ * Packaging counts because it is consumed just as a component is — a raw
+ * material nothing cooks with but every takeaway box needs is still in use,
+ * and deleting it would leave those recipes deducting nothing for it.
+ */
 export async function itemRecipesUsing(
   refType: ComponentType,
   refId: string,
 ): Promise<number> {
   const { db } = await connectToDatabase();
-  return db
-    .collection(ITEM_RECIPES_COLLECTION)
-    .countDocuments({ lines: { $elemMatch: { refType, refId } } });
+  return db.collection(ITEM_RECIPES_COLLECTION).countDocuments({
+    $or: [
+      { lines: { $elemMatch: { refType, refId } } },
+      { packagingLines: { $elemMatch: { refType, refId } } },
+    ],
+  });
 }
 
 /**
@@ -807,10 +909,15 @@ export async function itemRecipesUsing(
  *
  * Item-recipe cost depends on raw materials AND production items, and a
  * production item's own price depends on raw materials — so a single
- * raw-material edit can ripple two levels. Rather than tracking which ids
- * moved through that chain, recompute the lot: this collection is small, and
- * correctness matters more than shaving a query. Callers must run this AFTER
- * recalcProductionItemPrices so the middle layer is already settled.
+ * raw-material edit can ripple two levels. A recipe built on another recipe
+ * adds a third. Rather than tracking which ids moved through that chain,
+ * recompute the lot: this collection is small, and correctness matters more
+ * than shaving a query. Callers must run this AFTER recalcProductionItemPrices
+ * so the middle layer is already settled.
+ *
+ * itemRecipeCostsById settles nested recipes depth first, so a combo is never
+ * priced from a stale copy of the plate inside it, whatever order the
+ * collection comes back in.
  *
  * Returns how many recipes changed.
  */
@@ -818,31 +925,33 @@ export async function recalcItemRecipeCosts(): Promise<number> {
   const { db } = await connectToDatabase();
   const col = db.collection(ITEM_RECIPES_COLLECTION);
 
-  const recipes = await col.find({}).toArray();
+  const recipes = await listItemRecipes();
   if (recipes.length === 0) return 0;
 
   const components = await componentCostsByKey();
+  const costs = itemRecipeCostsById(recipes, components);
   const now = new Date();
 
-  const ops = recipes.flatMap((doc) => {
-    const lines: ItemRecipeLine[] = Array.isArray(doc.lines)
-      ? doc.lines.map(
-          (l: { refType?: unknown; refId?: unknown; qtyUsed?: unknown }) => ({
-            refType: (l?.refType === "production"
-              ? "production"
-              : "raw") as ComponentType,
-            refId: String(l?.refId ?? ""),
-            qtyUsed: Number(l?.qtyUsed ?? 0),
-          }),
-        )
-      : [];
-    const { totalCost } = computeItemRecipeCost(lines, components);
-    if (totalCost === Number(doc.totalCost ?? 0)) return [];
+  const ops = recipes.flatMap((recipe) => {
+    const totalCost = costs.get(String(recipe._id)) ?? 0;
+    // Packaging is raw materials only, so it settles in one pass off the same
+    // component prices — no nesting to walk, unlike the food cost above.
+    const packagingCost = computeItemRecipeCost(
+      recipe.packagingLines ?? [],
+      components,
+    ).totalCost;
+
+    if (
+      totalCost === recipe.totalCost &&
+      packagingCost === (recipe.packagingCost ?? 0)
+    ) {
+      return [];
+    }
     return [
       {
         updateOne: {
-          filter: { _id: doc._id },
-          update: { $set: { totalCost, updatedAt: now } },
+          filter: { _id: new ObjectId(recipe._id) },
+          update: { $set: { totalCost, packagingCost, updatedAt: now } },
         },
       },
     ];

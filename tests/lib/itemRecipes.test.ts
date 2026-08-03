@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   componentKey,
   computeItemRecipeCost,
+  itemRecipeCostsById,
+  itemRecipeDependencies,
   sanitizeItemRecipe,
+  type ItemRecipe,
 } from "@/lib/itemRecipes";
 import type { CostingMaterial } from "@/lib/productionItems";
 import { normalizeMaterialName } from "@/lib/rawMaterials";
@@ -184,5 +187,269 @@ describe("sanitizeItemRecipe", () => {
     expect(sanitize({ lines: [{ refType: "raw", refId: "dal" }] }).error).toBe(
       "Every component row needs a quantity",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Food items as components
+// ---------------------------------------------------------------------------
+
+describe("itemRecipeDependencies", () => {
+  const linesById = new Map([
+    ["combo", [{ refType: "item" as const, refId: "thali", qtyUsed: 1 }]],
+    ["thali", [{ refType: "item" as const, refId: "rice", qtyUsed: 1 }]],
+    ["rice", [{ refType: "raw" as const, refId: "dal", qtyUsed: 10 }]],
+  ]);
+
+  it("reaches every recipe below, not just the ones named directly", () => {
+    expect([...itemRecipeDependencies("combo", linesById)].sort()).toEqual([
+      "rice",
+      "thali",
+    ]);
+  });
+
+  it("does not include the recipe it started from", () => {
+    expect(itemRecipeDependencies("combo", linesById).has("combo")).toBe(false);
+  });
+
+  it("terminates on a graph that already loops", () => {
+    const looped = new Map([
+      ["a", [{ refType: "item" as const, refId: "b", qtyUsed: 1 }]],
+      ["b", [{ refType: "item" as const, refId: "a", qtyUsed: 1 }]],
+    ]);
+    expect(itemRecipeDependencies("a", looped).has("a")).toBe(true);
+  });
+});
+
+describe("itemRecipeCostsById", () => {
+  // thali: 100 gm dal = ₹12
+  const thali: ItemRecipe = {
+    _id: "thali",
+    name: "Thali",
+    nameKey: "thali",
+    lines: [{ refType: "raw", refId: "dal", qtyUsed: 100 }],
+    totalCost: 0,
+  };
+  // combo: 2 thali (₹24) + 200 gm base (₹12.20) = ₹36.20
+  const combo: ItemRecipe = {
+    _id: "combo",
+    name: "Combo",
+    nameKey: "combo",
+    lines: [
+      { refType: "item", refId: "thali", qtyUsed: 2 },
+      { refType: "production", refId: "base", qtyUsed: 200 },
+    ],
+    totalCost: 0,
+  };
+
+  it("prices a nested recipe at what its own components cost", () => {
+    const costs = itemRecipeCostsById([thali, combo], COMPONENTS);
+    expect(costs.get("thali")).toBe(12);
+    expect(costs.get("combo")).toBe(36.2);
+  });
+
+  it("settles the child first, whatever order the recipes arrive in", () => {
+    const reversed = itemRecipeCostsById([combo, thali], COMPONENTS);
+    expect(reversed.get("combo")).toBe(36.2);
+  });
+
+  it("ignores the stored total and recomputes from the components", () => {
+    const stale = { ...thali, totalCost: 999 };
+    const costs = itemRecipeCostsById([stale, combo], COMPONENTS);
+    expect(costs.get("combo")).toBe(36.2);
+  });
+
+  it("prices a loop at zero rather than recursing forever", () => {
+    const a: ItemRecipe = {
+      _id: "a",
+      name: "A",
+      nameKey: "a",
+      lines: [{ refType: "item", refId: "b", qtyUsed: 1 }],
+      totalCost: 0,
+    };
+    const b: ItemRecipe = { ...a, _id: "b", name: "B", nameKey: "b",
+      lines: [{ refType: "item", refId: "a", qtyUsed: 1 }] };
+
+    expect(itemRecipeCostsById([a, b], COMPONENTS).get("a")).toBe(0);
+  });
+});
+
+describe("sanitizeItemRecipe with a food item", () => {
+  const GRAPH = {
+    linesById: new Map([
+      ["thali", [{ refType: "raw" as const, refId: "dal", qtyUsed: 100 }]],
+      ["combo", [{ refType: "item" as const, refId: "thali", qtyUsed: 1 }]],
+    ]),
+    costsById: new Map([
+      ["thali", 12],
+      ["combo", 12],
+    ]),
+  };
+
+  const sanitizeWith = (input: unknown, selfId?: string) =>
+    sanitizeItemRecipe(
+      input as Parameters<typeof sanitizeItemRecipe>[0],
+      COMPONENTS,
+      normalizeMaterialName,
+      { ...GRAPH, selfId },
+    );
+
+  it("accepts a food item and costs it at that recipe's total", () => {
+    const { doc, error } = sanitizeWith({
+      name: "Feast",
+      lines: [{ refType: "item", refId: "thali", qtyUsed: 2 }],
+    });
+
+    expect(error).toBeUndefined();
+    expect(doc?.totalCost).toBe(24);
+  });
+
+  it("refuses a food item that does not exist", () => {
+    expect(
+      sanitizeWith({
+        name: "Feast",
+        lines: [{ refType: "item", refId: "ghost", qtyUsed: 1 }],
+      }).error,
+    ).toBe("Unknown food item in recipe");
+  });
+
+  it("refuses a fractional portion", () => {
+    expect(
+      sanitizeWith({
+        name: "Half Plate",
+        lines: [{ refType: "item", refId: "thali", qtyUsed: 0.5 }],
+      }).error,
+    ).toBe("A food item's quantity must be a whole number");
+  });
+
+  it("still allows a fraction of a raw material", () => {
+    expect(
+      sanitizeWith({
+        name: "Pinch",
+        lines: [{ refType: "raw", refId: "dal", qtyUsed: 2.5 }],
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it("refuses a recipe made from itself", () => {
+    expect(
+      sanitizeWith(
+        { name: "Thali", lines: [{ refType: "item", refId: "thali", qtyUsed: 1 }] },
+        "thali",
+      ).error,
+    ).toBe("An item cannot be made from itself");
+  });
+
+  it("refuses a food item that already leads back to this one", () => {
+    // combo is built on thali, so thali may not be built on combo.
+    expect(
+      sanitizeWith(
+        { name: "Thali", lines: [{ refType: "item", refId: "combo", qtyUsed: 1 }] },
+        "thali",
+      ).error,
+    ).toContain("would create a loop");
+  });
+
+  it("allows the same pairing when nothing leads back", () => {
+    expect(
+      sanitizeWith({
+        name: "New Combo",
+        lines: [{ refType: "item", refId: "combo", qtyUsed: 1 }],
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it("refuses a food item when no graph was supplied at all", () => {
+    expect(
+      sanitizeItemRecipe(
+        {
+          name: "Feast",
+          lines: [{ refType: "item", refId: "thali", qtyUsed: 1 }],
+        },
+        COMPONENTS,
+        normalizeMaterialName,
+      ).error,
+    ).toBe("Unknown food item in recipe");
+  });
+});
+
+describe("sanitizeItemRecipe packaging", () => {
+  const sanitize = (packagingLines?: unknown) =>
+    sanitizeItemRecipe(
+      {
+        name: "Dal Thali",
+        lines: [{ refType: "raw", refId: "dal", qtyUsed: 100 }],
+        ...(packagingLines === undefined ? {} : { packagingLines }),
+      },
+      COMPONENTS,
+      normalizeMaterialName,
+    );
+
+  it("accepts raw materials and prices them apart from the food cost", () => {
+    const { doc, error } = sanitize([
+      { refType: "raw", refId: "dal", qtyUsed: 50 }, // 50 × 0.12 = ₹6
+    ]);
+    expect(error).toBeUndefined();
+    expect(doc?.packagingCost).toBe(6);
+    // The food cost is the components alone — packaging is not folded in.
+    expect(doc?.totalCost).toBe(12);
+  });
+
+  it("defaults a row with no type to a raw material", () => {
+    expect(sanitize([{ refId: "dal", qtyUsed: 1 }]).doc?.packagingLines).toEqual([
+      { refType: "raw", refId: "dal", qtyUsed: 1 },
+    ]);
+  });
+
+  it("refuses a production item", () => {
+    expect(sanitize([{ refType: "production", refId: "base", qtyUsed: 1 }]).error)
+      .toBe("Packaging can only be raw materials");
+  });
+
+  it("refuses a food item", () => {
+    expect(sanitize([{ refType: "item", refId: "thali", qtyUsed: 1 }]).error).toBe(
+      "Packaging can only be raw materials",
+    );
+  });
+
+  it("refuses an unknown raw material", () => {
+    expect(sanitize([{ refType: "raw", refId: "nope", qtyUsed: 1 }]).error).toBe(
+      "Unknown raw material in packaging",
+    );
+  });
+
+  it("refuses the same material twice", () => {
+    expect(
+      sanitize([
+        { refType: "raw", refId: "dal", qtyUsed: 1 },
+        { refType: "raw", refId: "dal", qtyUsed: 2 },
+      ]).error,
+    ).toBe("The same packaging material is listed twice");
+  });
+
+  it("refuses a quantity of zero or less", () => {
+    expect(sanitize([{ refType: "raw", refId: "dal", qtyUsed: 0 }]).error).toBe(
+      "Packaging quantities must be greater than 0",
+    );
+  });
+
+  it("refuses a missing quantity", () => {
+    expect(sanitize([{ refType: "raw", refId: "dal" }]).error).toBe(
+      "Every packaging row needs a quantity",
+    );
+  });
+
+  it("clears packaging on an empty list", () => {
+    const { doc } = sanitize([]);
+    expect(doc?.packagingLines).toEqual([]);
+    expect(doc?.packagingCost).toBe(0);
+  });
+
+  // The importer's sheet has no packaging column, so its rows omit the key —
+  // the stored rows must survive a $set of this document.
+  it("says nothing about packaging when the key is absent", () => {
+    const { doc } = sanitize();
+    expect(doc).not.toHaveProperty("packagingLines");
+    expect(doc).not.toHaveProperty("packagingCost");
   });
 });

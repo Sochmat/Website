@@ -5,7 +5,10 @@ import {
   ITEM_RECIPES_COLLECTION,
   componentCostsByKey,
   isValidId,
+  itemRecipeGraph,
+  itemRecipesUsing,
   listItemRecipes,
+  recalcItemRecipeCosts,
 } from "@/lib/inventoryDb";
 import { sanitizeItemRecipe } from "@/lib/itemRecipes";
 import { normalizeMaterialName } from "@/lib/rawMaterials";
@@ -47,7 +50,12 @@ export async function GET(
   }
 }
 
-/** Update an item recipe, re-deriving its cost. */
+/**
+ * Update an item recipe, re-deriving its cost.
+ *
+ * The graph carries this recipe's own id, so it cannot be given itself as a
+ * component, nor anything that already leads back to it.
+ */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -62,12 +70,16 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const components = await componentCostsByKey();
+    const [components, graph] = await Promise.all([
+      componentCostsByKey(),
+      itemRecipeGraph(id),
+    ]);
 
     const { doc, error } = sanitizeItemRecipe(
       body,
       components,
       normalizeMaterialName,
+      graph,
     );
     if (error || !doc) {
       return NextResponse.json(
@@ -79,13 +91,20 @@ export async function PUT(
     const { db } = await connectToDatabase();
     const col = db.collection(ITEM_RECIPES_COLLECTION);
 
+    // Unique per (name, variant) — see the POST route.
     const clash = await col.findOne({
       nameKey: doc.nameKey,
+      variantKey: doc.variantKey ?? { $in: [null, ""] },
       _id: { $ne: new ObjectId(id) },
     });
     if (clash) {
       return NextResponse.json(
-        { success: false, message: "An item recipe with that name already exists" },
+        {
+          success: false,
+          message: doc.variantName
+            ? `A recipe for the “${doc.variantName}” variant of that item already exists`
+            : "An item recipe with that name already exists",
+        },
         { status: 409 },
       );
     }
@@ -101,6 +120,11 @@ export async function PUT(
       );
     }
 
+    // Any recipe built on this one is now quoting the old price. Settling the
+    // collection here keeps a combo's stored cost true to the plate inside it
+    // without waiting for someone to re-save the combo by hand.
+    await recalcItemRecipeCosts();
+
     return NextResponse.json({ success: true, recipe: { ...doc, _id: id } });
   } catch (error) {
     console.error("Error updating item recipe:", error);
@@ -111,7 +135,14 @@ export async function PUT(
   }
 }
 
-/** Delete an item recipe. Nothing references item recipes, so no guard. */
+/**
+ * Delete an item recipe.
+ *
+ * Refused while another recipe is built on it: the survivor's `item` line
+ * would point at nothing, and a recipe that cannot resolve deducts nothing at
+ * all — so deleting one plate would quietly stop every combo containing it
+ * from taking anything off the shelves.
+ */
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -122,6 +153,19 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, message: "Invalid id" },
         { status: 400 },
+      );
+    }
+
+    const usedBy = await itemRecipesUsing("item", id);
+    if (usedBy > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Used as a component in ${usedBy} other item recipe${
+            usedBy === 1 ? "" : "s"
+          } — remove it there first`,
+        },
+        { status: 409 },
       );
     }
 

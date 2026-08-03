@@ -9,7 +9,7 @@ import { pricePerConsumptionUnit, type RawMaterial } from "./rawMaterials";
 // Type-only for CostingMaterial in the other direction, so this pair of
 // modules has no runtime cycle: itemRecipes only reaches rawMaterials at run
 // time.
-import { componentKey, type ComponentType } from "./itemRecipes";
+import { componentKey, type StockComponentType } from "./itemRecipes";
 
 /**
  * One line of a recipe: how much of a component goes into a batch.
@@ -19,9 +19,12 @@ import { componentKey, type ComponentType } from "./itemRecipes";
  * forced those intermediate steps to be re-typed into every item that used
  * them. Same shape as ItemRecipeLine, and keyed the same way, so the two
  * levels of recipe resolve components through identical code.
+ *
+ * Not a food item, though: a menu item is assembled from what the kitchen
+ * makes, never the other way round. StockComponentType is what says so.
  */
 export interface ProductionRecipeLine {
-  refType: ComponentType;
+  refType: StockComponentType;
   refId: string;
   /** In the component's own consumptionUnit. */
   qtyUsed: number;
@@ -114,7 +117,7 @@ export interface ProductionItem {
 
 /** Costing detail for one recipe line. */
 export interface CostLine {
-  refType: ComponentType;
+  refType: StockComponentType;
   refId: string;
   qtyUsed: number;
   /** Cost of one consumptionUnit of the component. */
@@ -206,7 +209,7 @@ export function computeCost(
 
 /** How much of one component a quantity of a production item draws down. */
 export interface ConsumedComponent {
-  refType: ComponentType;
+  refType: StockComponentType;
   refId: string;
   /** In that component's consumptionUnit. */
   qty: number;
@@ -294,7 +297,7 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function isComponentType(value: unknown): value is ComponentType {
+function isStockComponentType(value: unknown): value is StockComponentType {
   return value === "raw" || value === "production";
 }
 
@@ -375,7 +378,7 @@ export function sanitizeProductionItem(
 
     // A body written against the raw-material-only shape still means what it
     // always meant, so it is read rather than rejected.
-    const refType: ComponentType = isComponentType(row?.refType)
+    const refType: StockComponentType = isStockComponentType(row?.refType)
       ? row.refType
       : "raw";
     const refId =

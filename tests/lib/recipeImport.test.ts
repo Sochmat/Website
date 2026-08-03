@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { loopedNameKeys, planProductionImport } from "@/lib/recipeImport";
+import {
+  loopedNameKeys,
+  planItemRecipeImport,
+  planProductionImport,
+} from "@/lib/recipeImport";
 import type { CostingMaterial } from "@/lib/productionItems";
+import type { SheetRow } from "@/lib/rawMaterials";
 
 const COMPONENTS = new Map<string, CostingMaterial>([
   ["raw:dal-id", { pricePerPurchaseUnit: 120, unitConversion: 1000 }],
@@ -228,5 +233,130 @@ describe("planProductionImport", () => {
     ]);
     expect(result.errors).toEqual([]);
     expect(result.creates[0].recipe).toHaveLength(2);
+  });
+});
+
+describe("planItemRecipeImport packaging", () => {
+  const recipeRow = (name: string, variant = "") => ({
+    Name: name,
+    Variant: variant,
+  });
+
+  const componentRow = (name: string, variant = "") => ({
+    "Recipe Name": name,
+    Variant: variant,
+    Type: "Raw Material",
+    Component: "Toor Dal",
+    "Qty Used": 100,
+  });
+
+  const packagingRow = (
+    name: string,
+    material: string,
+    qty: unknown = 1,
+    variant = "",
+  ) => ({
+    "Recipe Name": name,
+    Variant: variant,
+    Material: material,
+    "Qty Used": qty,
+  });
+
+  const plan = (packagingRows?: SheetRow[], rows = [recipeRow("Thali")]) =>
+    planItemRecipeImport(
+      rows,
+      rows.map((r) => componentRow(r.Name, r.Variant)),
+      RAW_IDS,
+      PRODUCTION_IDS,
+      new Map(),
+      COMPONENTS,
+      undefined,
+      new Map(),
+      packagingRows,
+    );
+
+  it("attaches packaging from the sheet and costs it apart", () => {
+    const { creates, errors } = plan([packagingRow("Thali", "Ghee", 2)]);
+
+    expect(errors).toEqual([]);
+    expect(creates[0].packagingLines).toEqual([
+      { refType: "raw", refId: "ghee-id", qtyUsed: 2 },
+    ]);
+    expect(creates[0].packagingCost).toBe(1.3); // 2 × 650/1000
+    expect(creates[0].totalCost).toBe(12); // components only
+  });
+
+  // The whole point of the optional sheet: an export taken before it existed
+  // must not silently strip packaging off every recipe in the file.
+  it("says nothing about packaging when the sheet is absent", () => {
+    const { creates } = plan(undefined);
+    expect(creates[0]).not.toHaveProperty("packagingLines");
+  });
+
+  it("clears packaging for a recipe with no rows on a sheet that is present", () => {
+    const { creates } = plan([]);
+    expect(creates[0].packagingLines).toEqual([]);
+    expect(creates[0].packagingCost).toBe(0);
+  });
+
+  it("keeps each variant's packaging on its own recipe", () => {
+    const rows = [recipeRow("Thali"), recipeRow("Thali", "Large")];
+    const { creates, errors } = plan(
+      [
+        packagingRow("Thali", "Ghee", 1),
+        packagingRow("Thali", "Toor Dal", 3, "Large"),
+      ],
+      rows,
+    );
+
+    expect(errors).toEqual([]);
+    expect(creates[0].packagingLines).toEqual([
+      { refType: "raw", refId: "ghee-id", qtyUsed: 1 },
+    ]);
+    expect(creates[1].packagingLines).toEqual([
+      { refType: "raw", refId: "dal-id", qtyUsed: 3 },
+    ]);
+  });
+
+  it("rejects an unknown material and skips the recipe it belongs to", () => {
+    const { creates, errors } = plan([packagingRow("Thali", "Bubble Wrap")]);
+
+    expect(creates).toEqual([]);
+    expect(errors[0]).toMatchObject({
+      sheet: "Packaging",
+      message: 'Unknown raw material "Bubble Wrap"',
+    });
+  });
+
+  it("rejects a quantity of zero", () => {
+    expect(plan([packagingRow("Thali", "Ghee", 0)]).errors[0].message).toBe(
+      "Qty Used must be greater than 0",
+    );
+  });
+
+  it("rejects a missing quantity", () => {
+    expect(plan([packagingRow("Thali", "Ghee", "")]).errors[0].message).toBe(
+      "Qty Used is required",
+    );
+  });
+
+  it("rejects the same material listed twice for one recipe", () => {
+    const { errors } = plan([
+      packagingRow("Thali", "Ghee", 1),
+      packagingRow("Thali", "Ghee", 2),
+    ]);
+    expect(errors[0].message).toBe('"Ghee" is listed twice for this recipe');
+  });
+
+  it("flags packaging for a recipe the file never lists", () => {
+    const { creates, errors } = plan([packagingRow("Ghost Dish", "Ghee", 1)]);
+
+    // The real recipe still imports; only the orphan row is reported.
+    expect(creates).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      sheet: "Packaging",
+      name: "Ghost Dish",
+      message: "No matching row on the Item Recipes sheet",
+    });
   });
 });
