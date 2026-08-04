@@ -14,6 +14,7 @@ import SocietySelector from "@/components/SocietySelector";
 import LocationPerkModals from "@/components/LocationPerkModals";
 import StoreClosedBanner from "@/components/StoreClosedBanner";
 import StreakTimeline from "@/components/StreakTimeline";
+import WalletPill from "@/components/WalletPill";
 
 export default function Home() {
   // OLD map-based location selector — disabled (replaced by SocietySelector)
@@ -35,7 +36,17 @@ export default function Home() {
       <StoreClosedBanner />
       {/* Header */}
       <div className="flex justify-between items-center gap-2 mt-[20px] px-4">
-        <Image src="/logo.svg" alt="Logo" width={270} height={80} priority />
+        {/* min-w-0 lets the logo give up width to the wallet pill on narrow
+            phones instead of pushing the hamburger off the row. */}
+        <Image
+          src="/logo.svg"
+          alt="Logo"
+          width={270}
+          height={80}
+          priority
+          className="min-w-0 shrink h-auto"
+        />
+        <WalletPill />
         <ExpandableMenu />
       </div>
 

@@ -40,6 +40,11 @@ export async function GET(request: NextRequest) {
           email: user.email,
           address: user.address,
           addresses: user.addresses ?? [],
+          // Served here rather than from /api/referral/me because the header
+          // pill needs it on every load: this document is already in hand, so
+          // it costs no extra query, whereas referral/me aggregates the whole
+          // wallet ledger and lazily *writes* a referral code as a side effect.
+          walletBalance: Number(user.walletBalance ?? 0),
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },

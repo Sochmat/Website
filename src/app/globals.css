@@ -186,11 +186,30 @@ button {
   animation: streak-node 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
+/* Wallet pill: the coin flips once, then rests. Most of the cycle is the pause
+   — a continuously spinning icon in a header people see on every visit reads
+   as a loading spinner rather than a flourish. */
+@keyframes wallet-coin {
+  0%,
+  72% {
+    transform: rotateY(0deg);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+.animate-wallet-coin {
+  animation: wallet-coin 4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  transform-style: preserve-3d;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-streak-reveal,
   .animate-streak-flame,
   .animate-streak-glow,
-  .animate-streak-node {
+  .animate-streak-node,
+  .animate-wallet-coin {
     animation: none;
   }
 }
