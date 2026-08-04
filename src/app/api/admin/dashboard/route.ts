@@ -3,13 +3,32 @@ import type { Db } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
 import { parseIstRange } from "@/lib/adminRange";
 import { itemSalesInRange } from "@/lib/adminItemSales";
+import {
+  MONGO_COLLECTED_AMOUNT,
+  MONGO_GROSS_AMOUNT,
+  MONGO_REDEEMED_AMOUNT,
+} from "@/lib/orderAmounts";
 import { istToday, addIstDays } from "@/lib/ist";
 
 /** How many items the dashboard's top-sellers panel shows. */
 const TOP_ITEMS_LIMIT = 10;
 
+/**
+ * Paid sales in a range, split three ways.
+ *
+ * Gross is what was billed; collected is what actually reached Razorpay (or
+ * cash). They differ by whatever the customer paid from a balance — wallet
+ * credit and reward points are consideration, not a discount, so they belong to
+ * gross sales but were never money in. Reporting only gross overstates takings
+ * and won't tie to a settlement report; only collected understates sales.
+ */
 interface StatusBucket {
-  paidAmount: number;
+  /** Billed on paid docs, incl. tax, before any balance was spent. */
+  grossAmount: number;
+  /** Actually charged — gross less wallet credit and reward points. */
+  collectedAmount: number;
+  /** Wallet credit + reward points spent on paid docs in range. */
+  redeemedAmount: number;
   paidCount: number;
   pendingCount: number;
   failedCount: number;
@@ -17,14 +36,16 @@ interface StatusBucket {
 }
 
 const EMPTY_BUCKET: StatusBucket = {
-  paidAmount: 0,
+  grossAmount: 0,
+  collectedAmount: 0,
+  redeemedAmount: 0,
   paidCount: 0,
   pendingCount: 0,
   failedCount: 0,
   refundedCount: 0,
 };
 
-/** Group a collection's in-range docs by paymentStatus: paid amount + per-status counts. */
+/** Group a collection's in-range docs by paymentStatus: paid amounts + per-status counts. */
 async function salesBucket(
   db: Db,
   collection: string,
@@ -33,13 +54,21 @@ async function salesBucket(
 ): Promise<StatusBucket> {
   const rows = await db
     .collection(collection)
-    .aggregate<{ _id: string; count: number; amount: number }>([
+    .aggregate<{
+      _id: string;
+      count: number;
+      gross: number;
+      collected: number;
+      redeemed: number;
+    }>([
       { $match: { createdAt: { $gte: gte, $lt: lt } } },
       {
         $group: {
           _id: "$paymentStatus",
           count: { $sum: 1 },
-          amount: { $sum: { $ifNull: ["$totalAmount", 0] } },
+          gross: { $sum: MONGO_GROSS_AMOUNT },
+          collected: { $sum: MONGO_COLLECTED_AMOUNT },
+          redeemed: { $sum: MONGO_REDEEMED_AMOUNT },
         },
       },
     ])
@@ -48,7 +77,9 @@ async function salesBucket(
   const bucket: StatusBucket = { ...EMPTY_BUCKET };
   for (const r of rows) {
     if (r._id === "paid") {
-      bucket.paidAmount = r.amount;
+      bucket.grossAmount = r.gross;
+      bucket.collectedAmount = r.collected;
+      bucket.redeemedAmount = r.redeemed;
       bucket.paidCount = r.count;
     } else if (r._id === "pending") bucket.pendingCount = r.count;
     else if (r._id === "failed") bucket.failedCount = r.count;
@@ -212,7 +243,11 @@ export async function GET(request: NextRequest) {
       sales: {
         orders,
         subscriptions,
-        totalPaidAmount: orders.paidAmount + subscriptions.paidAmount,
+        totalGrossAmount: orders.grossAmount + subscriptions.grossAmount,
+        totalCollectedAmount:
+          orders.collectedAmount + subscriptions.collectedAmount,
+        totalRedeemedAmount:
+          orders.redeemedAmount + subscriptions.redeemedAmount,
       },
       users: {
         total: totalUsers,

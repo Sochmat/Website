@@ -6,6 +6,7 @@ import type { ColumnsType } from "antd/es/table";
 import PetpoojaUploads from "@/components/admin/PetpoojaUploads";
 import { SOCIETIES } from "@/lib/societies";
 import { REFERRAL_REWARD } from "@/lib/walletMath";
+import { orderAmounts } from "@/lib/orderAmounts";
 
 // Shop delay reminders: replay the alert sound at these minute marks after
 // confirmation, while the order is still "confirmed" (not yet out for delivery).
@@ -106,7 +107,14 @@ interface OrderRow {
   receiverAddress: string;
   receiverLat: number;
   receiverLng: number;
+  /** Gross bill including tax, before wallet credit or reward points. */
   totalAmount: number;
+  /** What the customer was actually charged — matches the payment log. */
+  paidAmount: number;
+  /** ₹ of wallet credit spent on this order (0 when none). */
+  walletApplied: number;
+  /** Reward points spent on this order, ₹1 each (0 when none). */
+  pointsApplied: number;
   status: string;
   paymentStatus: string;
   /** Delivery location name (empty for older orders without a society). */
@@ -217,71 +225,78 @@ export default function AdminOrdersPage() {
       .then((data) => {
         if (data.success && Array.isArray(data.orders)) {
           const mapped: OrderRow[] = data.orders.map(
-            (o: Record<string, unknown>) => ({
-              key: String(o._id),
-              orderNumber: String(o.orderNumber ?? "-"),
-              kotNumber: o.kotNumber == null ? null : Number(o.kotNumber),
-              billNumber: o.billNumber == null ? null : Number(o.billNumber),
-              userPhone: (o.user as { phone?: string })?.phone ?? "-",
-              userName: (o.user as { name?: string })?.name ?? "-",
-              receiverName: (o.receiver as { name?: string })?.name ?? "-",
-              receiverPhone: (o.receiver as { phone?: string })?.phone ?? "-",
-              receiverAddress:
-                (o.receiver as { address?: string })?.address ?? "-",
-              receiverLat: (o.receiver as { lat?: number })?.lat ?? 0,
-              receiverLng: (o.receiver as { lng?: number })?.lng ?? 0,
-              totalAmount: Number(o.totalAmount ?? 0),
-              status: String(o.status ?? ""),
-              paymentStatus: String(o.paymentStatus ?? ""),
-              societyName:
-                SOCIETIES.find((s) => s.id === o.societyId)?.name ?? "",
-              isSlotOrder:
-                (SOCIETIES.find((s) => s.id === o.societyId)?.slots.length ??
-                  0) > 0,
-              deliverySlot: o.deliverySlot ? String(o.deliverySlot) : "",
-              createdAt: o.createdAt
-                ? new Date(o.createdAt as string).toLocaleString()
-                : "-",
-              confirmedAt: o.confirmedAt
-                ? new Date(o.confirmedAt as string).getTime()
-                : null,
-              isReferred: o.referral != null,
-              referrerName:
-                (o.referral as { referrerName?: string })?.referrerName ?? "",
-              referrerPhone:
-                (o.referral as { referrerPhone?: string })?.referrerPhone ?? "",
-              referrerCode:
-                (o.referral as { referrerCode?: string })?.referrerCode ?? "",
-              referralEarned:
-                (o.referral as { earnedReward?: boolean })?.earnedReward ===
-                true,
-              referralRewardAmount: Number(
-                (o.referral as { rewardAmount?: number })?.rewardAmount ?? 0,
-              ),
-              items: Array.isArray(o.orderItems)
-                ? (o.orderItems as Array<Record<string, unknown>>).map(
-                    (it) => ({
-                      productId: String(it.productId ?? ""),
-                      name: String(it.name ?? "Unknown product"),
-                      image: it.image ? String(it.image) : undefined,
-                      quantity: Number(it.quantity ?? 0),
-                      price: Number(it.price ?? 0),
-                      variantName: it.variantName
-                        ? String(it.variantName)
-                        : undefined,
-                      addOns: Array.isArray(it.addOns)
-                        ? (it.addOns as Array<Record<string, unknown>>).map(
-                            (a) => ({
-                              name: String(a.name ?? ""),
-                              price: Number(a.price ?? 0),
-                              quantity: Number(a.quantity ?? 0),
-                            }),
-                          )
-                        : undefined,
-                    }),
-                  )
-                : [],
-            }),
+            (o: Record<string, unknown>) => {
+              // The bill and the charge differ whenever a balance was spent.
+              const amounts = orderAmounts(o);
+              return {
+                key: String(o._id),
+                orderNumber: String(o.orderNumber ?? "-"),
+                kotNumber: o.kotNumber == null ? null : Number(o.kotNumber),
+                billNumber: o.billNumber == null ? null : Number(o.billNumber),
+                userPhone: (o.user as { phone?: string })?.phone ?? "-",
+                userName: (o.user as { name?: string })?.name ?? "-",
+                receiverName: (o.receiver as { name?: string })?.name ?? "-",
+                receiverPhone: (o.receiver as { phone?: string })?.phone ?? "-",
+                receiverAddress:
+                  (o.receiver as { address?: string })?.address ?? "-",
+                receiverLat: (o.receiver as { lat?: number })?.lat ?? 0,
+                receiverLng: (o.receiver as { lng?: number })?.lng ?? 0,
+                totalAmount: amounts.total,
+                paidAmount: amounts.paid,
+                walletApplied: amounts.walletApplied,
+                pointsApplied: amounts.pointsApplied,
+                status: String(o.status ?? ""),
+                paymentStatus: String(o.paymentStatus ?? ""),
+                societyName:
+                  SOCIETIES.find((s) => s.id === o.societyId)?.name ?? "",
+                isSlotOrder:
+                  (SOCIETIES.find((s) => s.id === o.societyId)?.slots.length ??
+                    0) > 0,
+                deliverySlot: o.deliverySlot ? String(o.deliverySlot) : "",
+                createdAt: o.createdAt
+                  ? new Date(o.createdAt as string).toLocaleString()
+                  : "-",
+                confirmedAt: o.confirmedAt
+                  ? new Date(o.confirmedAt as string).getTime()
+                  : null,
+                isReferred: o.referral != null,
+                referrerName:
+                  (o.referral as { referrerName?: string })?.referrerName ?? "",
+                referrerPhone:
+                  (o.referral as { referrerPhone?: string })?.referrerPhone ?? "",
+                referrerCode:
+                  (o.referral as { referrerCode?: string })?.referrerCode ?? "",
+                referralEarned:
+                  (o.referral as { earnedReward?: boolean })?.earnedReward ===
+                  true,
+                referralRewardAmount: Number(
+                  (o.referral as { rewardAmount?: number })?.rewardAmount ?? 0,
+                ),
+                items: Array.isArray(o.orderItems)
+                  ? (o.orderItems as Array<Record<string, unknown>>).map(
+                      (it) => ({
+                        productId: String(it.productId ?? ""),
+                        name: String(it.name ?? "Unknown product"),
+                        image: it.image ? String(it.image) : undefined,
+                        quantity: Number(it.quantity ?? 0),
+                        price: Number(it.price ?? 0),
+                        variantName: it.variantName
+                          ? String(it.variantName)
+                          : undefined,
+                        addOns: Array.isArray(it.addOns)
+                          ? (it.addOns as Array<Record<string, unknown>>).map(
+                              (a) => ({
+                                name: String(a.name ?? ""),
+                                price: Number(a.price ?? 0),
+                                quantity: Number(a.quantity ?? 0),
+                              }),
+                            )
+                          : undefined,
+                      }),
+                    )
+                  : [],
+              };
+            },
           );
           // Shop users only see orders whose payment went through (paid, or
           // later refunded). Pending/failed orders stay hidden from the shop.
@@ -574,11 +589,51 @@ export default function AdminOrdersPage() {
         ),
     },
     {
-      title: "Amount (₹)",
+      title: "Bill (₹)",
       align: "center",
       dataIndex: "totalAmount",
       key: "totalAmount",
-      width: 100,
+      width: 90,
+      render: (value: number, record: OrderRow) => (
+        <span
+          style={{
+            // Muted when a balance covered part of it, so the eye lands on
+            // what was actually charged in the next column.
+            color:
+              record.pointsApplied + record.walletApplied > 0
+                ? "#999"
+                : undefined,
+          }}
+        >
+          {value}
+        </span>
+      ),
+    },
+    {
+      // The bill is the gross total; wallet credit and reward points are spent
+      // against it, and only the remainder is charged. Showing the bill alone
+      // reads as a mismatch against the payment log — this column is the
+      // reconciliation.
+      title: "Paid (₹)",
+      align: "center",
+      dataIndex: "paidAmount",
+      key: "paidAmount",
+      width: 130,
+      render: (value: number, record: OrderRow) => (
+        <div style={{ lineHeight: 1.3 }}>
+          <div style={{ fontWeight: 600 }}>{value}</div>
+          {record.pointsApplied > 0 && (
+            <div style={{ fontSize: 11, color: "#722ed1" }}>
+              −₹{record.pointsApplied} points
+            </div>
+          )}
+          {record.walletApplied > 0 && (
+            <div style={{ fontSize: 11, color: "#52c41a" }}>
+              −₹{record.walletApplied} wallet
+            </div>
+          )}
+        </div>
+      ),
     },
     {
       title: "Order Status",
@@ -876,7 +931,7 @@ export default function AdminOrdersPage() {
                   showSizeChanger: true,
                   showTotal: (t) => `Total ${t} orders`,
                 }}
-                scroll={{ x: isShop ? 2230 : 2310 }}
+                scroll={{ x: isShop ? 2350 : 2430 }}
               />
             ),
           },

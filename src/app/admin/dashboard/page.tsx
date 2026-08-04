@@ -12,7 +12,12 @@ const { RangePicker } = DatePicker;
 const TOP_ITEMS_SHOWN = 10;
 
 interface StatusBucket {
-  paidAmount: number;
+  /** Billed on paid docs, incl. tax, before any balance was spent. */
+  grossAmount: number;
+  /** Actually charged — gross less wallet credit and reward points. */
+  collectedAmount: number;
+  /** Wallet credit + reward points spent on paid docs in range. */
+  redeemedAmount: number;
   paidCount: number;
   pendingCount: number;
   failedCount: number;
@@ -32,7 +37,12 @@ interface DashboardData {
   sales: {
     orders: StatusBucket;
     subscriptions: StatusBucket;
-    totalPaidAmount: number;
+    /** Billed across orders + subscriptions. */
+    totalGrossAmount: number;
+    /** Money actually taken — what a settlement report should match. */
+    totalCollectedAmount: number;
+    /** The gap: paid from wallet credit and reward points. */
+    totalRedeemedAmount: number;
   };
   users: {
     total: number;
@@ -264,10 +274,17 @@ function DashboardView() {
         sales &&
         users && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Gross is the headline (it's what was sold); the sub-line says
+                how much of it was actually money in, since balances spent are
+                sales that never reach a settlement report. */}
             <StatCard
               label="Total sales"
-              value={inr.format(sales.totalPaidAmount)}
-              sub="Paid revenue in range"
+              value={inr.format(sales.totalGrossAmount)}
+              sub={
+                sales.totalRedeemedAmount > 0
+                  ? `${inr.format(sales.totalCollectedAmount)} collected · ${inr.format(sales.totalRedeemedAmount)} from balances`
+                  : "Gross billed in range · all collected"
+              }
             >
               <Chip label="orders" value={sales.orders.paidCount} tone="green" />
               <Chip label="subs" value={sales.subscriptions.paidCount} tone="green" />
@@ -276,7 +293,7 @@ function DashboardView() {
             <StatCard
               label="Orders"
               value={num.format(sales.orders.paidCount)}
-              sub={`${inr.format(sales.orders.paidAmount)} · paid`}
+              sub={`${inr.format(sales.orders.grossAmount)} gross · ${inr.format(sales.orders.collectedAmount)} collected`}
             >
               {sales.orders.pendingCount > 0 && (
                 <Chip label="pending" value={sales.orders.pendingCount} tone="amber" />
@@ -292,7 +309,7 @@ function DashboardView() {
             <StatCard
               label="Subscriptions"
               value={num.format(sales.subscriptions.paidCount)}
-              sub={`${inr.format(sales.subscriptions.paidAmount)} · paid`}
+              sub={`${inr.format(sales.subscriptions.grossAmount)} gross · ${inr.format(sales.subscriptions.collectedAmount)} collected`}
             >
               {sales.subscriptions.pendingCount > 0 && (
                 <Chip label="pending" value={sales.subscriptions.pendingCount} tone="amber" />
