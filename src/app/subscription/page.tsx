@@ -269,7 +269,7 @@ function PurchaseWizard() {
     fetch("/api/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _id: user._id, addresses: merged }),
+      body: JSON.stringify({ addresses: merged }),
     })
       .then((r) => r.json())
       .then((d) => {

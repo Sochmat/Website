@@ -76,7 +76,7 @@ export default function OrderPage() {
     society,
     societyDiscountPercent,
   } = useLocation();
-  const { user, isAuthenticated, isLoading: userLoading } = useUser();
+  const { user, setUser, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const {
     open: storeOpen,
@@ -471,6 +471,16 @@ export default function OrderPage() {
         body: JSON.stringify({ ...orderPayload, useWallet, useRewardPoints }),
       });
       const data = await res.json();
+      // The session died between page load and checkout. Toasting alone left
+      // the UI insisting the customer was signed in while every order 401'd,
+      // with no way out — drop the stale user and ask them to sign in again.
+      if (res.status === 401) {
+        setUser(null);
+        message.error(data.message ?? "Please sign in to place an order");
+        openLoginPopup();
+        setPlacingOrder(false);
+        return;
+      }
       if (!data.success) {
         message.error(data.message ?? "Failed to place order");
         setPlacingOrder(false);

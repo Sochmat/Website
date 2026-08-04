@@ -167,10 +167,7 @@ function SubscribeContent() {
         const res = await fetch("/api/users", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            _id: user._id,
-            addresses: updatedAddresses,
-          }),
+          body: JSON.stringify({ addresses: updatedAddresses }),
         });
         const data = await res.json();
         if (data.success && data.user) {

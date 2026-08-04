@@ -106,9 +106,9 @@ export default function LoginPopup() {
     localStorage.getItem("sochmat_ref") ||
     undefined;
 
+  // The httpOnly session cookie set by the verify response is the credential;
+  // this only seeds the in-memory user so the UI updates without a round trip.
   const persistSession = (data: { token: string; user: unknown }) => {
-    localStorage.setItem("userToken", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
     setUser(data.user as never);
     closeLoginPopup();
   };
