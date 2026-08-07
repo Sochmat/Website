@@ -11,6 +11,11 @@
 // day's sales the admin genuinely meant to record.
 
 import type { Db } from "mongodb";
+import {
+  PRODUCTION_ITEMS_COLLECTION,
+  RAW_MATERIALS_COLLECTION,
+  restoreDrawnDownStock,
+} from "@/lib/inventoryDb";
 import { componentDemand } from "@/lib/recipeDemand";
 import {
   loadItemRecipesByNameKey,
@@ -67,4 +72,37 @@ export async function consumeStockForPetpoojaItems(
     netCost: spent.netCost,
     unmapped,
   };
+}
+
+/**
+ * Put back everything an entry's deduction took.
+ *
+ * Driven by the lines the deduction stored, not by re-deriving demand from the
+ * items: recipes change, so recomputing could restore a different quantity than
+ * was taken, and the stored lines are the only faithful record of the movement.
+ *
+ * An entry whose deduction never ran (`consumption` absent, because it failed)
+ * has nothing to reverse and yields 0 — that is the correct no-op, not an error.
+ *
+ * Production items first, then raw, mirroring the order of the original spend.
+ */
+export async function reversePetpoojaConsumption(
+  db: Db,
+  consumption: PetpoojaConsumption | null | undefined,
+  now: Date,
+): Promise<number> {
+  if (!consumption) return 0;
+  const production = await restoreDrawnDownStock(
+    db,
+    PRODUCTION_ITEMS_COLLECTION,
+    consumption.productionLines ?? [],
+    now,
+  );
+  const raw = await restoreDrawnDownStock(
+    db,
+    RAW_MATERIALS_COLLECTION,
+    consumption.rawLines ?? [],
+    now,
+  );
+  return production + raw;
 }

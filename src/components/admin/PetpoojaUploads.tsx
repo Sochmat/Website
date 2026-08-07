@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Modal, Table, Tag, message } from "antd";
+import { Button, Modal, Popconfirm, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, EditOutlined, UploadOutlined } from "@ant-design/icons";
 import BulkOrdersUpdateModal from "./BulkOrdersUpdateModal";
+import PetpoojaEditModal from "./PetpoojaEditModal";
 import type {
   PetpoojaItem,
   PetpoojaRowError,
@@ -56,6 +57,8 @@ export default function PetpoojaUploads() {
   const [detail, setDetail] = useState<UploadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -131,6 +134,31 @@ export default function PetpoojaUploads() {
       message.error("Upload failed — please try again");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleDelete(row: UploadRow) {
+    setDeletingId(row._id);
+    try {
+      const res = await fetch(`/api/admin/petpooja-uploads/${row._id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        message.error(data?.message ?? "Could not delete that entry");
+        return;
+      }
+      const rows = Number(data.restoredRows ?? 0);
+      message.success(
+        rows > 0
+          ? `Entry deleted · stock put back on ${rows} row${rows === 1 ? "" : "s"}`
+          : "Entry deleted · no stock had been deducted",
+      );
+      await load();
+    } catch {
+      message.error("Could not delete that entry");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -218,14 +246,41 @@ export default function PetpoojaUploads() {
     {
       title: "Action",
       key: "action",
+      width: 260,
       render: (_: unknown, row) => (
-        <Button
-          size="small"
-          loading={detailLoading}
-          onClick={() => openDetails(row._id)}
-        >
-          View details
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            size="small"
+            loading={detailLoading}
+            onClick={() => openDetails(row._id)}
+          >
+            View details
+          </Button>
+          <Button size="small" onClick={() => setEditingId(row._id)}>
+            Edit
+          </Button>
+          <Popconfirm
+            title="Delete this entry?"
+            // Deleting moves stock, so the prompt names exactly what is about
+            // to be put back rather than asking a generic "are you sure".
+            description={
+              row.consumptionError || row.stockRows === 0
+                ? "No stock was deducted, so nothing will be put back."
+                : `Stock will be put back across ${row.stockRows} row${
+                    row.stockRows === 1 ? "" : "s"
+                  }. This cannot be undone.`
+            }
+            okText="Delete and restock"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+            placement="topRight"
+            onConfirm={() => handleDelete(row)}
+          >
+            <Button size="small" danger loading={deletingId === row._id}>
+              Delete
+            </Button>
+          </Popconfirm>
+        </div>
       ),
     },
   ];
@@ -347,6 +402,12 @@ export default function PetpoojaUploads() {
           else message.success(summary);
           load();
         }}
+      />
+
+      <PetpoojaEditModal
+        uploadId={editingId}
+        onClose={() => setEditingId(null)}
+        onSaved={load}
       />
 
       <Table<UploadRow>
