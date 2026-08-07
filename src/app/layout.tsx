@@ -36,14 +36,18 @@ export default function RootLayout({
         <UserProvider>
           <LoginPopupProvider>
             <CartProvider>
-              <StoreStatusProvider>
-                <LocationProvider>
+              {/* Location wraps StoreStatus: store/delivery availability is now
+                  per-location, so the status provider reads the selected
+                  society. LocationProvider has no store-status dependency, so
+                  this nesting cannot cycle. */}
+              <LocationProvider>
+                <StoreStatusProvider>
                   {/* <LocationPrompt /> */}
                   {children}
                   <LoginPopup />
                   {/* <OrderPromptModal /> */}
-                </LocationProvider>
-              </StoreStatusProvider>
+                </StoreStatusProvider>
+              </LocationProvider>
             </CartProvider>
           </LoginPopupProvider>
         </UserProvider>

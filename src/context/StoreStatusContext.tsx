@@ -10,6 +10,7 @@ import {
   useState,
   ReactNode,
 } from "react";
+import { useLocation } from "@/context/LocationContext";
 
 interface StoreStatusContextType {
   open: boolean;
@@ -31,6 +32,8 @@ const StoreStatusContext = createContext<StoreStatusContextType | undefined>(
 );
 
 export function StoreStatusProvider({ children }: { children: ReactNode }) {
+  const { society } = useLocation();
+  const societyId = society.id;
   const [open, setOpenState] = useState(true);
   const [deliveryOn, setDeliveryOnState] = useState(true);
   const [opensAtLabel, setOpensAtLabel] = useState<string | null>(null);
@@ -49,7 +52,12 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch("/api/store-status", { cache: "no-store" });
+      // Availability is per-location, so ask about the society the customer is
+      // actually ordering to. Re-runs whenever they switch location.
+      const res = await fetch(
+        `/api/store-status?societyId=${encodeURIComponent(societyId)}`,
+        { cache: "no-store" },
+      );
       const data = await res.json();
       if (cancelledRef.current) return;
       if (data?.success && typeof data.open === "boolean") {
@@ -68,7 +76,7 @@ export function StoreStatusProvider({ children }: { children: ReactNode }) {
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, []);
+  }, [societyId]);
 
   const setOpen = useCallback(async (value: boolean) => {
     const previous = openRef.current;

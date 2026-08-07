@@ -6,6 +6,12 @@ import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
 import {
+  LOCATION_AVAILABILITY_KEY,
+  sanitizeLocationAvailability,
+  isStoreOnAt,
+  isDeliveryOnAt,
+} from "@/lib/locationAvailability";
+import {
   SOCIETY_DISCOUNTS_KEY,
   sanitizeDiscountMap,
   discountPercentFor,
@@ -92,15 +98,23 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const [storeDoc, deliveryDoc, societyDiscountsDoc, deliveryFeesDoc] =
-      await Promise.all([
-        settingsDb.collection("settings").findOne({ key: "store" }),
-        settingsDb.collection("settings").findOne({ key: "delivery" }),
-        settingsDb
-          .collection("settings")
-          .findOne({ key: SOCIETY_DISCOUNTS_KEY }),
-        settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
-      ]);
+    const [
+      storeDoc,
+      deliveryDoc,
+      societyDiscountsDoc,
+      deliveryFeesDoc,
+      availabilityDoc,
+    ] = await Promise.all([
+      settingsDb.collection("settings").findOne({ key: "store" }),
+      settingsDb.collection("settings").findOne({ key: "delivery" }),
+      settingsDb.collection("settings").findOne({ key: SOCIETY_DISCOUNTS_KEY }),
+      settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
+      settingsDb
+        .collection("settings")
+        .findOne({ key: LOCATION_AVAILABILITY_KEY }),
+    ]);
+    // Global gate first — it needs no body, so a shut store rejects before we
+    // spend anything parsing the request.
     if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -110,11 +124,26 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Order;
 
-    if (deliveryDoc?.on === false && body.orderType === "delivery") {
+    // Per-location gates. These only ever close: a location switched off is
+    // shut even while the store is globally open, but switching one on cannot
+    // reopen a globally closed store.
+    const availability = sanitizeLocationAvailability(availabilityDoc);
+    if (!isStoreOnAt(availability, body.societyId)) {
       return NextResponse.json(
-        { success: false, message: "Delivery is currently unavailable" },
+        { success: false, message: "Store is currently closed" },
         { status: 503 },
       );
+    }
+
+    if (body.orderType === "delivery") {
+      const deliveryOn =
+        deliveryDoc?.on !== false && isDeliveryOnAt(availability, body.societyId);
+      if (!deliveryOn) {
+        return NextResponse.json(
+          { success: false, message: "Delivery is currently unavailable" },
+          { status: 503 },
+        );
+      }
     }
 
     // The delivery contact, not the account holder — the two are separate, and

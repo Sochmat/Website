@@ -10,6 +10,7 @@ import {
 } from "@/lib/storeHours";
 import { Button, DatePicker, Switch, Tag, message } from "antd";
 import { Plus, Trash2, Copy } from "lucide-react";
+import LocationAvailabilityCard from "@/components/admin/LocationAvailabilityCard";
 
 interface ScheduleState {
   scheduleEnabled: boolean;
@@ -385,6 +386,8 @@ export default function StoreHoursPage() {
               </Button>
             )}
           </div>
+
+          <LocationAvailabilityCard />
         </>
       )}
     </div>

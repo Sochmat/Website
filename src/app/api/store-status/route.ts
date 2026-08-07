@@ -1,28 +1,49 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
+import {
+  LOCATION_AVAILABILITY_KEY,
+  sanitizeLocationAvailability,
+  isStoreOnAt,
+  isDeliveryOnAt,
+} from "@/lib/locationAvailability";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+/**
+ * Live store/delivery state. Pass `?societyId=` to get the answer for one
+ * location; without it the caller gets the global state, which is what the
+ * pre-location callers already expected.
+ */
+export async function GET(request: NextRequest) {
   try {
+    const societyId = request.nextUrl.searchParams.get("societyId");
     const { db } = await connectToDatabase();
-    const [storeDoc, deliveryDoc] = await Promise.all([
+    const [storeDoc, deliveryDoc, availabilityDoc] = await Promise.all([
       db.collection("settings").findOne({ key: "store" }),
       db.collection("settings").findOne({ key: "delivery" }),
+      db.collection("settings").findOne({ key: LOCATION_AVAILABILITY_KEY }),
     ]);
     const eff = getEffectiveStoreOpen(
       storeDoc as StoreSettingsDoc | null,
       new Date(),
     );
-    const delivery = deliveryDoc?.on ?? true;
+    const availability = sanitizeLocationAvailability(availabilityDoc);
+    // Location switches can only close, matching the order route's gates.
+    const open = eff.open && isStoreOnAt(availability, societyId);
+    const delivery =
+      (deliveryDoc?.on ?? true) && isDeliveryOnAt(availability, societyId);
     return NextResponse.json(
       {
         success: true,
-        open: eff.open,
+        open,
         delivery,
         scheduleEnabled: eff.scheduleEnabled,
-        opensAtLabel: eff.opensAtLabel,
+        // A location switched off has no reopen time, so don't imply one.
+        // (`eff.opensAtLabel` is already null whenever the store is open.)
+        opensAtLabel: isStoreOnAt(availability, societyId)
+          ? eff.opensAtLabel
+          : null,
       },
       { headers: { "Cache-Control": "no-store" } },
     );
