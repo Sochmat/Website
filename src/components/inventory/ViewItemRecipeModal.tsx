@@ -79,7 +79,10 @@ export default function ViewItemRecipeModal({
 
   type Row = ReturnType<typeof toRows>[number];
 
-  /** Each way the item sells, priced and turned into table rows. */
+  /**
+   * Each way the item sells, priced and turned into table rows — components
+   * and the box that size goes out in, which is that size's own.
+   */
   const sections = useMemo(
     () =>
       (item?.sections ?? []).map((section, index) => {
@@ -87,6 +90,11 @@ export default function ViewItemRecipeModal({
           section.recipe.lines,
           costsByKey,
           itemCostsById,
+        );
+        // Raw materials only, so packaging needs no item costs to price.
+        const packaging = computeItemRecipeCost(
+          section.recipe.packagingLines ?? [],
+          costsByKey,
         );
         return {
           // A size riding the base recipe repeats that recipe's id, so the
@@ -96,29 +104,12 @@ export default function ViewItemRecipeModal({
           fallback: section.fallback,
           rows: toRows(breakdown.lines),
           totalCost: breakdown.totalCost,
+          packagingRows: toRows(packaging.lines),
+          packagingCost: packaging.totalCost,
         };
       }),
     [item, costsByKey, itemCostsById, toRows],
   );
-
-  /**
-   * The item's packaging, from the first size that carries any.
-   *
-   * One list covers the whole item — see ItemRecipeForm, which writes the same
-   * packaging onto every size — so showing it per size would repeat it.
-   */
-  const packaging = useMemo(() => {
-    const carrying = (item?.sections ?? []).find(
-      (s) => (s.recipe.packagingLines?.length ?? 0) > 0,
-    );
-    if (!carrying) return null;
-    // Raw materials only, so it needs no item costs to price.
-    const breakdown = computeItemRecipeCost(
-      carrying.recipe.packagingLines ?? [],
-      costsByKey,
-    );
-    return { rows: toRows(breakdown.lines), totalCost: breakdown.totalCost };
-  }, [item, costsByKey, toRows]);
 
   const columns: ColumnsType<Row> = [
     {
@@ -294,44 +285,45 @@ export default function ViewItemRecipeModal({
               }
             />
           </div>
+
+          {/* Only when there is some: an empty packaging table under every
+              recipe would read as a gap to fill rather than a thing not used
+              here. */}
+          {section.packagingRows.length > 0 && (
+            <div className="mt-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Packaging
+              </h4>
+              <p className="mt-1 text-xs text-gray-500">
+                Deducted per portion sold, and costed separately from the
+                components above.
+              </p>
+              <div className="mt-2 rounded-xl border border-gray-200 overflow-hidden">
+                <Table<Row>
+                  columns={packagingColumns}
+                  dataSource={section.packagingRows}
+                  loading={loading}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: "max-content" }}
+                  summary={() => (
+                    <Table.Summary.Row className="bg-gray-50 font-semibold">
+                      <Table.Summary.Cell index={0} colSpan={3}>
+                        <span className="text-gray-700">Packaging cost</span>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={3} align="right">
+                        <span className="tabular-nums text-gray-900">
+                          {formatCurrency(section.packagingCost)}
+                        </span>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  )}
+                />
+              </div>
+            </div>
+          )}
         </div>
       ))}
-
-      {/* Only when there is some: an empty packaging table under every recipe
-          would read as a gap to fill rather than a thing not used here. */}
-      {packaging && packaging.rows.length > 0 && (
-        <div className="mt-5">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Packaging
-          </h3>
-          <p className="mt-1 text-xs text-gray-500">
-            Deducted per portion sold, and costed separately from the components
-            above.
-          </p>
-          <div className="mt-3 rounded-xl border border-gray-200 overflow-hidden">
-            <Table<Row>
-              columns={packagingColumns}
-              dataSource={packaging.rows}
-              loading={loading}
-              pagination={false}
-              size="small"
-              scroll={{ x: "max-content" }}
-              summary={() => (
-                <Table.Summary.Row className="bg-gray-50 font-semibold">
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <span className="text-gray-700">Packaging cost</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="right">
-                    <span className="tabular-nums text-gray-900">
-                      {formatCurrency(packaging.totalCost)}
-                    </span>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              )}
-            />
-          </div>
-        </div>
-      )}
     </Modal>
   );
 }
