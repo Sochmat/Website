@@ -105,6 +105,71 @@ describe("parsePetpoojaRows", () => {
   });
 });
 
+describe("parsePetpoojaRows — variants", () => {
+  const sized = (
+    name: unknown,
+    variant: unknown,
+    qty: unknown,
+  ): PetpoojaSheetRow => ({ "Item Name": name, Variant: variant, Qty: qty });
+
+  it("records the size a row was sold in", () => {
+    const { items } = parse([sized("Dal Thali", " LARGE ", 3)]);
+
+    expect(items).toEqual([
+      {
+        name: "Dal Thali",
+        nameKey: "dal thali",
+        variantName: "LARGE",
+        variantKey: "large",
+        qty: 3,
+      },
+    ]);
+  });
+
+  it("keeps two sizes of one item apart", () => {
+    const { items } = parse([
+      sized("Dal Thali", "Small", 3),
+      sized("Dal Thali", "Large", 2),
+    ]);
+
+    expect(items.map((i) => [i.variantName, i.qty])).toEqual([
+      ["Small", 3],
+      ["Large", 2],
+    ]);
+  });
+
+  it("sums one size listed more than once", () => {
+    const { items } = parse([
+      sized("Dal Thali", "Large", 3),
+      sized("dal  thali", "large", 2),
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].qty).toBe(5);
+    // First spelling wins for the size too, as it does for the name.
+    expect(items[0].variantName).toBe("Large");
+  });
+
+  it("keeps a sized line apart from the same item sold without one", () => {
+    const { items } = parse([
+      row("Dal Thali", 4),
+      sized("Dal Thali", "Large", 2),
+    ]);
+
+    expect(items.map((i) => [i.variantName, i.qty])).toEqual([
+      [undefined, 4],
+      ["Large", 2],
+    ]);
+  });
+
+  it("stores no size at all when the column is blank", () => {
+    const { items } = parse([sized("Dal Rice", "   ", 1)]);
+
+    expect(items[0]).not.toHaveProperty("variantName");
+    expect(items[0]).not.toHaveProperty("variantKey");
+  });
+});
+
 describe("totalQty", () => {
   it("adds up what an upload sold", () => {
     const { items } = parse([row("Dal Rice", 12), row("Papad", 3.5)]);

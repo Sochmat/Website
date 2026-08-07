@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
-import { parsePetpoojaRows } from "@/lib/petpoojaUpload";
+import {
+  PETPOOJA_VARIANT_COLUMN,
+  parsePetpoojaRows,
+} from "@/lib/petpoojaUpload";
 import { recordPetpoojaEntry } from "@/lib/petpoojaEntry";
 
 // Admin-only; enforced by the admin session check in src/middleware.ts.
@@ -41,8 +44,11 @@ export async function POST(request: NextRequest) {
 
     const { items, errors } = parsePetpoojaRows(
       // Shaped as the sheet parser expects, so both paths share one rulebook.
-      rows.map((row: { name?: unknown; qty?: unknown }) => ({
+      rows.map((row: { name?: unknown; variant?: unknown; qty?: unknown }) => ({
         "Item Name": row?.name,
+        // Only the modal fills this in; a sheet has no such column, and a
+        // blank means the item was sold without a size.
+        [PETPOOJA_VARIANT_COLUMN]: row?.variant,
         Qty: row?.qty,
       })),
       // No worksheet here, so "row number" is the position in the modal's list.

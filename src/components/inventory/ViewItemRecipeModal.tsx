@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { Modal, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { EditOutlined, WarningOutlined } from "@ant-design/icons";
@@ -9,9 +8,9 @@ import {
   componentKey,
   computeItemRecipeCost,
   type ComponentType,
-  type ItemRecipe,
   type ItemRecipeCostLine,
 } from "@/lib/itemRecipes";
+import type { SoldRecipe } from "@/lib/menuRecipes";
 import { formatCurrency } from "@/lib/rawMaterials";
 import { useRecipeComponents } from "@/components/inventory/useRecipeComponents";
 
@@ -21,41 +20,42 @@ const TYPE_LABEL: Record<ComponentType, string> = {
   item: "Food item",
 };
 
+/** A menu item as this modal reads it: a name and every way it sells. */
+export interface ViewedItem {
+  name: string;
+  /**
+   * One per size, or a single unlabelled entry for an item with none. Built by
+   * soldRecipes(), so each entry is the recipe a sale of that size actually
+   * deducts — including a size riding the item's base recipe.
+   */
+  sections: SoldRecipe[];
+}
+
 /**
- * Read-only view of an item recipe's components.
+ * Read-only view of what a menu item is made of.
+ *
+ * An item sold in sizes has no single answer — each size draws down its own
+ * components — so it gets one breakdown per size rather than one for the item.
+ * Packaging is shown once, below them: the form keeps a single packaging list
+ * for the whole item, sizes included.
  *
  * Costs are recomputed from current component prices rather than read from the
  * stored total, so the breakdown always reconciles with what the form shows.
  */
 export default function ViewItemRecipeModal({
   open,
-  recipe,
+  item,
   onClose,
+  onEdit,
 }: {
   open: boolean;
-  recipe: ItemRecipe | null;
+  item: ViewedItem | null;
   onClose: () => void;
+  /** Where the Edit button goes; the list screen owns the routing. */
+  onEdit: () => void;
 }) {
-  const router = useRouter();
   const { optionsByKey, costsByKey, itemCostsById, loading } =
     useRecipeComponents();
-
-  const breakdown = useMemo(
-    () =>
-      recipe
-        ? computeItemRecipeCost(recipe.lines, costsByKey, itemCostsById)
-        : null,
-    [recipe, costsByKey, itemCostsById],
-  );
-
-  /** Packaging is raw materials only, so it needs no item costs to price. */
-  const packaging = useMemo(
-    () =>
-      recipe
-        ? computeItemRecipeCost(recipe.packagingLines ?? [], costsByKey)
-        : null,
-    [recipe, costsByKey],
-  );
 
   const toRows = useCallback(
     (lines: ItemRecipeCostLine[]) =>
@@ -77,17 +77,48 @@ export default function ViewItemRecipeModal({
     [optionsByKey],
   );
 
-  const rows = useMemo(
-    () => (breakdown ? toRows(breakdown.lines) : []),
-    [breakdown, toRows],
+  type Row = ReturnType<typeof toRows>[number];
+
+  /** Each way the item sells, priced and turned into table rows. */
+  const sections = useMemo(
+    () =>
+      (item?.sections ?? []).map((section, index) => {
+        const breakdown = computeItemRecipeCost(
+          section.recipe.lines,
+          costsByKey,
+          itemCostsById,
+        );
+        return {
+          // A size riding the base recipe repeats that recipe's id, so the
+          // label is what keeps the two sections apart.
+          key: `${section.label}-${index}`,
+          label: section.label,
+          fallback: section.fallback,
+          rows: toRows(breakdown.lines),
+          totalCost: breakdown.totalCost,
+        };
+      }),
+    [item, costsByKey, itemCostsById, toRows],
   );
 
-  const packagingRows = useMemo(
-    () => (packaging ? toRows(packaging.lines) : []),
-    [packaging, toRows],
-  );
-
-  type Row = (typeof rows)[number];
+  /**
+   * The item's packaging, from the first size that carries any.
+   *
+   * One list covers the whole item — see ItemRecipeForm, which writes the same
+   * packaging onto every size — so showing it per size would repeat it.
+   */
+  const packaging = useMemo(() => {
+    const carrying = (item?.sections ?? []).find(
+      (s) => (s.recipe.packagingLines?.length ?? 0) > 0,
+    );
+    if (!carrying) return null;
+    // Raw materials only, so it needs no item costs to price.
+    const breakdown = computeItemRecipeCost(
+      carrying.recipe.packagingLines ?? [],
+      costsByKey,
+    );
+    return { rows: toRows(breakdown.lines), totalCost: breakdown.totalCost };
+  }, [item, costsByKey, toRows]);
 
   const columns: ColumnsType<Row> = [
     {
@@ -180,9 +211,9 @@ export default function ViewItemRecipeModal({
       onCancel={onClose}
       width={800}
       title={
-        recipe ? (
+        item ? (
           <span>
-            Components in <span className="font-bold">{recipe.name}</span>
+            Components in <span className="font-bold">{item.name}</span>
           </span>
         ) : (
           "Components"
@@ -200,11 +231,7 @@ export default function ViewItemRecipeModal({
           key="edit"
           onClick={() => {
             onClose();
-            if (recipe?._id) {
-              router.push(
-                `/inventory-management/setup/item-recipe/${recipe._id}/edit`,
-              );
-            }
+            onEdit();
           }}
           className="inline-flex items-center gap-1.5 rounded-lg bg-[#1c1c1c] px-4 py-1.5 text-sm font-medium text-white hover:bg-[#024731] transition-colors"
         >
@@ -213,40 +240,66 @@ export default function ViewItemRecipeModal({
         </button>,
       ]}
     >
-      {recipe && breakdown && (
-        <div className="mt-4 rounded-xl border border-gray-200 overflow-hidden">
-          <Table<Row>
-            columns={columns}
-            dataSource={rows}
-            loading={loading}
-            pagination={false}
-            size="small"
-            scroll={{ x: "max-content" }}
-            locale={{ emptyText: "This recipe has no components." }}
-            summary={() =>
-              rows.length > 0 ? (
-                <Table.Summary.Row className="bg-gray-50 font-semibold">
-                  <Table.Summary.Cell index={0} colSpan={4}>
-                    <span className="text-gray-700">Total cost</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="right">
-                    <span className="tabular-nums text-gray-900">
-                      {formatCurrency(breakdown.totalCost)}
-                    </span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="right">
-                    <span className="tabular-nums text-gray-600">100.0%</span>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              ) : null
-            }
-          />
-        </div>
+      {item && sections.length === 0 && (
+        <p className="mt-4 text-sm text-gray-500">
+          Nothing is written for this item yet, so nothing would come off the
+          shelf for it.
+        </p>
       )}
+
+      {sections.map((section) => (
+        <div key={section.key} className="mt-4">
+          {/* Unlabelled for an item with no sizes — there is only one list, and
+              heading it would name a distinction the item does not have. */}
+          {section.label && (
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">
+                {section.label}
+              </h3>
+              {section.fallback && (
+                <span
+                  className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                  title="No recipe has been written for this size, so a sale of it deducts the item's base recipe — shown here."
+                >
+                  base recipe
+                </span>
+              )}
+            </div>
+          )}
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <Table<Row>
+              columns={columns}
+              dataSource={section.rows}
+              loading={loading}
+              pagination={false}
+              size="small"
+              scroll={{ x: "max-content" }}
+              locale={{ emptyText: "This recipe has no components." }}
+              summary={() =>
+                section.rows.length > 0 ? (
+                  <Table.Summary.Row className="bg-gray-50 font-semibold">
+                    <Table.Summary.Cell index={0} colSpan={4}>
+                      <span className="text-gray-700">Total cost</span>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} align="right">
+                      <span className="tabular-nums text-gray-900">
+                        {formatCurrency(section.totalCost)}
+                      </span>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} align="right">
+                      <span className="tabular-nums text-gray-600">100.0%</span>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                ) : null
+              }
+            />
+          </div>
+        </div>
+      ))}
 
       {/* Only when there is some: an empty packaging table under every recipe
           would read as a gap to fill rather than a thing not used here. */}
-      {recipe && packaging && packagingRows.length > 0 && (
+      {packaging && packaging.rows.length > 0 && (
         <div className="mt-5">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
             Packaging
@@ -258,7 +311,7 @@ export default function ViewItemRecipeModal({
           <div className="mt-3 rounded-xl border border-gray-200 overflow-hidden">
             <Table<Row>
               columns={packagingColumns}
-              dataSource={packagingRows}
+              dataSource={packaging.rows}
               loading={loading}
               pagination={false}
               size="small"

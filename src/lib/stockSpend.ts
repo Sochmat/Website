@@ -13,7 +13,7 @@ import {
 } from "@/lib/inventoryDb";
 import { demandByRefType, type ComponentDemand } from "@/lib/recipeDemand";
 import { recipesByNameKey } from "@/lib/menuRecipes";
-import type { ItemRecipe } from "@/lib/itemRecipes";
+import { toItemRecipeLines, type ItemRecipe } from "@/lib/itemRecipes";
 import type { AuditLine } from "@/lib/stockAudits";
 import { roundCurrency } from "@/lib/productionItems";
 
@@ -33,31 +33,42 @@ export interface SpentStock {
   netCost: number | null;
 }
 
-/** Item recipes, keyed the way a menu-item name resolves to one. */
+/**
+ * Item recipes, keyed the way a menu-item name resolves to one.
+ *
+ * Everything the demand walk reads is loaded, and nothing is narrowed on the
+ * way in: `variantKey` is what separates a Large's recipe from the base one it
+ * would otherwise overwrite, an `item` line is expanded rather than mistaken
+ * for a raw material, and packaging is deducted alongside the components.
+ */
 export async function loadItemRecipesByNameKey(
   db: Db,
 ): Promise<Map<string, ItemRecipe>> {
   const docs = await db
     .collection(ITEM_RECIPES_COLLECTION)
-    .find({}, { projection: { name: 1, nameKey: 1, lines: 1 } })
+    .find(
+      {},
+      {
+        projection: {
+          name: 1,
+          nameKey: 1,
+          variantName: 1,
+          variantKey: 1,
+          lines: 1,
+          packagingLines: 1,
+        },
+      },
+    )
     .toArray();
 
   const recipes: ItemRecipe[] = docs.map((d) => ({
     _id: String(d._id),
     name: String(d.name ?? ""),
     nameKey: String(d.nameKey ?? ""),
-    lines: Array.isArray(d.lines)
-      ? d.lines.map(
-          (l: { refType?: unknown; refId?: unknown; qtyUsed?: unknown }) => ({
-            refType:
-              l?.refType === "production"
-                ? ("production" as const)
-                : ("raw" as const),
-            refId: String(l?.refId ?? ""),
-            qtyUsed: Number(l?.qtyUsed ?? 0),
-          }),
-        )
-      : [],
+    variantName: String(d.variantName ?? ""),
+    variantKey: String(d.variantKey ?? ""),
+    lines: toItemRecipeLines(d.lines),
+    packagingLines: toItemRecipeLines(d.packagingLines),
     // Costing is irrelevant here; the draw-down prices each line itself, from
     // the item's own rate at the moment stock moves.
     totalCost: 0,

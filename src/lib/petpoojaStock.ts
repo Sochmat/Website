@@ -50,9 +50,13 @@ export async function consumeStockForPetpoojaItems(
   const recipes = await loadItemRecipesByNameKey(db);
 
   // An uploaded item is just something sold, `qty` times over — the same
-  // input the delivered-order path builds from its order lines.
+  // input the delivered-order path builds from its order lines, size included.
   const { demand, unmapped } = componentDemand(
-    items.map((item) => ({ name: item.name, quantity: item.qty })),
+    items.map((item) => ({
+      name: item.name,
+      variantName: item.variantName,
+      quantity: item.qty,
+    })),
     recipes,
   );
 
