@@ -8,10 +8,21 @@
 //
 // Pure logic — no ExcelJS, no Mongo. See petpoojaUpload.test.ts.
 
+import { recipeLookupKey } from "./menuRecipes";
 import { normalizeMaterialName } from "./rawMaterials";
 
 /** Sheet headers, in order. Both are required. */
 export const PETPOOJA_SHEET_COLUMNS = ["Item Name", "Qty"] as const;
+
+/**
+ * The optional size column.
+ *
+ * Deliberately outside PETPOOJA_SHEET_COLUMNS: a sheet is read against those
+ * headers and would fail on a missing one, whereas a variant is something only
+ * some items have. Bulk Orders Update fills it in; an uploaded sheet leaves it
+ * blank, and a blank variant means the item's base recipe, exactly as before.
+ */
+export const PETPOOJA_VARIANT_COLUMN = "Variant";
 
 /** One document per entry, uploaded or typed in. */
 export const PETPOOJA_UPLOADS_COLLECTION = "petpoojaUploads";
@@ -36,6 +47,14 @@ export interface PetpoojaItem {
   name: string;
   /** normalizeMaterialName(name) — the key everything else matches on. */
   nameKey: string;
+  /**
+   * The size sold, when the item has variants. Absent means the item was sold
+   * without one, and deducts its base recipe — which is every entry recorded
+   * before this column existed.
+   */
+  variantName?: string;
+  /** normalizeMaterialName(variantName); absent alongside it. */
+  variantKey?: string;
   qty: number;
 }
 
@@ -78,6 +97,9 @@ function roundQty(value: number): number {
  * the inventory console, so "Dal Rice", "dal  rice" and "Dal Rice." are one
  * item — recorded under the first spelling seen.
  *
+ * Two SIZES of one item are two lines, not one: a Small and a Large draw down
+ * different amounts, so they are summed apart, keyed the way a recipe is found.
+ *
  * Bad rows are collected rather than thrown: one blank quantity in a hundred
  * rows should not cost the user the whole upload. The caller decides what to
  * do with them.
@@ -113,9 +135,24 @@ export function parsePetpoojaRows(
     }
 
     const nameKey = normalizeMaterialName(name);
-    const existing = byKey.get(nameKey);
+    const variantName = String(row[PETPOOJA_VARIANT_COLUMN] ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const variantKey = variantName ? normalizeMaterialName(variantName) : "";
+
+    const key = recipeLookupKey(nameKey, variantKey);
+    const existing = byKey.get(key);
     if (existing) existing.qty = roundQty(existing.qty + qty);
-    else byKey.set(nameKey, { name, nameKey, qty: roundQty(qty) });
+    else {
+      byKey.set(key, {
+        name,
+        nameKey,
+        // Left off entirely when there is no size, so an item sold without one
+        // stores exactly what it always did.
+        ...(variantKey ? { variantName, variantKey } : {}),
+        qty: roundQty(qty),
+      });
+    }
   });
 
   return { items: [...byKey.values()], errors, rowsRead: rows.length };

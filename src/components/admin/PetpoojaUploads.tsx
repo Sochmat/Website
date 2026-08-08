@@ -289,6 +289,16 @@ export default function PetpoojaUploads() {
     { title: "#", key: "index", width: 60, render: (_, __, i) => i + 1 },
     { title: "Item name", dataIndex: "name", key: "name" },
     {
+      title: "Variant",
+      dataIndex: "variantName",
+      key: "variantName",
+      width: 160,
+      // Blank on an item with no sizes, and on every entry recorded before
+      // sizes existed — a dash says so without implying one was missed.
+      render: (value: string | undefined) =>
+        value || <span style={{ color: "#bbb" }}>—</span>,
+    },
+    {
       title: "Qty",
       dataIndex: "qty",
       key: "qty",
@@ -456,10 +466,10 @@ export default function PetpoojaUploads() {
               pagination={detail.items.length > 15 ? { pageSize: 15 } : false}
               summary={() => (
                 <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={2}>
+                  <Table.Summary.Cell index={0} colSpan={3}>
                     <span style={{ fontWeight: 600 }}>Total</span>
                   </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1} align="right">
+                  <Table.Summary.Cell index={3} align="right">
                     <span style={{ fontWeight: 600 }}>{detail.totalQty}</span>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>

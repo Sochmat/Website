@@ -1,17 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, InputNumber, Modal, Select, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { DeleteOutlined } from "@ant-design/icons";
-import type { SellableItem } from "@/lib/menuRecipes";
+import type { SellableItem, SellableVariant } from "@/lib/menuRecipes";
 
 /** One line being built in the modal. */
 interface DraftLine {
+  /** Stable row identity — a line exists before its variant is chosen. */
+  id: number;
   nameKey: string;
   name: string;
+  /** True when the item's BASE recipe is written; see mappedFor. */
   mapped: boolean;
+  /** Sizes offered for this item; empty when it has none. */
+  variants: SellableVariant[];
+  /** The chosen size; "" until picked, and always "" on an item with none. */
+  variantName: string;
   qty: number | null;
+}
+
+/** What a line will actually deduct: the size's recipe, or the item's own. */
+function mappedFor(line: DraftLine): boolean {
+  if (!line.variants.length) return line.mapped;
+  const chosen = line.variants.find((v) => v.name === line.variantName);
+  // Nothing picked yet says nothing about what will be deducted, so the line
+  // is not flagged until it does.
+  return chosen ? chosen.mapped : true;
+}
+
+/** The pair a line resolves to; two lines may not share one. */
+function lineKey(line: DraftLine): string {
+  return `${line.nameKey}|${line.variantName}`;
 }
 
 /**
@@ -21,6 +42,10 @@ interface DraftLine {
  * What lands is the same kind of entry, and it spends stock the same way, so
  * an admin who has the figures in front of them never has to build a file to
  * enter them.
+ *
+ * An item sold in sizes is picked per size: a Large is a different quantity of
+ * the same things, so it deducts its own recipe, and one item may sit on the
+ * list once per size it sold in.
  */
 export default function BulkOrdersUpdateModal({
   open,
@@ -36,6 +61,7 @@ export default function BulkOrdersUpdateModal({
   const [loadingItems, setLoadingItems] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [saving, setSaving] = useState(false);
+  const nextId = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -55,35 +81,58 @@ export default function BulkOrdersUpdateModal({
     })();
   }, [open]);
 
-  const chosen = useMemo(
-    () => new Set(lines.map((l) => l.nameKey)),
-    [lines],
-  );
+  /** Item/size pairs already on the list, so none can be entered twice. */
+  const chosen = useMemo(() => new Set(lines.map(lineKey)), [lines]);
+
+  /** Items with nothing left to add — every size taken, or already listed. */
+  const exhausted = useMemo(() => {
+    const done = new Set<string>();
+    for (const item of items) {
+      const taken = item.variants.length
+        ? item.variants.every((v) => chosen.has(`${item.nameKey}|${v.name}`))
+        : chosen.has(`${item.nameKey}|`);
+      if (taken) done.add(item.nameKey);
+    }
+    return done;
+  }, [items, chosen]);
 
   function addItem(nameKey: string) {
     const item = items.find((i) => i.nameKey === nameKey);
-    // Already on the list — bump it instead of adding a second row, so one
-    // item can never end up with two quantities.
-    if (!item || chosen.has(nameKey)) return;
+    if (!item || exhausted.has(nameKey)) return;
     setLines((prev) => [
       ...prev,
-      { nameKey: item.nameKey, name: item.name, mapped: item.mapped, qty: 1 },
+      {
+        id: nextId.current++,
+        nameKey: item.nameKey,
+        name: item.name,
+        mapped: item.mapped,
+        variants: item.variants,
+        // An item with sizes is added unsized: which one sold is the admin's
+        // to say, and guessing it would put a figure against the wrong recipe.
+        variantName: "",
+        qty: 1,
+      },
     ]);
   }
 
-  function setQty(nameKey: string, qty: number | null) {
+  function setVariant(id: number, variantName: string) {
     setLines((prev) =>
-      prev.map((l) => (l.nameKey === nameKey ? { ...l, qty } : l)),
+      prev.map((l) => (l.id === id ? { ...l, variantName } : l)),
     );
   }
 
-  function removeLine(nameKey: string) {
-    setLines((prev) => prev.filter((l) => l.nameKey !== nameKey));
+  function setQty(id: number, qty: number | null) {
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, qty } : l)));
+  }
+
+  function removeLine(id: number) {
+    setLines((prev) => prev.filter((l) => l.id !== id));
   }
 
   const totalQty = lines.reduce((sum, l) => sum + (l.qty ?? 0), 0);
-  const incomplete = lines.some((l) => !l.qty || l.qty <= 0);
-  const unmappedCount = lines.filter((l) => !l.mapped).length;
+  const needsQty = lines.some((l) => !l.qty || l.qty <= 0);
+  const needsVariant = lines.some((l) => l.variants.length && !l.variantName);
+  const unmappedCount = lines.filter((l) => !mappedFor(l)).length;
 
   async function handleSave() {
     setSaving(true);
@@ -92,7 +141,11 @@ export default function BulkOrdersUpdateModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: lines.map((l) => ({ name: l.name, qty: l.qty })),
+          items: lines.map((l) => ({
+            name: l.name,
+            variant: l.variantName,
+            qty: l.qty,
+          })),
         }),
       });
       const data = await res.json();
@@ -126,13 +179,41 @@ export default function BulkOrdersUpdateModal({
       render: (name: string, row) => (
         <span>
           {name}
-          {!row.mapped && (
+          {!mappedFor(row) && (
             <Tag color="gold" style={{ marginLeft: 8 }}>
               no recipe
             </Tag>
           )}
         </span>
       ),
+    },
+    {
+      title: "Variant",
+      key: "variant",
+      width: 180,
+      render: (_, row) =>
+        // An item with no sizes has nothing to choose, and an empty select
+        // would read as one waiting to be filled.
+        row.variants.length === 0 ? (
+          <span style={{ color: "#bbb" }}>—</span>
+        ) : (
+          <Select
+            value={row.variantName || undefined}
+            placeholder="Pick a size"
+            status={row.variantName ? undefined : "error"}
+            style={{ width: "100%" }}
+            onChange={(v: string) => setVariant(row.id, v)}
+            options={row.variants.map((v) => ({
+              value: v.name,
+              label: v.mapped ? v.name : `${v.name} — no recipe`,
+              // The same size of the same item twice would be two quantities
+              // for one sale; it is added again as its own line instead.
+              disabled:
+                v.name !== row.variantName &&
+                chosen.has(`${row.nameKey}|${v.name}`),
+            }))}
+          />
+        ),
     },
     {
       title: "Qty",
@@ -144,7 +225,7 @@ export default function BulkOrdersUpdateModal({
           step={1}
           value={row.qty}
           status={!row.qty || row.qty <= 0 ? "error" : undefined}
-          onChange={(v) => setQty(row.nameKey, v)}
+          onChange={(v) => setQty(row.id, v)}
           style={{ width: "100%" }}
         />
       ),
@@ -159,18 +240,27 @@ export default function BulkOrdersUpdateModal({
           danger
           size="small"
           icon={<DeleteOutlined />}
-          onClick={() => removeLine(row.nameKey)}
+          onClick={() => removeLine(row.id)}
         />
       ),
     },
   ];
+
+  const saveLabel =
+    lines.length === 0
+      ? "Add items to save"
+      : needsVariant
+        ? "Every item with sizes needs one picked"
+        : needsQty
+          ? "Every item needs a quantity"
+          : `Save ${lines.length} item${lines.length === 1 ? "" : "s"}`;
 
   return (
     <Modal
       open={open}
       onCancel={onClose}
       title="Bulk Orders Update"
-      width={640}
+      width={760}
       footer={[
         <Button key="cancel" onClick={onClose} disabled={saving}>
           Cancel
@@ -179,20 +269,17 @@ export default function BulkOrdersUpdateModal({
           key="save"
           type="primary"
           loading={saving}
-          disabled={lines.length === 0 || incomplete}
+          disabled={lines.length === 0 || needsQty || needsVariant}
           onClick={handleSave}
         >
-          {lines.length === 0
-            ? "Add items to save"
-            : incomplete
-              ? "Every item needs a quantity"
-              : `Save ${lines.length} item${lines.length === 1 ? "" : "s"}`}
+          {saveLabel}
         </Button>,
       ]}
     >
       <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-        Pick what Petpooja sold and how many. Saving records one entry and
-        deducts the production items and raw materials behind each item.
+        Pick what Petpooja sold and how many. Items sold in sizes need the size
+        picked too. Saving records one entry and deducts the production items
+        and raw materials behind each item.
       </p>
 
       <Select
@@ -205,8 +292,10 @@ export default function BulkOrdersUpdateModal({
         onChange={(v: string) => addItem(v)}
         options={items.map((i) => ({
           value: i.nameKey,
-          label: i.name,
-          disabled: chosen.has(i.nameKey),
+          label: i.variants.length
+            ? `${i.name} (${i.variants.length} size${i.variants.length === 1 ? "" : "s"})`
+            : i.name,
+          disabled: exhausted.has(i.nameKey),
         }))}
         notFoundContent={loadingItems ? "Loading…" : "No matching item"}
       />
@@ -215,18 +304,18 @@ export default function BulkOrdersUpdateModal({
         <Table<DraftLine & { key: string }>
           style={{ marginTop: 16 }}
           columns={columns}
-          dataSource={lines.map((l) => ({ ...l, key: l.nameKey }))}
+          dataSource={lines.map((l) => ({ ...l, key: String(l.id) }))}
           size="small"
           pagination={lines.length > 10 ? { pageSize: 10 } : false}
           summary={() => (
             <Table.Summary.Row>
-              <Table.Summary.Cell index={0}>
+              <Table.Summary.Cell index={0} colSpan={2}>
                 <span style={{ fontWeight: 600 }}>Total</span>
               </Table.Summary.Cell>
-              <Table.Summary.Cell index={1}>
+              <Table.Summary.Cell index={2}>
                 <span style={{ fontWeight: 600 }}>{totalQty}</span>
               </Table.Summary.Cell>
-              <Table.Summary.Cell index={2} />
+              <Table.Summary.Cell index={3} />
             </Table.Summary.Row>
           )}
         />
@@ -234,7 +323,7 @@ export default function BulkOrdersUpdateModal({
 
       {unmappedCount > 0 && (
         <p style={{ marginTop: 12, fontSize: 12, color: "#ad6800" }}>
-          {unmappedCount} of these item{unmappedCount === 1 ? " has" : "s have"}{" "}
+          {unmappedCount} of these line{unmappedCount === 1 ? " has" : "s have"}{" "}
           no recipe — {unmappedCount === 1 ? "it" : "they"} will be recorded on
           the entry, but nothing will come off the shelf for{" "}
           {unmappedCount === 1 ? "it" : "them"}.

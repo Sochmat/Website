@@ -76,11 +76,23 @@ export async function GET(
     }
 
     const items: PetpoojaItem[] = Array.isArray(doc.items)
-      ? doc.items.map((i: { name?: unknown; nameKey?: unknown; qty?: unknown }) => ({
-          name: String(i?.name ?? ""),
-          nameKey: String(i?.nameKey ?? ""),
-          qty: Number(i?.qty ?? 0),
-        }))
+      ? doc.items.map(
+          (i: {
+            name?: unknown;
+            nameKey?: unknown;
+            variantName?: unknown;
+            variantKey?: unknown;
+            qty?: unknown;
+          }) => ({
+            name: String(i?.name ?? ""),
+            nameKey: String(i?.nameKey ?? ""),
+            // Entries recorded before sizes existed carry none; blank reads as
+            // "sold without one", which is what they were.
+            variantName: String(i?.variantName ?? ""),
+            variantKey: String(i?.variantKey ?? ""),
+            qty: Number(i?.qty ?? 0),
+          }),
+        )
       : [];
 
     const errors: PetpoojaRowError[] = Array.isArray(doc.errors)
