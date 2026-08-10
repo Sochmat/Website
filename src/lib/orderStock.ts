@@ -14,6 +14,7 @@ import {
   type StoredOrderItem,
 } from "@/lib/orderConsumption";
 import { componentDemand, type SoldItem } from "@/lib/recipeDemand";
+import { componentBreakdown } from "@/lib/recipeBreakdown";
 import { loadItemRecipesByNameKey, spendComponentDemand } from "@/lib/stockSpend";
 
 /** One document per order that spent stock — the trail behind the deduction. */
@@ -52,7 +53,7 @@ function nothing(): OrderStockResult {
  * id-less add-on only ever had that; either way the demand step reports what
  * it cannot match rather than deducting a guess.
  */
-async function namedOrderItems(
+export async function namedOrderItems(
   db: Db,
   products: OrderedProduct[],
 ): Promise<SoldItem[]> {
@@ -133,6 +134,12 @@ export async function consumeStockForOrder(
     const { demand, unmapped } = componentDemand(items, recipes);
     const spent = await spendComponentDemand(db, demand, claimedAt);
 
+    // Which dish ate what, worked out from the same walk that produced the
+    // demand above. Recorded now rather than reconstructed later: the recipe
+    // that was in force is the one being deducted, and it may well have been
+    // rewritten by the time anyone reads this back.
+    const breakdown = componentBreakdown(items, recipes);
+
     const result: OrderStockResult = {
       consumed: spent.rowCount > 0,
       rawRows: spent.rawLines.length,
@@ -148,6 +155,7 @@ export async function consumeStockForOrder(
       consumedAt: claimedAt,
       rawLines: spent.rawLines,
       productionLines: spent.productionLines,
+      breakdown,
       unmapped,
       rowCount: spent.rowCount,
       shortfallRows: spent.shortfallRows,
