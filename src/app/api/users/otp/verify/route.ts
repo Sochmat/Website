@@ -102,6 +102,10 @@ export async function POST(request: NextRequest) {
         email: user.email,
         address: user.address,
         addresses: user.addresses ?? [],
+        // The header pill totals these; without them here it would read ₹0
+        // from sign-in until the next /api/users/me fetch on a fresh mount.
+        walletBalance: Number(user.walletBalance ?? 0),
+        rewardPoints: Number(user.rewardPoints ?? 0),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },

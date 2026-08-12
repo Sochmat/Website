@@ -45,6 +45,10 @@ export async function GET(request: NextRequest) {
           // it costs no extra query, whereas referral/me aggregates the whole
           // wallet ledger and lazily *writes* a referral code as a side effect.
           walletBalance: Number(user.walletBalance ?? 0),
+          // Same reasoning: the pill totals referral credit and streak points
+          // into one spendable figure, and /api/rewards/me is a heavier call
+          // that also resolves the location's ladder.
+          rewardPoints: Number(user.rewardPoints ?? 0),
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
