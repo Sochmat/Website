@@ -6,6 +6,7 @@ import type { ColumnsType } from "antd/es/table";
 import { DownloadOutlined, EditOutlined, UploadOutlined } from "@ant-design/icons";
 import BulkOrdersUpdateModal from "./BulkOrdersUpdateModal";
 import PetpoojaEditModal from "./PetpoojaEditModal";
+import { downloadBlob } from "@/lib/downloadBlob";
 import type {
   PetpoojaItem,
   PetpoojaRowError,
@@ -25,18 +26,6 @@ function formatUploadedAt(iso: string): string {
     minute: "2-digit",
     hour12: true,
   }).format(new Date(iso));
-}
-
-/** Trigger a browser download from an already-fetched blob. */
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 type UploadRow = PetpoojaUploadSummary & { key: string };

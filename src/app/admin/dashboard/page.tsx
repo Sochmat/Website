@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { DatePicker, Segmented, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
+import ExportSalesReport from "@/components/admin/ExportSalesReport";
 
 const { RangePicker } = DatePicker;
 
@@ -261,6 +262,7 @@ function DashboardView() {
             format="D MMM YY"
             maxDate={dayjs()}
           />
+          <ExportSalesReport defaultRange={range} />
         </div>
       </div>
 
