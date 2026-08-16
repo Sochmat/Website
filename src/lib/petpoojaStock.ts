@@ -4,7 +4,9 @@
 // it is marked delivered; Petpooja has already served the food by the time we
 // see the sheet, so the upload itself is the moment stock leaves. Each item is
 // treated exactly as if it had been ordered `qty` times: same recipes, same
-// draw-down, same flooring at zero.
+// draw-down. Stock is NOT floored at zero — over-drawing leaves the quantity in
+// the red and records the gap as a shortfall, because the food really did leave
+// and a shelf reset to zero would forgive a debt that is still owed.
 //
 // Runs once per upload. Uploading the same file twice deducts twice — that is
 // two uploads, and the entries say so; nothing here silently de-duplicates a
@@ -24,6 +26,8 @@ export interface PetpoojaConsumption {
   consumedAt: Date;
   productionLines: SpentStock["productionLines"];
   rawLines: SpentStock["rawLines"];
+  /** Made-to-order items this entry passed through; see SpentStock. */
+  onSpotLines: SpentStock["onSpotLines"];
   rowCount: number;
   shortfallRows: number;
   netCost: number | null;
@@ -72,6 +76,7 @@ export async function consumeStockForPetpoojaItems(
     consumedAt,
     productionLines: spent.productionLines,
     rawLines: spent.rawLines,
+    onSpotLines: spent.onSpotLines,
     rowCount: spent.rowCount,
     shortfallRows: spent.shortfallRows,
     netCost: spent.netCost,

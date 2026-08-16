@@ -211,7 +211,16 @@ export default function StocksPage() {
         cRes.json(),
       ]);
       if (mData.success) setMaterials(mData.materials ?? []);
-      if (pData.success) setItems(pData.items ?? []);
+      // A made-to-order item holds no stock, so it has no quantity remaining
+      // to report — listing it would only ever show a figure nothing maintains.
+      // See ProductionItem.onSpot.
+      if (pData.success) {
+        setItems(
+          (pData.items ?? []).filter(
+            (i: ProductionItem) => i.onSpot !== true,
+          ),
+        );
+      }
       if (cData.success) setCategories(cData.categories ?? []);
     } catch {
       // Leave whatever is on screen rather than blanking it on a blip.

@@ -98,7 +98,15 @@ export function useStockRows() {
         cRes.json(),
       ]);
       if (mData.success) setMaterials(mData.materials ?? []);
-      if (pData.success) setItems(pData.items ?? []);
+      // Made-to-order items are dropped here rather than in each derived list,
+      // so no screen built on this hook has to remember the rule: there is no
+      // shelf of one to count, add to, adjust or throw away. See
+      // ProductionItem.onSpot.
+      if (pData.success) {
+        setItems(
+          (pData.items ?? []).filter((i: ProductionItem) => i.onSpot !== true),
+        );
+      }
       if (cData.success) setCategories(cData.categories ?? []);
     } catch {
       // Leave whatever is on screen rather than blanking it on a blip.

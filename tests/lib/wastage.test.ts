@@ -14,16 +14,32 @@ describe("buildWastage", () => {
     });
   });
 
-  it("floors at zero and keeps the uncovered part as a shortfall", () => {
+  it("goes into the red and keeps the uncovered part as a shortfall", () => {
+    // Not floored at zero: the food went in the bin, and resetting the shelf
+    // to 0 would forgive a debt the next delivery has to settle.
     const movement = buildWastage({ qty: 500, previousStock: 200 });
-    expect(movement.closingStock).toBe(0);
+    expect(movement.closingStock).toBe(-300);
     expect(movement.shortfall).toBe(300);
   });
 
   it("treats an untracked item as empty — the whole wastage is a shortfall", () => {
     const movement = buildWastage({ qty: 5, previousStock: null });
-    expect(movement.closingStock).toBe(0);
+    expect(movement.closingStock).toBe(-5);
     expect(movement.shortfall).toBe(5);
+  });
+
+  it("never raises stock that is already in the red", () => {
+    // Flooring used to hand this item 50 gm back. Binning food cannot put
+    // stock onto a shelf.
+    const movement = buildWastage({ qty: 10, previousStock: -50 });
+    expect(movement.closingStock).toBe(-60);
+  });
+
+  it("blames a wastage only for the part IT could not cover", () => {
+    // The item was already 50 short before this. A 10 gm wastage is 10 gm
+    // short, not 60 — the same rule buildConsumptionLine applies.
+    const movement = buildWastage({ qty: 10, previousStock: -50 });
+    expect(movement.shortfall).toBe(10);
   });
 
   it("values the full wasted quantity, not just the covered part", () => {

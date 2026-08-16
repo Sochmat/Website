@@ -29,6 +29,15 @@ export interface ConsumptionItem {
   unit: string;
   /** null = nothing has ever been counted for this item. */
   currentStock: number | null;
+  /**
+   * Made to order — see ProductionItem.onSpot.
+   *
+   * Such an item has no shelf, so its balances are not "unknown", they do not
+   * exist: openingStock, closingStock and currentStock are all forced to null
+   * rather than reporting a figure nothing maintains. What it DOES have is a
+   * quantity made, which is what its events carry.
+   */
+  onSpot?: boolean;
 }
 
 /** The consumption half of a movement — absent on stock coming in. */
@@ -95,6 +104,8 @@ export interface ConsumptionRow {
   id: string;
   name: string;
   unit: string;
+  /** Made to order: the balances below are null by nature, not by ignorance. */
+  onSpot?: boolean;
   /** Stock as it stood the instant before the range began. */
   openingStock: number | null;
   /** Stock as it stood at the end of the range's last day. */
@@ -213,9 +224,17 @@ export function buildConsumptionRows({
       id: item.id,
       name: item.name,
       unit: item.unit,
-      openingStock: openingStock(history, from, item.currentStock),
-      closingStock: closingStock(history, to, item.currentStock),
-      currentStock: item.currentStock,
+      ...(item.onSpot ? { onSpot: true } : {}),
+      // A made-to-order item is not sitting anywhere between two balances, so
+      // it reports none — a figure read off a shelf it does not have would be
+      // worse than saying there is nothing to read.
+      openingStock: item.onSpot
+        ? null
+        : openingStock(history, from, item.currentStock),
+      closingStock: item.onSpot
+        ? null
+        : closingStock(history, to, item.currentStock),
+      currentStock: item.onSpot ? null : item.currentStock,
       totalQty: roundQty(
         consumed.reduce((sum, m) => sum + m.event!.qty, 0),
       ),

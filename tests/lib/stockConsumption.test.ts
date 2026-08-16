@@ -249,3 +249,63 @@ describe("buildConsumptionRows", () => {
     expect(row.totalQty).toBe(0.3);
   });
 });
+
+describe("buildConsumptionRows — made-to-order items", () => {
+  const GRAVY: ConsumptionItem = {
+    id: "paneer",
+    name: "Paneer Gravy",
+    unit: "gm",
+    // A figure left over from before the item was flagged. It must not surface.
+    currentStock: 4000,
+    onSpot: true,
+  };
+
+  /** A made-to-order event: a quantity made, with no balance either side. */
+  const made = (at: number, qty: number, id = `m${at}-${qty}`): StockMovement => ({
+    id,
+    itemId: "paneer",
+    at,
+    previousStock: null,
+    closingStock: null,
+    event: { source: "order", label: "Order #1", qty, shortfall: 0, cost: null },
+  });
+
+  const buildOnSpot = (movements: StockMovement[]) =>
+    buildConsumptionRows({ items: [GRAVY], movements, from: FROM, to: TO });
+
+  it("totals what was made over the range", () => {
+    const [row] = buildOnSpot([
+      made(FROM + DAY, 500),
+      made(FROM + 2 * DAY, 250),
+    ]);
+
+    expect(row.totalQty).toBe(750);
+    expect(row.onSpot).toBe(true);
+  });
+
+  it("reports no balances at all, not even the stored one", () => {
+    // 4000 is still on the document; showing it would be a figure nothing has
+    // maintained since the item stopped being stocked.
+    const [row] = buildOnSpot([made(FROM + DAY, 500)]);
+
+    expect(row.openingStock).toBeNull();
+    expect(row.closingStock).toBeNull();
+    expect(row.currentStock).toBeNull();
+  });
+
+  it("is still dropped when nothing was made in the range", () => {
+    expect(buildOnSpot([made(FROM - DAY, 500)])).toEqual([]);
+  });
+
+  it("leaves a stocked item's balances alone", () => {
+    const [row] = buildConsumptionRows({
+      items: [PANEER],
+      movements: [consumed(FROM + DAY, 10, 5000, 4990)],
+      from: FROM,
+      to: TO,
+    });
+
+    expect(row.onSpot).toBeUndefined();
+    expect(row.openingStock).toBe(5000);
+  });
+});

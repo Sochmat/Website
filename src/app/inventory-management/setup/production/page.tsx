@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Modal, Table, message } from "antd";
+import { Checkbox, Modal, Table, Tooltip, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   PlusOutlined,
@@ -31,6 +31,8 @@ export default function ProductionItemsPage() {
   const [viewing, setViewing] = useState<ProductionItem | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  /** Ids whose On spot box is mid-save, so the row cannot be double-clicked. */
+  const [togglingOnSpot, setTogglingOnSpot] = useState<Set<string>>(new Set());
 
   const [modal, modalContextHolder] = Modal.useModal();
   const [messageApi, messageContextHolder] = message.useMessage();
@@ -63,6 +65,52 @@ export default function ProductionItemsPage() {
   useEffect(() => {
     loadItems();
   }, [loadItems]);
+
+  /**
+   * Flip On spot from the list, without opening the item.
+   *
+   * Sends the whole item back through PUT rather than patching one field, so
+   * the save goes through the same validation and re-pricing an edit does —
+   * there is no second, looser way to write a production item.
+   *
+   * The row is updated from the server's answer, not optimistically: this flag
+   * changes what a sale deducts, and a box that ticks itself before the write
+   * lands would be the one place you must not have to guess.
+   */
+  const toggleOnSpot = async (item: ProductionItem, next: boolean) => {
+    const id = String(item._id);
+    setTogglingOnSpot((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/inventory/production-items/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...item, onSpot: next }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        messageApi.error(data.message ?? "Could not update that item");
+        return;
+      }
+      setItems((prev) =>
+        prev.map((row) =>
+          String(row._id) === id ? { ...row, onSpot: next } : row,
+        ),
+      );
+      messageApi.success(
+        next
+          ? `${item.name} is now made to order — its raw material is consumed on sale`
+          : `${item.name} is stocked again — sales deduct the item itself`,
+      );
+    } catch {
+      messageApi.error("Network error — please try again");
+    } finally {
+      setTogglingOnSpot((prev) => {
+        const rest = new Set(prev);
+        rest.delete(id);
+        return rest;
+      });
+    }
+  };
 
   const handleDelete = (item: ProductionItem) => {
     modal.confirm({
@@ -136,6 +184,34 @@ export default function ProductionItemsPage() {
       dataIndex: "name",
       render: (value: string) => (
         <span className="font-medium text-gray-900">{value}</span>
+      ),
+    },
+    {
+      // Its own column rather than a badge on the name: the flag decides what
+      // a sale deducts, and being able to set it from here is what makes it
+      // testable without opening every item in turn.
+      title: "On spot",
+      dataIndex: "onSpot",
+      align: "center",
+      width: 110,
+      // Made-to-order items first when sorted, since they are the exception
+      // worth finding in a long list.
+      sorter: (a, b) => Number(b.onSpot ?? false) - Number(a.onSpot ?? false),
+      render: (value: boolean | undefined, row) => (
+        <Tooltip
+          title={
+            value
+              ? "Made to order — no stock is held, and a sale consumes its raw material directly. Click to make it stocked."
+              : "Kept prepared in advance — a sale deducts this item's own stock. Click to make it on spot."
+          }
+        >
+          <Checkbox
+            checked={value === true}
+            disabled={togglingOnSpot.has(String(row._id))}
+            onChange={(e) => toggleOnSpot(row, e.target.checked)}
+            aria-label={`On spot production for ${row.name}`}
+          />
+        </Tooltip>
       ),
     },
     {

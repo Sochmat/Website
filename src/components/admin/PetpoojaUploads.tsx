@@ -310,7 +310,18 @@ export default function PetpoojaUploads() {
         <>
           {/* "never counted" is not the same as "had none", so an untracked
               row says so rather than printing a 0 it never held. */}
-          {row.previousStock === null ? "—" : row.previousStock} → {row.closingStock}
+          {row.previousStock === null ? "—" : row.previousStock} →{" "}
+          {/* A closing figure below zero is a debt this entry left behind;
+              coloured the way every other screen colours one. */}
+          <span
+            style={
+              row.closingStock < 0
+                ? { color: "#cf1322", fontWeight: 600 }
+                : undefined
+            }
+          >
+            {row.closingStock}
+          </span>
           {row.shortfall > 0 && (
             <Tag color="orange" style={{ marginLeft: 6 }}>
               {row.shortfall} short

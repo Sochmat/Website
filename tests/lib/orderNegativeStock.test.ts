@@ -46,6 +46,8 @@ interface StoredRow {
   pricePerPurchaseUnit: number;
   unitConversion: number;
   alertQty?: number;
+  /** Made to order. Absent on every row here — these are all stocked items. */
+  onSpot?: boolean;
 }
 
 function stubDb(collections: Record<string, StoredRow[]>) {
@@ -53,7 +55,21 @@ function stubDb(collections: Record<string, StoredRow[]>) {
     collection(name: string) {
       const rows = collections[name] ?? [];
       return {
-        find(filter: { _id: { $in: { toString(): string }[] } }) {
+        /**
+         * Two query shapes reach this stub: the draw-down's lookup by id, and
+         * the made-to-order lookup that runs just before it. Nothing here is
+         * on spot, so that one finds nothing and the demand is drawn down
+         * exactly as it was built.
+         */
+        find(filter: {
+          _id?: { $in: { toString(): string }[] };
+          onSpot?: boolean;
+        }) {
+          if (!filter._id) {
+            return {
+              toArray: async () => rows.filter((r) => r.onSpot === true),
+            };
+          }
           const wanted = new Set(filter._id.$in.map((id) => id.toString()));
           return { toArray: async () => rows.filter((r) => wanted.has(r._id)) };
         },
