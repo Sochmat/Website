@@ -5,30 +5,115 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import { message } from "antd";
-import { LogoutOutlined, InboxOutlined } from "@ant-design/icons";
+import {
+  LogoutOutlined,
+  InboxOutlined,
+  DashboardOutlined,
+  BookOutlined,
+  PictureOutlined,
+  AppstoreOutlined,
+  IdcardOutlined,
+  TagOutlined,
+  ShoppingCartOutlined,
+  TeamOutlined,
+  CreditCardOutlined,
+  CalendarOutlined,
+  SettingOutlined,
+  DownOutlined,
+  RightOutlined,
+  MenuOutlined,
+  CloseOutlined,
+} from "@ant-design/icons";
 import type { AdminRole } from "@/lib/useAdminRole";
 
 const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
 
-// Admin navigation, in display order. `adminOnly` items are hidden for the
+// Sidebar navigation, in display order. `adminOnly` items are hidden for the
 // shop role (which only ever reaches Menu and Orders — see SHOP_ALLOWED_PATHS).
-const NAV_ITEMS: { href: string; label: string; adminOnly: boolean }[] = [
-  { href: "/admin/dashboard", label: "Dashboard", adminOnly: true },
-  { href: "/admin/menu", label: "Menu", adminOnly: false },
-  { href: "/admin/banner", label: "Banner", adminOnly: true },
-  { href: "/admin/tiles", label: "Tiles", adminOnly: true },
-  { href: "/admin/meal-cards", label: "Meals", adminOnly: true },
-  { href: "/admin/coupons", label: "Coupons", adminOnly: true },
-  { href: "/admin/orders", label: "Orders", adminOnly: false },
-  { href: "/admin/subscription-plans", label: "Subscriptions", adminOnly: true },
-  { href: "/admin/subscription-menu", label: "Subscription Menu", adminOnly: true },
-  { href: "/admin/subscription-brackets", label: "Subscription Brackets", adminOnly: true },
-  { href: "/admin/users", label: "Users", adminOnly: true },
-  { href: "/admin/payment-logs", label: "Payment Logs", adminOnly: true },
-  { href: "/admin/store-hours", label: "Store Hours", adminOnly: true },
-  { href: "/admin/society-discounts", label: "Location Discounts", adminOnly: true },
-  { href: "/admin/streak", label: "Streak Rewards", adminOnly: true },
-  { href: "/admin/delivery-fees", label: "Delivery Fees", adminOnly: true },
+// A `children` entry renders as a collapsible group; everything else is a
+// plain link.
+const NAV_ITEMS: {
+  href?: string;
+  label: string;
+  icon: React.ReactNode;
+  adminOnly: boolean;
+  children?: { href: string; label: string }[];
+}[] = [
+  {
+    href: "/admin/dashboard",
+    label: "Dashboard",
+    icon: <DashboardOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/menu",
+    label: "Menu",
+    icon: <BookOutlined />,
+    adminOnly: false,
+  },
+  {
+    href: "/admin/banner",
+    label: "Banner",
+    icon: <PictureOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/tiles",
+    label: "Tiles",
+    icon: <AppstoreOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/meal-cards",
+    label: "Meals",
+    icon: <IdcardOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/coupons",
+    label: "Coupons",
+    icon: <TagOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/orders",
+    label: "Orders",
+    icon: <ShoppingCartOutlined />,
+    adminOnly: false,
+  },
+  {
+    href: "/admin/users",
+    label: "Users",
+    icon: <TeamOutlined />,
+    adminOnly: true,
+  },
+  {
+    href: "/admin/payment-logs",
+    label: "Payment Logs",
+    icon: <CreditCardOutlined />,
+    adminOnly: true,
+  },
+  {
+    label: "Subscriptions",
+    icon: <CalendarOutlined />,
+    adminOnly: true,
+    children: [
+      { href: "/admin/subscription-plans", label: "Plans" },
+      { href: "/admin/subscription-menu", label: "Subscription Menu" },
+      { href: "/admin/subscription-brackets", label: "Brackets" },
+    ],
+  },
+  {
+    label: "Settings",
+    icon: <SettingOutlined />,
+    adminOnly: true,
+    children: [
+      { href: "/admin/store-hours", label: "Store Hours" },
+      { href: "/admin/delivery-fees", label: "Delivery Fees" },
+      { href: "/admin/society-discounts", label: "Location Discounts" },
+      { href: "/admin/streak", label: "Streak Rewards" },
+    ],
+  },
 ];
 
 /**
@@ -95,6 +180,13 @@ export default function AdminLayout({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimerRef = useRef<number | null>(null);
+  // Mobile only — the sidebar is always visible from `md` up.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Per-group override, keyed by label. A group with no entry follows the route
+  // (auto-expanded while you are inside it); once clicked, the explicit value
+  // wins. Derived rather than synced in an effect, so there is no
+  // set-state-in-effect to trip the lint rule.
+  const [groupToggled, setGroupToggled] = useState<Record<string, boolean>>({});
 
   const {
     open: storeOpen,
@@ -306,22 +398,104 @@ export default function AdminLayout({
   if (isLoginPage || isAdminRoot) return <>{children}</>;
   if (!token) return null;
 
+  const linkClass = (active: boolean, indented = false) =>
+    `flex items-center gap-2.5 rounded-lg py-2 text-sm font-medium transition-colors ${
+      indented ? "pl-9 pr-3" : "px-3"
+    } ${
+      active
+        ? "bg-white text-[#111] shadow-sm"
+        : "text-gray-300 hover:bg-white/10 hover:text-white"
+    }`;
+
+  const sidebarNav = (
+    <nav className="flex flex-col gap-1 p-3">
+      {NAV_ITEMS.filter((item) => !item.adminOnly || !isShop).map((item) => {
+        if (!item.children) {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href!}
+              aria-current={active ? "page" : undefined}
+              onClick={() => setDrawerOpen(false)}
+              className={linkClass(active)}
+            >
+              <span className="shrink-0">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          );
+        }
+
+        const groupActive = item.children.some((c) => pathname === c.href);
+        const groupOpen = groupToggled[item.label] ?? groupActive;
+        return (
+          <div key={item.label} className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() =>
+                setGroupToggled((prev) => ({
+                  ...prev,
+                  [item.label]: !groupOpen,
+                }))
+              }
+              aria-expanded={groupOpen}
+              className={`${linkClass(false)} w-full justify-between`}
+            >
+              <span className="flex items-center gap-2.5">
+                <span className="shrink-0">{item.icon}</span>
+                <span>{item.label}</span>
+              </span>
+              <span className="text-[10px] opacity-70">
+                {groupOpen ? <DownOutlined /> : <RightOutlined />}
+              </span>
+            </button>
+            {groupOpen &&
+              item.children.map((child) => {
+                const active = pathname === child.href;
+                return (
+                  <Link
+                    key={child.href}
+                    href={child.href}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setDrawerOpen(false)}
+                    className={linkClass(active, true)}
+                  >
+                    {child.label}
+                  </Link>
+                );
+              })}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100">
-      <header className="sticky top-0 z-30 bg-[#1c1c1c] text-white shadow-sm">
-        {/* Top row: brand · operational status · account */}
-        <div className="px-6 h-16 flex items-center justify-between gap-4">
-          <Link href="/admin" className="flex items-center gap-2.5 shrink-0">
-            <span className="w-8 h-8 rounded-lg bg-[#024731] flex items-center justify-center font-bold text-sm text-white">
-              S
-            </span>
-            <span className="leading-tight">
-              <span className="block font-bold tracking-tight">Sochmat</span>
-              <span className="block text-[11px] text-gray-400 -mt-0.5">
-                Admin console
+      <header className="sticky top-0 z-40 bg-[#1c1c1c] text-white shadow-sm">
+        {/* Brand · operational status · account. Navigation lives in the sidebar. */}
+        <div className="px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen((v) => !v)}
+              aria-label={drawerOpen ? "Close menu" : "Open menu"}
+              className="md:hidden inline-flex items-center justify-center rounded-lg border border-white/15 w-9 h-9 text-gray-200 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              {drawerOpen ? <CloseOutlined /> : <MenuOutlined />}
+            </button>
+            <Link href="/admin" className="flex items-center gap-2.5 shrink-0">
+              <span className="w-8 h-8 rounded-lg bg-[#024731] flex items-center justify-center font-bold text-sm text-white">
+                S
               </span>
-            </span>
-          </Link>
+              <span className="leading-tight">
+                <span className="block font-bold tracking-tight">Sochmat</span>
+                <span className="block text-[11px] text-gray-400 -mt-0.5">
+                  Admin console
+                </span>
+              </span>
+            </Link>
+          </div>
 
           <div className="flex items-center gap-2">
             {!isShop && (
@@ -338,7 +512,10 @@ export default function AdminLayout({
                   busy={deliveryToggleBusy || storeLoading}
                   onClick={handleDeliveryToggle}
                 />
-                <span className="mx-1 h-6 w-px bg-white/15" aria-hidden="true" />
+                <span
+                  className="mx-1 h-6 w-px bg-white/15"
+                  aria-hidden="true"
+                />
                 {/* Inventory lives outside the /admin route group but shares
                     the admin session, so it sits here rather than in the nav. */}
                 <Link
@@ -359,29 +536,6 @@ export default function AdminLayout({
             </button>
           </div>
         </div>
-
-        {/* Nav row: pill tabs, horizontally scrollable on narrow screens */}
-        <nav className="border-t border-white/10 px-6">
-          <div className="flex items-center gap-1 overflow-x-auto py-2 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {NAV_ITEMS.filter((item) => !item.adminOnly || !isShop).map((item) => {
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                    active
-                      ? "bg-white text-[#111] shadow-sm"
-                      : "text-gray-300 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
       </header>
       {!soundEnabled && (
         <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-3 flex items-center justify-between gap-3">
@@ -398,7 +552,28 @@ export default function AdminLayout({
           </button>
         </div>
       )}
-      <main className="p-6 mx-auto">{children}</main>
+      <div className="flex">
+        {/* Desktop: static sidebar. Sticky under the 4rem header. */}
+        <aside className="hidden md:block w-56 shrink-0 bg-[#1c1c1c] text-white sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto border-r border-white/10">
+          {sidebarNav}
+        </aside>
+
+        {/* Mobile: slide-over drawer. */}
+        {drawerOpen && (
+          <>
+            <div
+              className="md:hidden fixed inset-0 top-16 z-30 bg-black/50"
+              onClick={() => setDrawerOpen(false)}
+              aria-hidden="true"
+            />
+            <aside className="md:hidden fixed left-0 top-16 z-40 w-56 h-[calc(100vh-4rem)] overflow-y-auto bg-[#1c1c1c] text-white border-r border-white/10 shadow-xl">
+              {sidebarNav}
+            </aside>
+          </>
+        )}
+
+        <main className="flex-1 min-w-0 p-6">{children}</main>
+      </div>
     </div>
   );
 }
