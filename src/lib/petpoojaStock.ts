@@ -41,11 +41,17 @@ export interface PetpoojaConsumption {
  * Throws only on an unexpected Mongo failure. The caller decides what that
  * means for the upload — it should not throw the item list away, which is
  * still worth keeping whether or not the shelves could be updated.
+ *
+ * `consumedAt` is the day the sales are FILED under and may be backdated;
+ * `stampedAt` is when the shelves are actually being touched. They are two
+ * different facts, and the item's own `updatedAt` must not travel backwards
+ * just because the entry it came from was for last Tuesday.
  */
 export async function consumeStockForPetpoojaItems(
   db: Db,
   items: PetpoojaItem[],
   consumedAt: Date,
+  stampedAt: Date = consumedAt,
 ): Promise<PetpoojaConsumption> {
   const recipes = await loadItemRecipesByNameKey(db);
 
@@ -60,7 +66,7 @@ export async function consumeStockForPetpoojaItems(
     recipes,
   );
 
-  const spent = await spendComponentDemand(db, demand, consumedAt);
+  const spent = await spendComponentDemand(db, demand, stampedAt);
 
   return {
     consumedAt,

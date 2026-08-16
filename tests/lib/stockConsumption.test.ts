@@ -52,6 +52,17 @@ function balance(
   return { id, itemId: "paneer", at, previousStock, closingStock };
 }
 
+/** A balance movement that was stock RECEIVED, not a stock-take. */
+function received(
+  at: number,
+  addedQty: number,
+  previousStock: number | null,
+  closingStock: number,
+  id = `r${at}-${addedQty}`,
+): StockMovement {
+  return { id, itemId: "paneer", at, previousStock, closingStock, addedQty };
+}
+
 function build(movements: StockMovement[], items = [PANEER]) {
   return buildConsumptionRows({ items, movements, from: FROM, to: TO });
 }
@@ -142,6 +153,44 @@ describe("buildConsumptionRows", () => {
 
   it("drops items whose only movements were additions or stock-takes", () => {
     expect(build([balance(FROM + DAY, 5000, 9000)])).toEqual([]);
+  });
+
+  it("totals the stock received in the window", () => {
+    const [row] = build([
+      received(FROM + DAY, 4000, 5000, 9000),
+      consumed(FROM + 2 * DAY, 10, 9000, 8990),
+      received(FROM + 3 * DAY, 500, 8990, 9490),
+    ]);
+
+    expect(row.totalAdded).toBe(4500);
+    expect(row.totalQty).toBe(10);
+  });
+
+  it("reports nothing added when the range only saw consumption", () => {
+    const [row] = build([consumed(FROM + DAY, 10, 5000, 4990)]);
+
+    expect(row.totalAdded).toBe(0);
+  });
+
+  it("ignores a stock-take that happened to count higher", () => {
+    // A count that comes out above the books is a correction, not a delivery —
+    // it carries no addedQty, and must not report stock arriving.
+    const [row] = build([
+      balance(FROM + DAY, 5000, 9000),
+      consumed(FROM + 2 * DAY, 10, 9000, 8990),
+    ]);
+
+    expect(row.totalAdded).toBe(0);
+  });
+
+  it("counts only the stock received inside the window", () => {
+    const [row] = build([
+      received(FROM - DAY, 1000, 4000, 5000),
+      consumed(FROM + DAY, 10, 5000, 4990),
+      received(TO, 2000, 4990, 6990),
+    ]);
+
+    expect(row.totalAdded).toBe(0);
   });
 
   it("totals the value and reports what could not be priced", () => {

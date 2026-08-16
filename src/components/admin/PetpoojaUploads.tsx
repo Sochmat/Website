@@ -26,6 +26,30 @@ function formatUploadedAt(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** "27 Jul 2026" in IST — a day, with no time to read into it. */
+function formatIstDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
+/**
+ * When an entry was typed, if that was a different IST day from the one it is
+ * for. Null on everything else — including entries predating backdating, which
+ * carry no recordedAt at all.
+ *
+ * Both instants are reduced to their IST day first: an entry saved at 9 am for
+ * that same day is not "entered later", it is just an entry.
+ */
+function enteredOn(row: PetpoojaUploadSummary): string | null {
+  if (!row.recordedAt) return null;
+  const entered = formatIstDay(row.recordedAt);
+  return entered === formatIstDay(row.uploadedAt) ? null : entered;
+}
+
 /** Trigger a browser download from an already-fetched blob. */
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -157,16 +181,26 @@ export default function PetpoojaUploads() {
       dataIndex: "uploadedAt",
       key: "uploadedAt",
       width: 260,
-      render: (value: string, row) => (
-        <div style={{ lineHeight: 1.35 }}>
-          <div style={{ fontWeight: 500 }}>{formatUploadedAt(value)}</div>
-          <div style={{ fontSize: 12, color: "#888" }}>
-            {/* A manual entry has no file to name, so it says what it is. */}
-            {row.source === "manual" ? "Bulk Orders Update" : row.fileName} ·{" "}
-            {row.uploadedByRole}
+      render: (value: string, row) => {
+        const entered = enteredOn(row);
+        return (
+          <div style={{ lineHeight: 1.35 }}>
+            <div style={{ fontWeight: 500 }}>{formatUploadedAt(value)}</div>
+            <div style={{ fontSize: 12, color: "#888" }}>
+              {/* A manual entry has no file to name, so it says what it is. */}
+              {row.source === "manual" ? "Bulk Orders Update" : row.fileName} ·{" "}
+              {row.uploadedByRole}
+            </div>
+            {/* Only on a backdated entry: the date above is the day it sold,
+                and the day it was typed is the other half of that story. */}
+            {entered && (
+              <Tag color="blue" style={{ marginTop: 4 }}>
+                entered {entered}
+              </Tag>
+            )}
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       title: "Total items",
@@ -393,6 +427,9 @@ export default function PetpoojaUploads() {
               </span>{" "}
               — {detail.totalItems} item{detail.totalItems === 1 ? "" : "s"},
               total qty {detail.totalQty}
+              {/* The title above dates this entry to the day it sold; on a
+                  backdated one, that is not the day it was typed. */}
+              {enteredOn(detail) && ` · entered ${enteredOn(detail)}`}
             </p>
 
             <Table<PetpoojaItem & { key: string }>

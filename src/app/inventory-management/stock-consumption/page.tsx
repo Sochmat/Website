@@ -231,11 +231,12 @@ export default function StockConsumptionPage() {
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // Defaults to the last 7 days — long enough to be worth reading, short
-  // enough to load instantly on the first visit.
+  // Defaults to today alone. What left the shelves since this morning is the
+  // question the kitchen actually opens this page with; a wider range is one
+  // preset away, and starting wide buries today's figures among last week's.
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => {
     const today = dayjs(istToday(new Date()));
-    return [today.subtract(6, "day"), today];
+    return [today, today];
   });
 
   const from = pickedDate(range[0]);
@@ -280,8 +281,9 @@ export default function StockConsumptionPage() {
     {
       title: "Item",
       dataIndex: "name",
-      sorter: (a, b) => a.name.localeCompare(b.name),
-      defaultSortOrder: "ascend",
+      // Not sortable. buildConsumptionRows already returns rows by name, so
+      // the column reads the same as it always did — this only takes away a
+      // header that re-sorted into the order it was already in.
       render: (value: string, row) => (
         <div>
           <div className="font-medium text-gray-900">{value || "—"}</div>
@@ -297,6 +299,23 @@ export default function StockConsumptionPage() {
       align: "right",
       width: 150,
       render: (value: number | null, row) => stockCell(value, row.unit),
+    },
+    {
+      title: "Added",
+      dataIndex: "totalAdded",
+      align: "right",
+      width: 150,
+      sorter: (a, b) => a.totalAdded - b.totalAdded,
+      render: (value: number, row) =>
+        // Most rows received nothing; a column of green zeroes would drown the
+        // few that did, so only a real delivery is coloured in.
+        value > 0 ? (
+          <span className="whitespace-nowrap rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-emerald-700">
+            +{formatQty(value)} {row.unit}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        ),
     },
     {
       title: "Consumed",
@@ -423,7 +442,9 @@ export default function StockConsumptionPage() {
           Expand a row to see each deduction on its own — one line per delivered
           website order, one per Petpooja entry, plus the production runs and
           wastage that spent the same stock. Opening is what was on record the
-          instant before the range began; Current is what is on record now.
+          instant before the range began; Added is stock received over the
+          range, which is why Closing is not simply Opening minus Consumed;
+          Current is what is on record now.
         </p>
       </div>
 

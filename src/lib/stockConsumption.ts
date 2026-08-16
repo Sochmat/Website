@@ -72,6 +72,15 @@ export interface StockMovement {
   previousStock: number | null;
   closingStock: number | null;
   event?: MovementEvent;
+  /**
+   * Stock RECEIVED by this movement, for an addition. Positive.
+   *
+   * Only a save of type "addition" carries one. A stock-take is left without
+   * it on purpose: it REPLACES the figure on record rather than topping it up,
+   * so a count that happens to come out higher is a correction, not a delivery,
+   * and adding it here would report stock arriving that never did.
+   */
+  addedQty?: number;
 }
 
 /** One consumption line, as the expanded row shows it. */
@@ -94,6 +103,13 @@ export interface ConsumptionRow {
   currentStock: number | null;
   /** Everything consumed in the window, across all four sources. */
   totalQty: number;
+  /**
+   * Stock received in the window. 0 when none was — which is most rows, since
+   * a delivery is a far rarer event than a sale.
+   *
+   * The other half of why Closing is not simply Opening minus Consumed.
+   */
+  totalAdded: number;
   /** What that came to. null = not one event could be priced. */
   totalCost: number | null;
   /** Events left out of totalCost because the item had no price then. */
@@ -182,6 +198,16 @@ export function buildConsumptionRows({
     if (consumed.length === 0) continue;
 
     const valued = consumed.filter((m) => m.event!.cost !== null);
+    // Additions inside the window, on the same terms as the consumption above.
+    // Read from the same movement list, so a delivery at 11:59 pm on the last
+    // day counts exactly as a sale at that hour does.
+    const added = history.reduce(
+      (sum, m) =>
+        m.addedQty !== undefined && m.at >= from && m.at < to
+          ? sum + m.addedQty
+          : sum,
+      0,
+    );
 
     rows.push({
       id: item.id,
@@ -193,6 +219,7 @@ export function buildConsumptionRows({
       totalQty: roundQty(
         consumed.reduce((sum, m) => sum + m.event!.qty, 0),
       ),
+      totalAdded: roundQty(added),
       totalCost: valued.length
         ? roundCurrency(
             valued.reduce((sum, m) => sum + (m.event!.cost as number), 0),

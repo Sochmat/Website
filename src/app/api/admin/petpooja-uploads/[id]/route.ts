@@ -105,6 +105,11 @@ export async function GET(
     const upload: PetpoojaUploadDetail = {
       _id: String(doc._id),
       uploadedAt: new Date(doc.uploadedAt).toISOString(),
+      // Absent on entries written before an entry could be backdated, where
+      // there was only ever one instant to record.
+      ...(doc.recordedAt
+        ? { recordedAt: new Date(doc.recordedAt).toISOString() }
+        : {}),
       uploadedByRole: String(doc.uploadedByRole ?? "admin"),
       // Entries predating manual entry carry no source; they were uploads.
       source: doc.source === "manual" ? "manual" : "upload",

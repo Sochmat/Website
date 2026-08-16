@@ -68,6 +68,7 @@ interface StoredLine {
   name?: unknown;
   previousStock?: unknown;
   closingStock?: unknown;
+  addedQty?: unknown;
   consumedQty?: unknown;
   shortfall?: unknown;
   changeCost?: unknown;
@@ -114,20 +115,31 @@ function consumptionMovement(
   };
 }
 
-/** A line that only moves the balance — an addition, or a stock-take. */
+/**
+ * A line that only moves the balance — an addition, or a stock-take.
+ *
+ * `received` separates the two. A stock-take REPLACES the figure on record, so
+ * one that comes out higher is a correction to a bad count, not stock arriving;
+ * only an addition reports a quantity into the Added column. See AuditType.
+ */
 function balanceMovement(
   line: StoredLine,
   at: Date,
   docId: string,
+  received: boolean,
 ): StockMovement | null {
   const itemId = typeof line.id === "string" ? line.id : String(line.id ?? "");
   if (!itemId) return null;
+  const addedQty = num(line.addedQty);
   return {
     id: `audit:${docId}:${itemId}`,
     itemId,
     at: at.getTime(),
     previousStock: num(line.previousStock),
     closingStock: num(line.closingStock),
+    // A negative would be a correction dressed as a delivery, and an absent
+    // one is a line that never recorded what it took in — neither is a receipt.
+    ...(received && addedQty !== null && addedQty > 0 ? { addedQty } : {}),
   };
 }
 
@@ -284,7 +296,17 @@ export async function GET(request: NextRequest) {
           .collection(STOCK_AUDITS_COLLECTION)
           .find(
             { savedAt: { $gte: fromInstant } },
-            { projection: { kind: 1, savedAt: 1, lines: 1, consumedLines: 1 } },
+            {
+              projection: {
+                kind: 1,
+                // Tells an addition from a stock-take, which is what decides
+                // whether a line counts as stock received.
+                type: 1,
+                savedAt: 1,
+                lines: 1,
+                consumedLines: 1,
+              },
+            },
           )
           .toArray(),
         db
@@ -407,10 +429,12 @@ export async function GET(request: NextRequest) {
       const at = new Date(doc.savedAt);
       const docId = String(doc._id);
       // The items this save added or counted — stock coming in, or a figure
-      // being corrected. Never consumption, but it moves the balance.
+      // being corrected. Never consumption, but it moves the balance, and an
+      // addition is also what the Added column reports.
       if (doc.kind === kind) {
+        const received = doc.type === "addition";
         for (const line of toLines(doc.lines)) {
-          push(balanceMovement(line, at, docId));
+          push(balanceMovement(line, at, docId, received));
         }
       }
       // The ingredients that save spent. Making a batch is the third way stock
