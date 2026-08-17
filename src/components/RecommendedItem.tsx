@@ -7,6 +7,7 @@ import { Product, useCart } from "@/context/CartContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import { PlusIcon } from "lucide-react";
+import FoodTypeDot from "./FoodTypeDot";
 
 interface RecommendedItemProps {
   product: Product;
@@ -45,17 +46,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
           </button>
         )}
         <div className="absolute left-2 top-2">
-          <div
-            className={`w-4 h-4 bg-white border-2 ${
-              product.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center`}
-          >
-            <div
-              className={`w-2 h-2 rounded-full ${
-                product.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot item={product} className="bg-white" />
         </div>
       </div>
 

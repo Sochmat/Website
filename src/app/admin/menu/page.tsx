@@ -4,6 +4,15 @@ import { useState, useEffect } from "react";
 import { MenuItem, Category } from "@/lib/types";
 import { Select, Drawer } from "antd";
 import { useAdminRole } from "@/lib/useAdminRole";
+import FoodTypeDot from "@/components/FoodTypeDot";
+import FoodTypeRadio from "@/components/FoodTypeRadio";
+import AddOnDrawer from "./AddOnDrawer";
+import {
+  FOOD_TYPE_OPTIONS,
+  isVegFoodType,
+  resolveFoodType,
+  type FoodType,
+} from "@/lib/foodType";
 
 type VariantForm = { name: string; price: string };
 
@@ -16,6 +25,7 @@ type FormState = Omit<
   | "rating"
   | "fiber"
   | "carbs"
+  | "fat"
   | "variants"
 > & {
   price: string;
@@ -25,6 +35,7 @@ type FormState = Omit<
   rating: string;
   fiber: string;
   carbs: string;
+  fat: string;
   variants: VariantForm[];
 };
 
@@ -35,6 +46,7 @@ const initialFormState: FormState = {
   protein: "",
   fiber: "",
   carbs: "",
+  fat: "",
   price: "",
   originalPrice: "",
   discount: "",
@@ -43,6 +55,7 @@ const initialFormState: FormState = {
   badge: null,
   ingredients: [],
   image: "",
+  foodType: "veg",
   isVeg: true,
   isAddOn: false,
   isRecommended: false,
@@ -94,6 +107,9 @@ export default function AdminMenuPage() {
   // in each tab header, and by the row-level Edit buttons (prefilled).
   const [itemDrawerOpen, setItemDrawerOpen] = useState(false);
   const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
+  // Add-ons get their own trimmed form rather than the full menu-item one.
+  const [addOnDrawerOpen, setAddOnDrawerOpen] = useState(false);
+  const [editingAddOn, setEditingAddOn] = useState<MenuItem | null>(null);
 
   // Search + filters for the Menu Items list.
   const [search, setSearch] = useState("");
@@ -103,7 +119,7 @@ export default function AdminMenuPage() {
   // Driven by the left category rail rather than a filter dropdown. Either
   // "all", UNCATEGORIZED, or a Category.id.
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [filterVeg, setFilterVeg] = useState<"all" | "veg" | "nonveg">("all");
+  const [filterVeg, setFilterVeg] = useState<"all" | FoodType>("all");
   const [filterVisibility, setFilterVisibility] = useState<
     "all" | "visible" | "hidden"
   >("all");
@@ -183,6 +199,8 @@ export default function AdminMenuPage() {
       protein: Number(formData.protein) || 0,
       fiber: Number(formData.fiber) || 0,
       carbs: Number(formData.carbs) || 0,
+      fat: Number(formData.fat) || 0,
+      isVeg: isVegFoodType(formData.foodType ?? "veg"),
       rating: Number(formData.rating) || 0,
     };
   };
@@ -221,6 +239,16 @@ export default function AdminMenuPage() {
     setItemDrawerOpen(true);
   };
 
+  const openAddAddOn = () => {
+    setEditingAddOn(null);
+    setAddOnDrawerOpen(true);
+  };
+
+  const openEditAddOn = (item: MenuItem) => {
+    setEditingAddOn(item);
+    setAddOnDrawerOpen(true);
+  };
+
   const handleEdit = (item: MenuItem) => {
     setFormData({
       ...item,
@@ -237,6 +265,8 @@ export default function AdminMenuPage() {
       protein: String(item.protein),
       fiber: String(item.fiber ?? 0),
       carbs: String(item.carbs ?? 0),
+      fat: String(item.fat ?? 0),
+      foodType: resolveFoodType(item),
       rating: String(item.rating),
     });
     setEditingId(item._id?.toString() || null);
@@ -410,8 +440,7 @@ export default function AdminMenuPage() {
       return false;
     if (filterType !== "all" && (item.type ?? "food") !== filterType)
       return false;
-    if (filterVeg === "veg" && !item.isVeg) return false;
-    if (filterVeg === "nonveg" && item.isVeg) return false;
+    if (filterVeg !== "all" && resolveFoodType(item) !== filterVeg) return false;
     if (filterVisibility === "hidden" && !item.hidden) return false;
     if (filterVisibility === "visible" && item.hidden) return false;
     if (filterTag === "recommended" && !item.isRecommended) return false;
@@ -475,7 +504,10 @@ export default function AdminMenuPage() {
     if (value.trim() !== "") setSelectedCategory("all");
   };
 
-  const renderItemRow = (item: MenuItem) => (
+  const renderItemRow = (
+    item: MenuItem,
+    edit: (item: MenuItem) => void = handleEdit,
+  ) => (
     <div
       key={item._id?.toString() || ""}
       className={`flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 ${
@@ -489,17 +521,7 @@ export default function AdminMenuPage() {
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <div
-            className={`w-3 h-3 border-2 ${
-              item.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center`}
-          >
-            <div
-              className={`w-1.5 h-1.5 rounded-full ${
-                item.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot item={item} size={12} />
           <h3 className="font-medium text-gray-800 truncate">{item.name}</h3>
         </div>
         <p className="text-sm text-gray-500">
@@ -559,7 +581,7 @@ export default function AdminMenuPage() {
         {!isShop && (
           <>
             <button
-              onClick={() => handleEdit(item)}
+              onClick={() => edit(item)}
               className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             >
               <svg
@@ -772,6 +794,19 @@ export default function AdminMenuPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fat (g)
+                </label>
+                <input
+                  type="number"
+                  value={formData.fat}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fat: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Rating
                 </label>
                 <input
@@ -971,19 +1006,16 @@ export default function AdminMenuPage() {
                 />
               </div>
               <div className="col-span-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isVeg}
-                    onChange={(e) =>
-                      setFormData({ ...formData, isVeg: e.target.checked })
-                    }
-                    className="w-4 h-4 text-[#1c1c1c] rounded focus:ring-[#1c1c1c]"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Vegetarian
-                  </span>
-                </label>
+                <span className="block text-sm font-medium text-gray-700 mb-2">
+                  Veg / Non-veg / Egg
+                </span>
+                <FoodTypeRadio
+                  name="menu-item-food-type"
+                  value={formData.foodType ?? "veg"}
+                  onChange={(foodType) =>
+                    setFormData((prev) => ({ ...prev, foodType }))
+                  }
+                />
                 <div className="flex items-center gap-2 mt-2">
                   <button
                     type="button"
@@ -1211,13 +1243,16 @@ export default function AdminMenuPage() {
               <select
                 value={filterVeg}
                 onChange={(e) =>
-                  setFilterVeg(e.target.value as "all" | "veg" | "nonveg")
+                  setFilterVeg(e.target.value as "all" | FoodType)
                 }
                 className="text-sm px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
               >
-                <option value="all">Veg & Non-veg</option>
-                <option value="veg">Veg only</option>
-                <option value="nonveg">Non-veg only</option>
+                <option value="all">All food types</option>
+                {FOOD_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} only
+                  </option>
+                ))}
               </select>
               <select
                 value={filterVisibility}
@@ -1313,7 +1348,7 @@ export default function AdminMenuPage() {
                   No items match your search or filters.
                 </p>
               ) : (
-                filteredItems.map(renderItemRow)
+                filteredItems.map((item) => renderItemRow(item))
               )}
             </div>
           </div>
@@ -1339,10 +1374,10 @@ export default function AdminMenuPage() {
               )}
               <button
                 type="button"
-                onClick={openAddItem}
+                onClick={openAddAddOn}
                 className="shrink-0 bg-[#1c1c1c] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#024731] transition-colors"
               >
-                + Add Menu Item
+                + Add Addon
               </button>
             </div>
           </div>
@@ -1384,10 +1419,21 @@ export default function AdminMenuPage() {
                 No add-ons match your search or filters.
               </p>
             ) : (
-              filteredAddOns.map(renderItemRow)
+              filteredAddOns.map((item) => renderItemRow(item, openEditAddOn))
             )}
           </div>
         </div>
+      )}
+
+      {!isShop && addOnDrawerOpen && (
+        <AddOnDrawer
+          editing={editingAddOn}
+          onClose={() => {
+            setAddOnDrawerOpen(false);
+            setEditingAddOn(null);
+          }}
+          onSaved={fetchMenuItems}
+        />
       )}
 
       {!isShop && (

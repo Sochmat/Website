@@ -7,6 +7,7 @@ import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import AddToCartSheet from "./AddToCartSheet";
 import IngredientsSheet from "./IngredientsSheet";
+import FoodTypeDot from "./FoodTypeDot";
 
 interface MenuItemProps {
   product: Product;
@@ -121,17 +122,10 @@ export default function MenuItem({
 
           {/* Veg / non-veg marker — sits on the photo, so it needs an opaque
               backing to stay legible. */}
-          <div
-            className={`absolute top-[6px] left-[6px] w-[16px] h-[16px] bg-white border-2 ${
-              product.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center rounded-[2px]`}
-          >
-            <div
-              className={`w-[8px] h-[8px] rounded-full ${
-                product.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot
+            item={product}
+            className="absolute top-[6px] left-[6px] bg-white rounded-[2px]"
+          />
         </div>
 
         {/* Content area */}

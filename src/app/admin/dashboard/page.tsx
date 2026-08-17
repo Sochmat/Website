@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { DatePicker, Segmented, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
 import ExportSalesReport from "@/components/admin/ExportSalesReport";
+import FoodTypeDot from "@/components/FoodTypeDot";
+import type { FoodType } from "@/lib/foodType";
 
 const { RangePicker } = DatePicker;
 
@@ -28,6 +30,7 @@ interface StatusBucket {
 interface TopItem {
   productId: string;
   name: string;
+  foodType?: FoodType;
   isVeg: boolean;
   quantity: number;
   revenue: number;
@@ -100,17 +103,6 @@ const inr = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 const num = new Intl.NumberFormat("en-IN");
-
-function VegDot({ isVeg }: { isVeg: boolean }) {
-  return (
-    <span
-      className={`w-3 h-3 shrink-0 border-2 ${isVeg ? "border-green-600" : "border-red-600"} inline-flex items-center justify-center`}
-      aria-label={isVeg ? "Veg" : "Non-veg"}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? "bg-green-600" : "bg-red-600"}`} />
-    </span>
-  );
-}
 
 const CHIP_TONE: Record<string, string> = {
   amber: "bg-amber-50 text-amber-700",
@@ -432,7 +424,7 @@ function DashboardView() {
                   <td className="px-5 py-2.5 text-gray-400 tabular-nums">{i + 1}</td>
                   <td className="px-2 py-2.5">
                     <div className="flex items-center gap-2 min-w-0">
-                      <VegDot isVeg={item.isVeg} />
+                      <FoodTypeDot item={item} size={12} />
                       <span className="truncate text-[#111]">{item.name}</span>
                     </div>
                   </td>

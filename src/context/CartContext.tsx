@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode } from "react";
 import type { MenuVariant, SelectedAddOn } from "@/lib/types";
+import type { FoodType } from "@/lib/foodType";
 
 export type { SelectedAddOn } from "@/lib/types";
 
@@ -19,8 +20,10 @@ export interface Product {
   description?: string;
   fiber?: number;
   carbs?: number;
+  fat?: number;
   ingredients?: string[];
   image: string;
+  foodType?: FoodType;
   isVeg: boolean;
   isAvailableForSubscription?: boolean;
   addOns?: string[];

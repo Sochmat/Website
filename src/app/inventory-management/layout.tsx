@@ -74,6 +74,7 @@ const NAV_ITEMS: {
       { href: `${SETUP_PREFIX}/raw-material`, label: "Raw Material" },
       { href: `${SETUP_PREFIX}/production`, label: "Production" },
       { href: `${SETUP_PREFIX}/item-recipe`, label: "Item Recipe" },
+      { href: `${SETUP_PREFIX}/addon-recipe`, label: "Addons Recipe" },
     ],
   },
 ];

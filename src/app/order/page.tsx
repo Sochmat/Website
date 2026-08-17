@@ -161,6 +161,7 @@ export default function OrderPage() {
               reviews: item.reviews ?? "",
               badge: item.badge ?? null,
               image: item.image,
+              foodType: item.foodType,
               isVeg: item.isVeg,
             }));
           setRecommendedProducts(recommended);

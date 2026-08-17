@@ -8,6 +8,7 @@ import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
 import { Product } from "@/context/CartContext";
 import { Category, MenuVariant } from "@/lib/types";
+import { resolveFoodType, type FoodType } from "@/lib/foodType";
 
 const defaultCategories = [
   {
@@ -62,8 +63,10 @@ function mapApiItemToProduct(item: {
   description?: string;
   fiber?: number;
   carbs?: number;
+  fat?: number;
   ingredients?: string[];
   image: string;
+  foodType?: FoodType;
   isVeg: boolean;
   category?: string;
   type?: string;
@@ -88,8 +91,10 @@ function mapApiItemToProduct(item: {
     description: item.description ?? "",
     fiber: item.fiber ?? 0,
     carbs: item.carbs ?? 0,
+    fat: item.fat ?? 0,
     ingredients: item.ingredients ?? [],
     image: item.image,
+    foodType: resolveFoodType(item),
     isVeg: item.isVeg,
     category: item.category,
     showOnHomePage: item.showOnHomePage ?? false,

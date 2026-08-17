@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import type { FoodType } from "./foodType";
 
 /** A selectable size/option for a menu item. The price REPLACES the item's
  * base price when chosen (e.g. Small/Medium/Large). `name` is free-text. */
@@ -29,8 +30,14 @@ export interface MenuItem {
   description?: string;
   fiber?: number;
   carbs?: number;
+  fat?: number;
   ingredients?: string[];
   image: string;
+  /** Veg / non-veg / egg. Read it with resolveFoodType() — older documents
+   *  only have `isVeg`. */
+  foodType?: FoodType;
+  /** Legacy two-way flag, still written on every save (egg counts as
+   *  non-veg) so the subscription menu and Petpooja sync keep working. */
   isVeg: boolean;
   isAddOn?: boolean;
   isRecommended?: boolean;

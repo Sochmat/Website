@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
+import { resolveFoodType } from "@/lib/foodType";
 
 export async function GET() {
   try {
@@ -27,8 +28,13 @@ export async function GET() {
       description: item.description ?? "",
       fiber: item.fiber ?? 0,
       carbs: item.carbs ?? 0,
+      fat: item.fat ?? 0,
       ingredients: item.ingredients ?? [],
       image: item.image,
+      foodType: resolveFoodType({
+        foodType: item.foodType,
+        isVeg: item.isVeg,
+      }),
       isVeg: item.isVeg,
       isRecommended: item.isRecommended ?? false,
       showOnHomePage: item.showOnHomePage ?? false,
