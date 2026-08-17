@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
@@ -30,7 +30,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
   return (
     <div className="flex flex-col gap-1.5 w-[120px] shrink-0 relative">
       <div className="aspect-square relative rounded-lg overflow-hidden">
-        <Image
+        <ShimmerImage
           src={product.image}
           alt={product.name}
           fill

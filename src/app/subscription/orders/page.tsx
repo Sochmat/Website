@@ -51,7 +51,11 @@ export default function SubscriptionOrdersPage() {
 
       <div className="p-4 space-y-3">
         {loading ? (
-          <p className="text-gray-500 text-sm">Loading…</p>
+          <>
+            {[0, 1, 2].map((i) => (
+              <Shimmer key={i} rounded="rounded-xl" className="h-24" />
+            ))}
+          </>
         ) : !isAuthenticated ? (
           <button
             onClick={openLoginPopup}

@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import MenuItem from "./MenuItem";
+import MenuItem, { MenuItemSkeleton } from "./MenuItem";
 import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 import { Product } from "@/context/CartContext";
 import { Category, MenuVariant } from "@/lib/types";
 import { resolveFoodType, type FoodType } from "@/lib/foodType";
@@ -387,7 +388,14 @@ export default function Menu({
     // the space between two of them.
     <div className="py-0 flex flex-col divide-y divide-[#e6e6e6]">
       {loading ? (
-        <p className="text-center text-gray-500 py-8">Loading menu...</p>
+        // Six cards is about a phone screenful — enough that the list reads as
+        // populated, not so many that the scrollbar promises a longer menu
+        // than may actually arrive.
+        Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="shrink-0 py-[22px]">
+            <MenuItemSkeleton />
+          </div>
+        ))
       ) : error ? (
         <p className="text-center text-red-500 py-8">{error}</p>
       ) : (
@@ -457,12 +465,13 @@ export default function Menu({
                           className="max-w-full flex items-center gap-3 pl-2 pr-4 py-2 bg-white border border-[#d9d9d9] rounded-[16px] text-left"
                         >
                           {thumbnail ? (
-                            <Image
+                            <ShimmerImage
                               src={thumbnail}
                               alt=""
                               width={32}
                               height={32}
                               className="w-8 h-8 shrink-0 rounded-[8px] object-cover"
+                              wrapperClassName="w-8 h-8 shrink-0 rounded-[8px] overflow-hidden"
                               unoptimized
                             />
                           ) : (
