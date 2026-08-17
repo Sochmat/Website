@@ -1,10 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, InputNumber, Modal, Select, Table, Tag, message } from "antd";
+import {
+  Button,
+  DatePicker,
+  InputNumber,
+  Modal,
+  Select,
+  Table,
+  Tag,
+  message,
+} from "antd";
 import type { ColumnsType } from "antd/es/table";
+import dayjs, { type Dayjs } from "dayjs";
 import { DeleteOutlined } from "@ant-design/icons";
+import { istToday } from "@/lib/ist";
 import type { SellableItem, SellableVariant } from "@/lib/menuRecipes";
+
+/** The date format the entry is sent under, and the one IST dates compare in. */
+const DATE_FORMAT = "YYYY-MM-DD";
 
 /** One line being built in the modal. */
 interface DraftLine {
@@ -46,6 +60,12 @@ function lineKey(line: DraftLine): string {
  * An item sold in sizes is picked per size: a Large is a different quantity of
  * the same things, so it deducts its own recipe, and one item may sit on the
  * list once per size it sold in.
+ *
+ * The entry also carries the day it is FOR, which is not always today: a day's
+ * Petpooja figures are usually to hand the morning after. That day is what the
+ * entry is dated and what the Stock Consumption report files the deduction
+ * under, so a backdated entry reads on the day it sold rather than the day it
+ * was typed.
  */
 export default function BulkOrdersUpdateModal({
   open,
@@ -60,12 +80,22 @@ export default function BulkOrdersUpdateModal({
   const [items, setItems] = useState<SellableItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([]);
+  const [saleDate, setSaleDate] = useState<Dayjs | null>(null);
   const [saving, setSaving] = useState(false);
   const nextId = useRef(0);
+
+  // Today in IST, not in the browser's zone: an admin travelling — or a laptop
+  // left on the wrong timezone — must not be offered a "today" the kitchen has
+  // not reached, nor be blocked from the day it is actually working on. A
+  // yyyy-mm-dd string, so it is stable by value across renders.
+  const today = istToday(new Date());
 
   useEffect(() => {
     if (!open) return;
     setLines([]);
+    // Today by default, so the common case — this morning's figures for
+    // yesterday aside — is one fewer thing to fill in.
+    setSaleDate(dayjs(today, DATE_FORMAT));
     setLoadingItems(true);
     (async () => {
       try {
@@ -79,7 +109,7 @@ export default function BulkOrdersUpdateModal({
         setLoadingItems(false);
       }
     })();
-  }, [open]);
+  }, [open, today]);
 
   /** Item/size pairs already on the list, so none can be entered twice. */
   const chosen = useMemo(() => new Set(lines.map(lineKey)), [lines]);
@@ -132,15 +162,24 @@ export default function BulkOrdersUpdateModal({
   const totalQty = lines.reduce((sum, l) => sum + (l.qty ?? 0), 0);
   const needsQty = lines.some((l) => !l.qty || l.qty <= 0);
   const needsVariant = lines.some((l) => l.variants.length && !l.variantName);
+  const needsDate = !saleDate;
   const unmappedCount = lines.filter((l) => !mappedFor(l)).length;
+  /** Cleared on today; set when the entry is for an earlier day. */
+  const backdated = !!saleDate && saleDate.format(DATE_FORMAT) !== today;
 
   async function handleSave() {
+    // The Save button is disabled without one; this is what tells the compiler
+    // the date below is really there.
+    if (!saleDate) return;
     setSaving(true);
     try {
       const res = await fetch("/api/admin/petpooja-uploads/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          // The IST calendar day these sales are for. The server turns it into
+          // the instant the entry is dated at, and refuses a future one.
+          saleDate: saleDate?.format(DATE_FORMAT),
           items: lines.map((l) => ({
             name: l.name,
             variant: l.variantName,
@@ -155,7 +194,10 @@ export default function BulkOrdersUpdateModal({
       }
 
       const parts = [
-        `Recorded ${data.totalItems} item${data.totalItems === 1 ? "" : "s"}`,
+        `Recorded ${data.totalItems} item${data.totalItems === 1 ? "" : "s"}` +
+          // Only said when it is not today: an entry for another day is the
+          // one thing about this save worth re-reading back.
+          (backdated ? ` for ${saleDate.format("D MMM YYYY")}` : ""),
         `${data.stockRows ?? 0} stock row${data.stockRows === 1 ? "" : "s"} deducted`,
       ];
       if (data.shortfallRows) parts.push(`${data.shortfallRows} short of stock`);
@@ -249,11 +291,13 @@ export default function BulkOrdersUpdateModal({
   const saveLabel =
     lines.length === 0
       ? "Add items to save"
-      : needsVariant
-        ? "Every item with sizes needs one picked"
-        : needsQty
-          ? "Every item needs a quantity"
-          : `Save ${lines.length} item${lines.length === 1 ? "" : "s"}`;
+      : needsDate
+        ? "Pick the date these sold on"
+        : needsVariant
+          ? "Every item with sizes needs one picked"
+          : needsQty
+            ? "Every item needs a quantity"
+            : `Save ${lines.length} item${lines.length === 1 ? "" : "s"}`;
 
   return (
     <Modal
@@ -269,7 +313,7 @@ export default function BulkOrdersUpdateModal({
           key="save"
           type="primary"
           loading={saving}
-          disabled={lines.length === 0 || needsQty || needsVariant}
+          disabled={lines.length === 0 || needsDate || needsQty || needsVariant}
           onClick={handleSave}
         >
           {saveLabel}
@@ -277,10 +321,46 @@ export default function BulkOrdersUpdateModal({
       ]}
     >
       <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
-        Pick what Petpooja sold and how many. Items sold in sizes need the size
-        picked too. Saving records one entry and deducts the production items
-        and raw materials behind each item.
+        Pick the day these sold on, then what Petpooja sold and how many. Items
+        sold in sizes need the size picked too. Saving records one entry and
+        deducts the production items and raw materials behind each item.
       </p>
+
+      <div style={{ marginBottom: 12 }}>
+        <label
+          style={{
+            display: "block",
+            fontSize: 13,
+            fontWeight: 500,
+            marginBottom: 6,
+          }}
+        >
+          Sales date
+        </label>
+        <DatePicker
+          value={saleDate}
+          onChange={(value) => setSaleDate(value)}
+          // Cleared would be a save with no day behind it, and today is almost
+          // always the answer — so the field is never left empty by accident.
+          allowClear={false}
+          status={needsDate ? "error" : undefined}
+          format="D MMM YYYY"
+          style={{ width: 220 }}
+          // Petpooja has already served the food by the time it reaches this
+          // modal, so a day that has not happened is not a day it sold on.
+          disabledDate={(current) =>
+            !!current && current.format(DATE_FORMAT) > today
+          }
+        />
+        {saleDate && backdated && (
+          <p style={{ marginTop: 6, fontSize: 12, color: "#ad6800" }}>
+            This entry will be dated {saleDate.format("D MMM YYYY")} and will
+            show against that day in Stock Consumption. Stock itself comes off
+            the shelf now — an earlier date does not put back what has been
+            counted since.
+          </p>
+        )}
+      </div>
 
       <Select
         showSearch

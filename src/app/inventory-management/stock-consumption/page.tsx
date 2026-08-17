@@ -7,7 +7,7 @@ import dayjs, { type Dayjs } from "dayjs";
 import { FallOutlined, SearchOutlined } from "@ant-design/icons";
 import { istToday } from "@/lib/ist";
 import { formatCurrency } from "@/lib/rawMaterials";
-import { formatQty } from "@/components/inventory/VarianceTag";
+import { StockQty, formatQty } from "@/components/inventory/VarianceTag";
 import type { AuditKind } from "@/lib/stockAudits";
 import type {
   ConsumptionEvent,
@@ -97,15 +97,32 @@ function stockCell(value: number | null, unit: string, strong = false) {
       </span>
     );
   }
-  return (
-    <span
-      className={`whitespace-nowrap tabular-nums ${
-        strong ? "font-medium text-gray-900" : "text-gray-600"
-      }`}
-    >
-      {formatQty(value)} {unit}
-    </span>
-  );
+  return <StockQty value={value} unit={unit} strong={strong} />;
+}
+
+/**
+ * A balance cell — Opening, Closing or Current.
+ *
+ * A made-to-order row says so instead of showing an empty quantity. "Not
+ * tracked" would be a lie by omission here: the figure is not missing, there
+ * is no shelf for it to be a figure OF.
+ */
+function balanceCell(
+  value: number | null,
+  row: ConsumptionRow,
+  strong = false,
+) {
+  if (row.onSpot) {
+    return (
+      <span
+        className="text-xs text-gray-400"
+        title="Made to order — nothing is held, so there is no balance to report"
+      >
+        Not stocked
+      </span>
+    );
+  }
+  return stockCell(value, row.unit, strong);
 }
 
 /** The per-event breakdown behind one item's total. */
@@ -231,11 +248,12 @@ export default function StockConsumptionPage() {
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  // Defaults to the last 7 days — long enough to be worth reading, short
-  // enough to load instantly on the first visit.
+  // Defaults to today alone. What left the shelves since this morning is the
+  // question the kitchen actually opens this page with; a wider range is one
+  // preset away, and starting wide buries today's figures among last week's.
   const [range, setRange] = useState<[Dayjs, Dayjs]>(() => {
     const today = dayjs(istToday(new Date()));
-    return [today.subtract(6, "day"), today];
+    return [today, today];
   });
 
   const from = pickedDate(range[0]);
@@ -280,11 +298,24 @@ export default function StockConsumptionPage() {
     {
       title: "Item",
       dataIndex: "name",
-      sorter: (a, b) => a.name.localeCompare(b.name),
-      defaultSortOrder: "ascend",
+      // Not sortable. buildConsumptionRows already returns rows by name, so
+      // the column reads the same as it always did — this only takes away a
+      // header that re-sorted into the order it was already in.
       render: (value: string, row) => (
         <div>
-          <div className="font-medium text-gray-900">{value || "—"}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-gray-900">{value || "—"}</span>
+            {/* Says why the three balance columns on this row are empty, and
+                why its Consumed figure is a quantity MADE rather than taken. */}
+            {row.onSpot && (
+              <span
+                className="inline-flex whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700"
+                title="Made to order — no stock is held, so there is no balance either side. Its raw material was deducted on the Raw Material tab."
+              >
+                on spot
+              </span>
+            )}
+          </div>
           <div className="text-xs text-gray-500">
             {row.events.length} event{row.events.length === 1 ? "" : "s"}
           </div>
@@ -296,7 +327,24 @@ export default function StockConsumptionPage() {
       dataIndex: "openingStock",
       align: "right",
       width: 150,
-      render: (value: number | null, row) => stockCell(value, row.unit),
+      render: (value: number | null, row) => balanceCell(value, row),
+    },
+    {
+      title: "Added",
+      dataIndex: "totalAdded",
+      align: "right",
+      width: 150,
+      sorter: (a, b) => a.totalAdded - b.totalAdded,
+      render: (value: number, row) =>
+        // Most rows received nothing; a column of green zeroes would drown the
+        // few that did, so only a real delivery is coloured in.
+        value > 0 ? (
+          <span className="whitespace-nowrap rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-emerald-700">
+            +{formatQty(value)} {row.unit}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-300">—</span>
+        ),
     },
     {
       title: "Consumed",
@@ -304,11 +352,22 @@ export default function StockConsumptionPage() {
       align: "right",
       width: 160,
       sorter: (a, b) => a.totalQty - b.totalQty,
-      render: (value: number, row) => (
-        <span className="whitespace-nowrap rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-red-700">
-          −{formatQty(value)} {row.unit}
-        </span>
-      ),
+      render: (value: number, row) =>
+        // A made-to-order quantity was MADE, not taken off anything, so it
+        // carries no minus sign — printing one would claim a draw-down that
+        // never happened, against a shelf that does not exist.
+        row.onSpot ? (
+          <span
+            className="whitespace-nowrap rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-indigo-700"
+            title="Made to order over this range. Its ingredients were deducted on the Raw Material tab."
+          >
+            {formatQty(value)} {row.unit}
+          </span>
+        ) : (
+          <span className="whitespace-nowrap rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-sm font-semibold tabular-nums text-red-700">
+            −{formatQty(value)} {row.unit}
+          </span>
+        ),
     },
     {
       title: "Value",
@@ -346,14 +405,14 @@ export default function StockConsumptionPage() {
       dataIndex: "closingStock",
       align: "right",
       width: 150,
-      render: (value: number | null, row) => stockCell(value, row.unit),
+      render: (value: number | null, row) => balanceCell(value, row),
     },
     {
       title: "Current",
       dataIndex: "currentStock",
       align: "right",
       width: 150,
-      render: (value: number | null, row) => stockCell(value, row.unit, true),
+      render: (value: number | null, row) => balanceCell(value, row, true),
     },
   ];
 
@@ -423,7 +482,11 @@ export default function StockConsumptionPage() {
           Expand a row to see each deduction on its own — one line per delivered
           website order, one per Petpooja entry, plus the production runs and
           wastage that spent the same stock. Opening is what was on record the
-          instant before the range began; Current is what is on record now.
+          instant before the range began; Added is stock received over the
+          range, which is why Closing is not simply Opening minus Consumed;
+          Current is what is on record now. Made-to-order items appear with the
+          quantity made and no balances — nothing is held for them, and their
+          ingredients are deducted on the Raw Material tab.
         </p>
       </div>
 

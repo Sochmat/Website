@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parsePetpoojaRows,
+  saleDateInstant,
   totalQty,
   type PetpoojaSheetRow,
 } from "@/lib/petpoojaUpload";
@@ -179,5 +180,57 @@ describe("totalQty", () => {
 
   it("is zero for an upload with no items", () => {
     expect(totalQty([])).toBe(0);
+  });
+});
+
+describe("saleDateInstant", () => {
+  /** 16 Aug 2026, 10:30 am IST — mid-morning, so "today" is unambiguous. */
+  const now = new Date("2026-08-16T10:30:00+05:30");
+
+  it("stamps an earlier day at the end of it, in IST", () => {
+    expect(saleDateInstant("2026-08-15", now)?.toISOString()).toBe(
+      "2026-08-15T18:29:00.000Z", // 23:59 IST
+    );
+  });
+
+  it("stamps today at the current moment, not the end of the day", () => {
+    // Stamping tonight for sales still being made would date the entry into
+    // the future, and picking today must behave as it did before the picker.
+    expect(saleDateInstant("2026-08-16", now)).toEqual(now);
+  });
+
+  it("refuses a day that has not happened", () => {
+    expect(saleDateInstant("2026-08-17", now)).toBeNull();
+    expect(saleDateInstant("2027-01-01", now)).toBeNull();
+  });
+
+  it("refuses a date that is not a real one", () => {
+    expect(saleDateInstant("2026-02-31", now)).toBeNull();
+    expect(saleDateInstant("2026-13-01", now)).toBeNull();
+  });
+
+  it("refuses anything that is not a yyyy-mm-dd date", () => {
+    expect(saleDateInstant("", now)).toBeNull();
+    expect(saleDateInstant("16-08-2026", now)).toBeNull();
+    expect(saleDateInstant("2026-8-15", now)).toBeNull();
+    expect(saleDateInstant("yesterday", now)).toBeNull();
+  });
+
+  it("takes a leap day that really existed", () => {
+    expect(saleDateInstant("2024-02-29", now)?.toISOString()).toBe(
+      "2024-02-29T18:29:00.000Z",
+    );
+  });
+
+  it("reads today in IST, not in the machine's own zone", () => {
+    // 16 Aug, 1 am IST is still 15 Aug in UTC. The 16th is today either way,
+    // and the 15th is a past day that must still be accepted.
+    const earlyIst = new Date("2026-08-16T01:00:00+05:30");
+
+    expect(saleDateInstant("2026-08-16", earlyIst)).toEqual(earlyIst);
+    expect(saleDateInstant("2026-08-15", earlyIst)?.toISOString()).toBe(
+      "2026-08-15T18:29:00.000Z",
+    );
+    expect(saleDateInstant("2026-08-17", earlyIst)).toBeNull();
   });
 });

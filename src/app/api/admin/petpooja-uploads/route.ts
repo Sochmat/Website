@@ -60,6 +60,11 @@ export async function GET(request: NextRequest) {
       return {
         _id: String(d._id),
         uploadedAt: new Date(d.uploadedAt).toISOString(),
+        // Absent on entries written before an entry could be backdated, where
+        // there was only ever one instant to record.
+        ...(d.recordedAt
+          ? { recordedAt: new Date(d.recordedAt).toISOString() }
+          : {}),
         uploadedByRole: String(d.uploadedByRole ?? "admin"),
         // Entries predating manual entry carry no source; they were uploads.
         source: d.source === "manual" ? "manual" : "upload",

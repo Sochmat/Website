@@ -4,6 +4,7 @@ import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
 import {
   PETPOOJA_VARIANT_COLUMN,
   parsePetpoojaRows,
+  saleDateInstant,
 } from "@/lib/petpoojaUpload";
 import { recordPetpoojaEntry } from "@/lib/petpoojaEntry";
 
@@ -23,11 +24,34 @@ const MAX_ROWS = 2000;
  * they mean for a file. The one difference is what happens to a bad row: an
  * upload skips it and says so, because the file is not in front of the user,
  * whereas here the whole save is refused — the user typed it and can fix it.
+ *
+ * The entry also carries the day it is FOR. Yesterday's figures are routinely
+ * typed up this morning, so the admin picks that day and the entry is dated to
+ * it — see saleDateInstant. An omitted date means today, which is what every
+ * entry recorded before the picker existed meant.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const rows = Array.isArray(body?.items) ? body.items : [];
+    const saleDate =
+      typeof body?.saleDate === "string" ? body.saleDate.trim() : "";
+
+    let entryAt: Date | undefined;
+    if (saleDate) {
+      const resolved = saleDateInstant(saleDate, new Date());
+      if (!resolved) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Pick a valid date — Petpooja sales cannot be dated in the future",
+          },
+          { status: 400 },
+        );
+      }
+      entryAt = resolved;
+    }
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -76,6 +100,7 @@ export async function POST(request: NextRequest) {
       source: "manual",
       items,
       rowsRead: rows.length,
+      ...(entryAt ? { entryAt } : {}),
       role: session?.role ?? "admin",
     });
 

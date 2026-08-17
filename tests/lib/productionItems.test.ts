@@ -1,11 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   computeCost,
+  expandOnSpot,
   productionDependencies,
   recipeConsumption,
   roundCurrency,
   sanitizeProductionItem,
   toRecipeLines,
+  type OnSpotItem,
   type CostingMaterial,
   type ProductionRecipeLine,
 } from "@/lib/productionItems";
@@ -479,5 +481,216 @@ describe("recipeConsumption with nested production items", () => {
       { refType: "raw", refId: "x", qty: 10 },
       { refType: "production", refId: "x", qty: 10 },
     ]);
+  });
+});
+
+describe("expandOnSpot", () => {
+  /** Paneer Gravy: a 5000 gm batch from 800 gm paneer + 1200 gm purée. */
+  const gravy: OnSpotItem = {
+    batchYieldQty: 5000,
+    recipe: [
+      { refType: "raw", refId: "paneer", qtyUsed: 800 },
+      { refType: "raw", refId: "puree", qtyUsed: 1200 },
+    ],
+  };
+
+  it("leaves demand alone when nothing is made to order", () => {
+    const demand = [{ refType: "production" as const, refId: "gravy", qty: 250 }];
+
+    expect(expandOnSpot(demand, new Map()).demand).toEqual(demand);
+  });
+
+  it("replaces an on-spot item with its recipe, scaled by batch yield", () => {
+    // 250 gm of a 5000 gm batch = 0.05 of it.
+    const { demand: expanded } = expandOnSpot(
+      [{ refType: "production", refId: "gravy", qty: 250 }],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(expanded).toEqual([
+      { refType: "raw", refId: "paneer", qty: 40 },
+      { refType: "raw", refId: "puree", qty: 60 },
+    ]);
+  });
+
+  it("never draws down the on-spot item itself", () => {
+    const { demand: expanded } = expandOnSpot(
+      [{ refType: "production", refId: "gravy", qty: 250 }],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(expanded.some((l) => l.refId === "gravy")).toBe(false);
+  });
+
+  it("leaves a stocked production item as itself", () => {
+    // Only the flagged one is expanded; a batch-prepped item is a real shelf.
+    const { demand: expanded } = expandOnSpot(
+      [
+        { refType: "production", refId: "gravy", qty: 250 },
+        { refType: "production", refId: "rice", qty: 150 },
+      ],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(expanded).toContainEqual({
+      refType: "production",
+      refId: "rice",
+      qty: 150,
+    });
+  });
+
+  it("sums a raw material reached both directly and through an on-spot item", () => {
+    const { demand: expanded } = expandOnSpot(
+      [
+        { refType: "production", refId: "gravy", qty: 250 },
+        { refType: "raw", refId: "paneer", qty: 10 },
+      ],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(expanded).toContainEqual({
+      refType: "raw",
+      refId: "paneer",
+      qty: 50, // 40 through the gravy + 10 on its own
+    });
+  });
+
+  it("expands an on-spot item made from another on-spot item", () => {
+    const masala: OnSpotItem = {
+      batchYieldQty: 100,
+      recipe: [{ refType: "production", refId: "gravy", qtyUsed: 500 }],
+    };
+    // 50 of masala = 0.5 batch = 250 gm gravy = 40 paneer + 60 purée.
+    const { demand: expanded } = expandOnSpot(
+      [{ refType: "production", refId: "masala", qty: 50 }],
+      new Map([
+        ["masala", masala],
+        ["gravy", gravy],
+      ]),
+    );
+
+    expect(expanded).toEqual([
+      { refType: "raw", refId: "paneer", qty: 40 },
+      { refType: "raw", refId: "puree", qty: 60 },
+    ]);
+  });
+
+  it("terminates on data that already contains a loop", () => {
+    const a: OnSpotItem = {
+      batchYieldQty: 10,
+      recipe: [{ refType: "production", refId: "b", qtyUsed: 1 }],
+    };
+    const b: OnSpotItem = {
+      batchYieldQty: 10,
+      recipe: [{ refType: "production", refId: "a", qtyUsed: 1 }],
+    };
+
+    expect(() =>
+      expandOnSpot(
+        [{ refType: "production", refId: "a", qty: 5 }],
+        new Map([
+          ["a", a],
+          ["b", b],
+        ]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("expands an on-spot item with no usable batch yield to nothing", () => {
+    const broken: OnSpotItem = { batchYieldQty: 0, recipe: gravy.recipe };
+
+    expect(
+      expandOnSpot(
+        [{ refType: "production", refId: "broken", qty: 250 }],
+        new Map([["broken", broken]]),
+      ).demand,
+    ).toEqual([]);
+  });
+
+  it("ignores a raw material that happens to share an on-spot item's id", () => {
+    // Keys are only unique within a collection — the type must be checked too.
+    const { demand: expanded } = expandOnSpot(
+      [{ refType: "raw", refId: "gravy", qty: 7 }],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(expanded).toEqual([{ refType: "raw", refId: "gravy", qty: 7 }]);
+  });
+});
+
+describe("expandOnSpot — reporting what was made", () => {
+  const gravy: OnSpotItem = {
+    batchYieldQty: 5000,
+    recipe: [{ refType: "raw", refId: "paneer", qtyUsed: 800 }],
+  };
+
+  it("reports nothing made when nothing is on spot", () => {
+    const { onSpotQty } = expandOnSpot(
+      [{ refType: "production", refId: "gravy", qty: 250 }],
+      new Map(),
+    );
+
+    expect(onSpotQty.size).toBe(0);
+  });
+
+  it("reports how much of an on-spot item was made", () => {
+    const { onSpotQty } = expandOnSpot(
+      [{ refType: "production", refId: "gravy", qty: 250 }],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(onSpotQty.get("gravy")).toBe(250);
+  });
+
+  it("sums one item demanded down two branches", () => {
+    // Two dishes both calling for gravy is 750 gm made, not two figures.
+    const { onSpotQty } = expandOnSpot(
+      [
+        { refType: "production", refId: "gravy", qty: 500 },
+        { refType: "production", refId: "gravy", qty: 250 },
+      ],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(onSpotQty.get("gravy")).toBe(750);
+  });
+
+  it("reports every on-spot item in a nested chain, not just the outermost", () => {
+    const masala: OnSpotItem = {
+      batchYieldQty: 100,
+      recipe: [{ refType: "production", refId: "gravy", qtyUsed: 500 }],
+    };
+    const { onSpotQty } = expandOnSpot(
+      [{ refType: "production", refId: "masala", qty: 50 }],
+      new Map([
+        ["masala", masala],
+        ["gravy", gravy],
+      ]),
+    );
+
+    expect(onSpotQty.get("masala")).toBe(50);
+    expect(onSpotQty.get("gravy")).toBe(250);
+  });
+
+  it("reports an item as made even when its recipe yields nothing usable", () => {
+    // It really was made; that its recipe cannot say from what is a separate
+    // failure, and hiding the item would lose both facts instead of one.
+    const broken: OnSpotItem = { batchYieldQty: 0, recipe: gravy.recipe };
+    const { demand, onSpotQty } = expandOnSpot(
+      [{ refType: "production", refId: "broken", qty: 250 }],
+      new Map([["broken", broken]]),
+    );
+
+    expect(demand).toEqual([]);
+    expect(onSpotQty.get("broken")).toBe(250);
+  });
+
+  it("never reports a stocked production item as made", () => {
+    const { onSpotQty } = expandOnSpot(
+      [{ refType: "production", refId: "rice", qty: 150 }],
+      new Map([["gravy", gravy]]),
+    );
+
+    expect(onSpotQty.has("rice")).toBe(false);
   });
 });

@@ -25,7 +25,10 @@ import {
   namedOrderItems,
 } from "@/lib/orderStock";
 import { orderedProducts, type StoredOrderItem } from "@/lib/orderConsumption";
-import { loadItemRecipesByNameKey } from "@/lib/stockSpend";
+import {
+  loadItemRecipesByNameKey,
+  loadOnSpotProductionItems,
+} from "@/lib/stockSpend";
 import {
   componentBreakdown,
   type ComponentBreakdown,
@@ -68,6 +71,7 @@ interface StoredLine {
   name?: unknown;
   previousStock?: unknown;
   closingStock?: unknown;
+  addedQty?: unknown;
   consumedQty?: unknown;
   shortfall?: unknown;
   changeCost?: unknown;
@@ -114,20 +118,68 @@ function consumptionMovement(
   };
 }
 
-/** A line that only moves the balance — an addition, or a stock-take. */
+/**
+ * A line that only moves the balance — an addition, or a stock-take.
+ *
+ * `received` separates the two. A stock-take REPLACES the figure on record, so
+ * one that comes out higher is a correction to a bad count, not stock arriving;
+ * only an addition reports a quantity into the Added column. See AuditType.
+ */
 function balanceMovement(
   line: StoredLine,
   at: Date,
   docId: string,
+  received: boolean,
 ): StockMovement | null {
   const itemId = typeof line.id === "string" ? line.id : String(line.id ?? "");
   if (!itemId) return null;
+  const addedQty = num(line.addedQty);
   return {
     id: `audit:${docId}:${itemId}`,
     itemId,
     at: at.getTime(),
     previousStock: num(line.previousStock),
     closingStock: num(line.closingStock),
+    // A negative would be a correction dressed as a delivery, and an absent
+    // one is a line that never recorded what it took in — neither is a receipt.
+    ...(received && addedQty !== null && addedQty > 0 ? { addedQty } : {}),
+  };
+}
+
+/**
+ * A made-to-order item as one movement.
+ *
+ * The balances are null because there are none: nothing was drawn down, so
+ * there is no before and no after. What it carries is how much was made and
+ * what that was worth — see OnSpotLine and ConsumptionItem.onSpot.
+ *
+ * A shortfall is impossible for the same reason. The shelf could not fail to
+ * cover this; there was no shelf, and whatever it is made of was drawn down on
+ * its own lines, where a shortfall CAN be reported.
+ */
+function onSpotMovement(
+  line: StoredLine & { qty?: unknown; cost?: unknown },
+  at: Date,
+  docId: string,
+  source: ConsumptionSource,
+  label: string,
+): StockMovement | null {
+  const itemId = typeof line.id === "string" ? line.id : String(line.id ?? "");
+  if (!itemId) return null;
+
+  return {
+    id: `onspot:${source}:${docId}:${itemId}`,
+    itemId,
+    at: at.getTime(),
+    previousStock: null,
+    closingStock: null,
+    event: {
+      source,
+      label,
+      qty: num(line.qty) ?? 0,
+      shortfall: 0,
+      cost: num(line.cost),
+    },
   };
 }
 
@@ -249,7 +301,20 @@ export async function GET(request: NextRequest) {
       await Promise.all([
         db
           .collection(itemCollection)
-          .find({}, { projection: { name: 1, consumptionUnit: 1, currentStock: 1 } })
+          .find(
+            {},
+            {
+              projection: {
+                name: 1,
+                consumptionUnit: 1,
+                currentStock: 1,
+                // Production items only; absent on every raw material, which
+                // reads as false and is exactly right — a raw material is
+                // always stocked.
+                onSpot: 1,
+              },
+            },
+          )
           .toArray(),
         db
           .collection(ORDER_CONSUMPTIONS_COLLECTION)
@@ -262,6 +327,9 @@ export async function GET(request: NextRequest) {
                 consumedAt: 1,
                 breakdown: 1,
                 [linesField]: 1,
+                // Made-to-order items are production items whatever shelf is
+                // being reported, so this is read only on that tab.
+                ...(kind === "production" ? { onSpotLines: 1 } : {}),
               },
             },
           )
@@ -276,6 +344,9 @@ export async function GET(request: NextRequest) {
                 source: 1,
                 fileName: 1,
                 [`consumption.${linesField}`]: 1,
+                ...(kind === "production"
+                  ? { "consumption.onSpotLines": 1 }
+                  : {}),
               },
             },
           )
@@ -284,7 +355,17 @@ export async function GET(request: NextRequest) {
           .collection(STOCK_AUDITS_COLLECTION)
           .find(
             { savedAt: { $gte: fromInstant } },
-            { projection: { kind: 1, savedAt: 1, lines: 1, consumedLines: 1 } },
+            {
+              projection: {
+                kind: 1,
+                // Tells an addition from a stock-take, which is what decides
+                // whether a line counts as stock received.
+                type: 1,
+                savedAt: 1,
+                lines: 1,
+                consumedLines: 1,
+              },
+            },
           )
           .toArray(),
         db
@@ -311,6 +392,10 @@ export async function GET(request: NextRequest) {
       name: String(doc.name ?? ""),
       unit: String(doc.consumptionUnit ?? ""),
       currentStock: num(doc.currentStock),
+      // A stock figure may still be stored from before the item was flagged;
+      // buildConsumptionRows drops it rather than showing a number nothing has
+      // maintained since.
+      ...(doc.onSpot === true ? { onSpot: true } : {}),
     }));
     // What belongs to this kind. A production run's consumedLines mix both
     // shelves in one array, so membership is the only thing that separates
@@ -333,7 +418,7 @@ export async function GET(request: NextRequest) {
     );
 
     if (missing.length > 0) {
-      const [orders, recipes] = await Promise.all([
+      const [orders, recipes, onSpot] = await Promise.all([
         db
           .collection("orders")
           .find(
@@ -342,6 +427,7 @@ export async function GET(request: NextRequest) {
           )
           .toArray(),
         loadItemRecipesByNameKey(db),
+        loadOnSpotProductionItems(db),
       ]);
 
       const itemsByOrder = new Map(
@@ -365,7 +451,7 @@ export async function GET(request: NextRequest) {
         if (sold.length === 0) return;
         rebuilt.set(
           String(doc._id),
-          sharesByRef(componentBreakdown(sold, recipes), kind),
+          sharesByRef(componentBreakdown(sold, recipes, onSpot), kind),
         );
       });
     }
@@ -390,16 +476,23 @@ export async function GET(request: NextRequest) {
             : undefined);
         push(consumptionMovement(line, at, docId, "order", label, shares));
       }
+
+      for (const line of toLines(doc.onSpotLines)) {
+        push(onSpotMovement(line, at, docId, "order", label));
+      }
     }
 
     for (const doc of petpoojaDocs) {
       const at = new Date(doc.uploadedAt);
       const label = petpoojaLabel(doc);
-      const lines = toLines(
-        (doc.consumption as Document | undefined)?.[linesField],
-      );
-      for (const line of lines) {
-        push(consumptionMovement(line, at, String(doc._id), "petpooja", label));
+      const consumption = doc.consumption as Document | undefined;
+      const docId = String(doc._id);
+      for (const line of toLines(consumption?.[linesField])) {
+        push(consumptionMovement(line, at, docId, "petpooja", label));
+      }
+
+      for (const line of toLines(consumption?.onSpotLines)) {
+        push(onSpotMovement(line, at, docId, "petpooja", label));
       }
     }
 
@@ -407,10 +500,12 @@ export async function GET(request: NextRequest) {
       const at = new Date(doc.savedAt);
       const docId = String(doc._id);
       // The items this save added or counted — stock coming in, or a figure
-      // being corrected. Never consumption, but it moves the balance.
+      // being corrected. Never consumption, but it moves the balance, and an
+      // addition is also what the Added column reports.
       if (doc.kind === kind) {
+        const received = doc.type === "addition";
         for (const line of toLines(doc.lines)) {
-          push(balanceMovement(line, at, docId));
+          push(balanceMovement(line, at, docId, received));
         }
       }
       // The ingredients that save spent. Making a batch is the third way stock

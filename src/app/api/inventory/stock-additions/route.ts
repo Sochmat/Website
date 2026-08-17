@@ -21,7 +21,12 @@ import {
   type AuditKind,
   type AuditLine,
 } from "@/lib/stockAudits";
-import { recipeConsumption, toRecipeLines } from "@/lib/productionItems";
+import {
+  expandOnSpot,
+  recipeConsumption,
+  toRecipeLines,
+} from "@/lib/productionItems";
+import { loadOnSpotProductionItems } from "@/lib/stockSpend";
 
 // Admin-only; enforced by the admin session check in src/middleware.ts.
 
@@ -143,6 +148,8 @@ export async function POST(request: NextRequest) {
             // materials, which have no recipe.
             recipe: 1,
             batchYieldQty: 1,
+            // A made-to-order item has no batch to receive — see below.
+            onSpot: 1,
           },
         },
       )
@@ -165,6 +172,14 @@ export async function POST(request: NextRequest) {
       const doc = byId.get(row.id);
       if (!doc) {
         rejected.push(`${row.id}: no longer exists`);
+        continue;
+      }
+      // Made to order, so there is no batch to take in: it is cooked when the
+      // order lands and its raw material is spent then. The Add Stock screen
+      // does not offer these, and a request naming one anyway would add stock
+      // to a shelf nothing ever reads.
+      if (doc.onSpot === true) {
+        rejected.push(`${String(doc.name ?? row.id)}: made to order, not stocked`);
         continue;
       }
 
@@ -222,6 +237,27 @@ export async function POST(request: NextRequest) {
 
     const result = await collection.bulkWrite(ops, { ordered: false });
 
+    // A recipe naming a made-to-order item is expanded into what THAT is made
+    // of: there is no shelf of it to draw down, so the raw material behind it
+    // is what a batch of the parent really spends. Same rule, same function,
+    // as the sale path — see expandOnSpot.
+    const onSpotItems = await loadOnSpotProductionItems(db);
+    const spend: Record<AuditKind, Map<string, number>> = onSpotItems.size
+      ? (() => {
+          const flat = (["production", "raw"] as const).flatMap((refType) =>
+            [...owed[refType]].map(([refId, qty]) => ({ refType, refId, qty })),
+          );
+          const next: Record<AuditKind, Map<string, number>> = {
+            raw: new Map(),
+            production: new Map(),
+          };
+          for (const part of expandOnSpot(flat, onSpotItems).demand) {
+            next[part.refType].set(part.refId, part.qty);
+          }
+          return next;
+        })()
+      : owed;
+
     // Spend the ingredients. Done after the production write, so a failure
     // here leaves stock added but not deducted — recoverable by hand, unlike
     // the reverse, which would take stock away for something never recorded.
@@ -233,13 +269,13 @@ export async function POST(request: NextRequest) {
     const consumedProduction = await drawDownStock(
       db,
       PRODUCTION_ITEMS_COLLECTION,
-      owed.production,
+      spend.production,
       now,
     );
     const consumedRaw = await drawDownStock(
       db,
       RAW_MATERIALS_COLLECTION,
-      owed.raw,
+      spend.raw,
       now,
     );
     const consumedLines = [...consumedProduction, ...consumedRaw];
