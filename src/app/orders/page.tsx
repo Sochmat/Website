@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ChevronDown, ReceiptText } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import Shimmer from "@/components/ui/Shimmer";
 import { Order } from "@/lib/types";
 import { DEFAULT_LADDER } from "@/lib/streakLadder";
 

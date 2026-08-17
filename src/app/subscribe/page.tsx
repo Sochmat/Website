@@ -17,6 +17,7 @@ import { message } from "antd";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import FoodTypeDot from "@/components/FoodTypeDot";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 import type { FoodType } from "@/lib/foodType";
 
 interface SubscribeProduct {

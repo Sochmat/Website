@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import Shimmer from "@/components/ui/Shimmer";
 import { REFERRAL_REWARD, REFERRAL_REWARD_MAX } from "@/lib/walletMath";
 
 interface ReferralInfo {

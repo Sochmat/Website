@@ -30,6 +30,7 @@ import VegDot from "@/components/subscription/VegDot";
 import BatchPlanner from "@/components/subscription/BatchPlanner";
 import MealPickerSheet from "@/components/subscription/MealPickerSheet";
 import MealAddressSheet from "@/components/subscription/MealAddressSheet";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 import {
   TIER_LABELS,
   type SubscriptionItem,

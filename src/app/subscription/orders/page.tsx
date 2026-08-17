@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import Shimmer from "@/components/ui/Shimmer";
 import type { CreditAccounting } from "@/lib/subscriptionSchedule";
 import { DIET_LABELS, rupees } from "@/components/subscription/types";
 import type { SubscriptionMealPlan } from "@/lib/types";
