@@ -87,7 +87,6 @@ function MealCardCarousel({ images, alt }: { images: string[]; alt: string }) {
 
   return (
     <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <ShimmerImg
         src={images[current]}
         alt={alt}

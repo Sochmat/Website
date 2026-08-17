@@ -8,6 +8,7 @@ import { useLoginPopup } from "@/context/LoginPopupContext";
 import type { CreditAccounting } from "@/lib/subscriptionSchedule";
 import { DIET_LABELS, rupees } from "@/components/subscription/types";
 import type { SubscriptionMealPlan } from "@/lib/types";
+import Shimmer from "@/components/ui/Shimmer";
 
 type PlanRow = SubscriptionMealPlan & { accounting: CreditAccounting };
 

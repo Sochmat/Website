@@ -16,6 +16,7 @@ import { type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { useStoreStatus } from "@/context/StoreStatusContext";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 
 interface SubscribeProduct {
   id: string;

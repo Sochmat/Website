@@ -8,6 +8,7 @@ import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import { Order } from "@/lib/types";
 import { DEFAULT_LADDER } from "@/lib/streakLadder";
+import Shimmer from "@/components/ui/Shimmer";
 
 type ProductSummary = { name: string; image?: string };
 

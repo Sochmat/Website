@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import { useLoginPopup } from "@/context/LoginPopupContext";
 import { REFERRAL_REWARD, REFERRAL_REWARD_MAX } from "@/lib/walletMath";
+import Shimmer from "@/components/ui/Shimmer";
 
 interface ReferralInfo {
   referralCode: string;

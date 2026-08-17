@@ -116,7 +116,6 @@ export default function IngredientsSheet({
 
         {/* Image */}
         <div className="w-full h-[246px] overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <ShimmerImg
             src={product.image || "/food.png"}
             alt={product.name}

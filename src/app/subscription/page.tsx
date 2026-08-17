@@ -36,6 +36,7 @@ import DietCard from "@/components/subscription/DietCard";
 import MealOptionsSheet from "@/components/subscription/MealOptionsSheet";
 import DeliveryTimePicker from "@/components/subscription/DeliveryTimePicker";
 import SubscriptionItemCard from "@/components/subscription/SubscriptionItemCard";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 import {
   rupees,
   TIER_LABELS,

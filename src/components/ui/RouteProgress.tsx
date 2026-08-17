@@ -23,9 +23,20 @@ const FINISH_MS = 220;
 export default function RouteProgress() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [state, setState] = useState<"idle" | "running" | "done">("idle");
+  // The URL a navigation started from. Everything else is derived from it, so
+  // there is no state to push in an effect when the route lands — the new URL
+  // arriving as a prop *is* the completion signal.
+  const [startedAt, setStartedAt] = useState<string | null>(null);
   const stallTimer = useRef<number | undefined>(undefined);
   const doneTimer = useRef<number | undefined>(undefined);
+
+  const currentUrl = `${pathname}?${searchParams}`;
+  const state: "idle" | "running" | "done" =
+    startedAt === null
+      ? "idle"
+      : startedAt === currentUrl
+        ? "running"
+        : "done";
 
   // Start on any click that will actually navigate this app.
   useEffect(() => {
@@ -58,11 +69,11 @@ export default function RouteProgress() {
         return;
       }
 
-      setState("running");
+      setStartedAt(`${window.location.pathname}?${new URLSearchParams(window.location.search)}`);
     }
 
     function onPopState() {
-      setState("running");
+      setStartedAt(`${window.location.pathname}?${new URLSearchParams(window.location.search)}`);
     }
 
     // Capture phase, so a handler that stops propagation can't hide the click.
@@ -75,14 +86,6 @@ export default function RouteProgress() {
     };
   }, []);
 
-  // The URL changed — whatever was in flight has landed.
-  useEffect(() => {
-    setState((s) => (s === "running" ? "done" : s));
-    // pathname/searchParams are the completion signal, so they belong here even
-    // though the body doesn't read them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, searchParams]);
-
   // Timers: hold the finished bar briefly, and never let a stalled one linger.
   useEffect(() => {
     window.clearTimeout(stallTimer.current);
@@ -90,11 +93,11 @@ export default function RouteProgress() {
 
     if (state === "running") {
       stallTimer.current = window.setTimeout(
-        () => setState("idle"),
+        () => setStartedAt(null),
         STALL_TIMEOUT_MS,
       );
     } else if (state === "done") {
-      doneTimer.current = window.setTimeout(() => setState("idle"), FINISH_MS);
+      doneTimer.current = window.setTimeout(() => setStartedAt(null), FINISH_MS);
     }
 
     return () => {

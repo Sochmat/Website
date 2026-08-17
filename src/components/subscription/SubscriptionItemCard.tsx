@@ -34,7 +34,6 @@ export default function SubscriptionItemCard({
     <>
       {/* Meal image with a veg/non-veg dot pinned in the corner */}
       <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-[#f2f2f2]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <ShimmerImg
           src={item.image || "/food.png"}
           alt={item.name.trim()}
