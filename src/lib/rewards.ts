@@ -9,6 +9,7 @@
  */
 
 import { istDaysBetween, istMonth } from "./ist";
+import { orderAmounts, type OrderAmountFields } from "./orderAmounts";
 import { MIN_PAYABLE } from "./walletMath";
 
 /** A customer's stored streak: order days banked this month, and the last one. */
@@ -51,7 +52,27 @@ export function nextStreak(prev: StreakState | null, today: string): number {
   return prev.count + 1;
 }
 
-/** Points earned for a pre-tax base at a given rate, rounded to a whole point. */
+/**
+ * The amount an order earns points on: what the customer is actually charged.
+ *
+ * That is the gross bill — items, less every discount, plus GST and the delivery
+ * charge — minus any wallet credit and reward points spent against it. So the
+ * percentage always applies to the figure the customer sees as payable, and
+ * paying with a balance lowers what the order earns.
+ *
+ * Delegates to `orderAmounts` so "what was charged" has one definition across
+ * the award path, the admin table and the reports. Reads the order's own stored
+ * amounts, which means it is only meaningful once redemption has been applied —
+ * at payment time, not at creation.
+ */
+export function rewardBaseFor(order: OrderAmountFields): number {
+  return orderAmounts(order).paid;
+}
+
+/**
+ * Points earned on a charged amount at a given rate, rounded to a whole point.
+ * Pair it with `rewardBaseFor` to get the base.
+ */
 export function computePointsEarned(rewardBase: number, rate: number): number {
   if (!(rewardBase > 0) || !(rate > 0)) return 0;
   return Math.round((rewardBase * rate) / 100);

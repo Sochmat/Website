@@ -22,12 +22,15 @@ interface RewardInfoModalProps {
 
 /** The worked example's figures. Kept round so the arithmetic is followable. */
 const EXAMPLE_SUBTOTAL = 500;
-const EXAMPLE_DISCOUNT = 50;
-const EXAMPLE_BASE = EXAMPLE_SUBTOTAL - EXAMPLE_DISCOUNT;
+const EXAMPLE_DISCOUNT = 100;
+const EXAMPLE_DELIVERY = 20;
+const EXAMPLE_GST = Math.round((EXAMPLE_SUBTOTAL - EXAMPLE_DISCOUNT) * 0.05);
+const EXAMPLE_BASE =
+  EXAMPLE_SUBTOTAL - EXAMPLE_DISCOUNT + EXAMPLE_GST + EXAMPLE_DELIVERY;
 
 /**
  * Explains how a reward-point figure is arrived at: the streak sets the rate,
- * the rate applies to the pre-tax total, points then spend like rupees.
+ * the rate applies to what the customer pays, points then spend like rupees.
  *
  * The three steps are numbered because they genuinely are a sequence — each one
  * feeds the next — not for decoration. A bottom sheet rather than a centred
@@ -154,7 +157,7 @@ export default function RewardInfoModal({
               <div className="flex items-baseline gap-2">
                 <span className="font-play text-xs text-[#f56215]">2</span>
                 <h3 className="text-sm font-semibold text-[#1c1c1c]">
-                  The rate applies to your pre-tax total
+                  The rate applies to what you pay
                 </h3>
               </div>
               <div className="mt-3 rounded-xl bg-[#fafafa] px-4 py-3">
@@ -167,8 +170,16 @@ export default function RewardInfoModal({
                     <dt className="text-[#666]">Discounts</dt>
                     <dd className="text-[#00a86e]">−₹{EXAMPLE_DISCOUNT}</dd>
                   </div>
+                  <div className="flex justify-between">
+                    <dt className="text-[#666]">GST</dt>
+                    <dd className="text-[#1c1c1c]">₹{EXAMPLE_GST}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-[#666]">Delivery</dt>
+                    <dd className="text-[#1c1c1c]">₹{EXAMPLE_DELIVERY}</dd>
+                  </div>
                   <div className="mt-2 flex justify-between border-t border-[#e8e8e8] pt-2 font-semibold">
-                    <dt className="text-[#1c1c1c]">Earns points</dt>
+                    <dt className="text-[#1c1c1c]">You pay — earns points</dt>
                     <dd className="text-[#1c1c1c]">₹{EXAMPLE_BASE}</dd>
                   </div>
                 </dl>
@@ -181,8 +192,9 @@ export default function RewardInfoModal({
                 </p>
               </div>
               <p className="mt-2 text-xs text-[#8a6b57]">
-                GST and the delivery charge are not counted. Spending points
-                doesn&apos;t reduce what an order earns.
+                GST and the delivery charge are counted — you earn on the amount
+                you actually pay. Wallet credit or points spent on an order lower
+                that amount, so they lower what the order earns.
               </p>
             </li>
 
