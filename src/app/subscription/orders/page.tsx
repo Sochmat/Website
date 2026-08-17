@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import Shimmer from "@/components/ui/Shimmer";
 import type { CreditAccounting } from "@/lib/subscriptionSchedule";
 import { DIET_LABELS, rupees } from "@/components/subscription/types";
 import type { SubscriptionMealPlan } from "@/lib/types";
@@ -51,7 +52,11 @@ export default function SubscriptionOrdersPage() {
 
       <div className="p-4 space-y-3">
         {loading ? (
-          <p className="text-gray-500 text-sm">Loading…</p>
+          <>
+            {[0, 1, 2].map((i) => (
+              <Shimmer key={i} rounded="rounded-xl" className="h-24" />
+            ))}
+          </>
         ) : !isAuthenticated ? (
           <button
             onClick={openLoginPopup}

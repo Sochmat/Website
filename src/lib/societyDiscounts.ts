@@ -48,3 +48,23 @@ export function computeSocietyDiscount(subtotal: number, percent: number): numbe
   if (!(percent > 0) || !(subtotal > 0)) return 0;
   return Math.round((subtotal * percent) / 100);
 }
+
+/**
+ * The base every *offer* discount is computed on — the coupon's percentage and
+ * the 20% first-order discount alike.
+ *
+ * The location discount comes off first, and offers price off what remains, so
+ * a 10% coupon at a 10% location is 10% of ₹450 rather than of ₹500. Offers
+ * still stack with the location discount; this only changes what they are a
+ * percentage *of*. Flat-rupee coupons are unaffected by definition.
+ *
+ * Both the checkout preview and the server's authoritative recomputation go
+ * through here so the two can't drift.
+ */
+export function offerDiscountBase(
+  subtotal: number,
+  societyDiscount: number,
+): number {
+  if (!(subtotal > 0)) return 0;
+  return Math.max(0, subtotal - Math.max(0, societyDiscount));
+}

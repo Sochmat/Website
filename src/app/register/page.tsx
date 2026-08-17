@@ -87,8 +87,8 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (data.success) {
-        localStorage.setItem("userToken", data.token);
-        localStorage.setItem("user", JSON.stringify(data.user));
+        // The verify response set the httpOnly session cookie; this only seeds
+        // the in-memory user so the UI reflects the login immediately.
         setUser(data.user);
         router.replace("/");
       } else {

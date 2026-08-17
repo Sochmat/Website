@@ -8,6 +8,7 @@ import { CheckCircleIcon } from "lucide-react";
 import { message } from "antd";
 import { Order } from "@/lib/types";
 import { useStoreStatus } from "@/context/StoreStatusContext";
+import { STATUS_STEP_INDEX, trackingStepIndex } from "@/lib/orderTracking";
 
 const imgDelivery =
   "https://www.figma.com/api/mcp/asset/a5506fec-aaf3-4884-9aa6-625d4f483d7c";
@@ -20,13 +21,7 @@ interface TrackingStep {
   icon: React.ReactNode;
 }
 
-const STATUS_STEP_INDEX: Record<NonNullable<Order["status"]>, number> = {
-  pending: 1,
-  confirmed: 2,
-  shipped: 3,
-  delivered: 4,
-  cancelled: 0,
-};
+// Step order and the status -> step mapping live in @/lib/orderTracking.
 
 function SuccessContent() {
   const searchParams = useSearchParams();
@@ -83,7 +78,7 @@ function SuccessContent() {
     }
   }, [order, isSubscription, router]);
 
-  const activeIndex = order?.status ? STATUS_STEP_INDEX[order.status] : 1;
+  const activeIndex = trackingStepIndex(order?.status);
   const isCancelled = order?.status === "cancelled";
 
   const STEP_ETA: Record<number, string> = {
@@ -439,7 +434,7 @@ function SuccessContent() {
         ) : null}
 
         {/* Tracking Card — shown only once the order is confirmed */}
-        {activeIndex >= 2 && (
+        {activeIndex >= STATUS_STEP_INDEX.confirmed && (
         <div className="bg-white rounded-xl px-5 py-4 mt-5">
           {/* Arriving Info */}
           <div className="flex items-center justify-between">

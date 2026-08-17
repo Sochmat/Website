@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { message } from "antd";
 import { useLoginPopup } from "@/context/LoginPopupContext";
+import Shimmer from "@/components/ui/Shimmer";
 import { REFERRAL_REWARD, REFERRAL_REWARD_MAX } from "@/lib/walletMath";
 
 interface ReferralInfo {
@@ -82,7 +83,11 @@ export default function ReferPage() {
 
       <div className="space-y-4 p-4">
         {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <>
+            <Shimmer rounded="rounded-xl" className="h-24" />
+            <Shimmer rounded="rounded-xl" className="h-14" />
+            <Shimmer rounded="rounded-xl" className="h-40" />
+          </>
         ) : signedOut || !info ? (
           <button
             onClick={openLoginPopup}

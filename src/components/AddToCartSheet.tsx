@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Product, CartSelection } from "@/context/CartContext";
 import type { MenuVariant, SelectedAddOn } from "@/lib/types";
+import FoodTypeDot from "./FoodTypeDot";
 
 interface AddToCartSheetProps {
   open: boolean;
@@ -84,17 +85,7 @@ export default function AddToCartSheet({
         <div className="w-12 h-1 bg-[#e5e5e5] rounded-full mx-auto mt-3 shrink-0" />
 
         <div className="px-4 pt-3 pb-2 flex items-start gap-2 shrink-0">
-          <div
-            className={`w-4 h-4 border-2 shrink-0 mt-0.5 ${
-              product.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center`}
-          >
-            <div
-              className={`w-2 h-2 rounded-full ${
-                product.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot item={product} className="mt-0.5" />
           <h3 className="text-[#111] font-semibold text-base leading-snug">
             {product.name}
           </h3>
@@ -158,17 +149,7 @@ export default function AddToCartSheet({
                       className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-gray-200"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className={`w-3.5 h-3.5 border-2 shrink-0 ${
-                            a.isVeg ? "border-green-600" : "border-red-600"
-                          } flex items-center justify-center`}
-                        >
-                          <div
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              a.isVeg ? "bg-green-600" : "bg-red-600"
-                            }`}
-                          />
-                        </div>
+                        <FoodTypeDot item={a} size={14} dotSize={6} />
                         <span className="text-sm text-[#111] truncate">
                           {a.name}
                         </span>

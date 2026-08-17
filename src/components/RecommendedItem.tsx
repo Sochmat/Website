@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 import { useRouter } from "next/navigation";
 import { Product, useCart } from "@/context/CartContext";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import { PlusIcon } from "lucide-react";
+import FoodTypeDot from "./FoodTypeDot";
 
 interface RecommendedItemProps {
   product: Product;
@@ -29,7 +30,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
   return (
     <div className="flex flex-col gap-1.5 w-[120px] shrink-0 relative">
       <div className="aspect-square relative rounded-lg overflow-hidden">
-        <Image
+        <ShimmerImage
           src={product.image}
           alt={product.name}
           fill
@@ -45,17 +46,7 @@ export default function RecommendedItem({ product }: RecommendedItemProps) {
           </button>
         )}
         <div className="absolute left-2 top-2">
-          <div
-            className={`w-4 h-4 bg-white border-2 ${
-              product.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center`}
-          >
-            <div
-              className={`w-2 h-2 rounded-full ${
-                product.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot item={product} className="bg-white" />
         </div>
       </div>
 

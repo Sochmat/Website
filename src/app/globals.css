@@ -186,12 +186,91 @@ button {
   animation: streak-node 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
 }
 
+/* Wallet pill: the coin flips once, then rests. Most of the cycle is the pause
+   — a continuously spinning icon in a header people see on every visit reads
+   as a loading spinner rather than a flourish. */
+@keyframes wallet-coin {
+  0%,
+  72% {
+    transform: rotateY(0deg);
+  }
+  100% {
+    transform: rotateY(360deg);
+  }
+}
+
+.animate-wallet-coin {
+  animation: wallet-coin 4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  transform-style: preserve-3d;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-streak-reveal,
   .animate-streak-flame,
   .animate-streak-glow,
-  .animate-streak-node {
+  .animate-streak-node,
+  .animate-wallet-coin {
     animation: none;
+  }
+}
+
+/* Loading shimmer — a highlight sweeping left to right across a grey block.
+   Used by <Shimmer> and the image placeholders. The sweep is what separates a
+   "still loading" surface from one that has genuinely finished and is empty. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  background-color: #ededed;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: shimmer-sweep 1.4s linear infinite;
+}
+
+/* The route-transition bar: an indeterminate crawl toward 90%, so it always
+   reads as progress even though no real percentage is knowable. The finishing
+   dash to 100% is applied inline when navigation completes. */
+@keyframes route-progress-crawl {
+  0% {
+    transform: scaleX(0.02);
+  }
+  40% {
+    transform: scaleX(0.45);
+  }
+  75% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(0.9);
+  }
+}
+
+.animate-route-progress {
+  transform-origin: 0 50%;
+  animation: route-progress-crawl 8s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+/* Respect a stated preference for less motion: the placeholders stay (they
+   still communicate "not ready"), they just stop sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-route-progress {
+    animation: none;
+  }
+  .animate-route-progress {
+    transform: scaleX(0.9);
   }
 }
 

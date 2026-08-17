@@ -269,6 +269,61 @@ export function soldRecipes(row: MenuRecipeRow): SoldRecipe[] {
 }
 
 /**
+ * Is this an add-on rather than a dish ordered on its own?
+ *
+ * `isAddOn` is the real flag, but an item that lands under Uncategorised counts
+ * too — the same safety net the admin Menu tab applies (see isAddOnItem there),
+ * so an item can never fall out of both screens. Today the two rules pick out
+ * the same set: every uncategorised item is an add-on.
+ */
+export function isAddOnMenuItem(item: MenuItemSummary): boolean {
+  return Boolean(item.isAddOn) || !item.categoryName;
+}
+
+/** The menu split the way the two Setup screens divide it. */
+export function partitionAddOns(items: MenuItemSummary[]): {
+  addOns: MenuItemSummary[];
+  dishes: MenuItemSummary[];
+} {
+  const addOns: MenuItemSummary[] = [];
+  const dishes: MenuItemSummary[] = [];
+  for (const item of items) {
+    (isAddOnMenuItem(item) ? addOns : dishes).push(item);
+  }
+  return { addOns, dishes };
+}
+
+/** One menu item paired with the recipe behind it. */
+function buildRow(
+  menuItem: MenuItemSummary,
+  byKey: ReadonlyMap<string, ItemRecipe>,
+): MenuRecipeRow {
+  const recipe = recipeFor(menuItem, byKey);
+  const variants = variantRowsFor(menuItem, byKey);
+  const mapped = variants.length
+    ? variants.every((v) => v.mapped)
+    : isMapped(recipe);
+  return { menuItem, recipe, variants, mapped };
+}
+
+/**
+ * Menu items paired with their recipes, by name — no category grouping.
+ *
+ * What the Addons Recipe screen reads: add-ons carry no category of their own,
+ * so grouping them would only ever produce the one Uncategorised heap that
+ * sending them to their own screen was meant to break up.
+ */
+export function menuRecipeRows(
+  items: MenuItemSummary[],
+  recipes: ItemRecipe[],
+): MenuRecipeRow[] {
+  const byKey = recipesByNameKey(recipes);
+  return items
+    .map((menuItem) => buildRow(menuItem, byKey))
+    .sort((a, b) => a.menuItem.name.localeCompare(b.menuItem.name));
+}
+
+/**
  * Menu items grouped by category, each paired with its recipe.
  *
  * Categories are ordered by name with Uncategorised last, and items by name
@@ -300,13 +355,9 @@ export function groupMenuItems(
       groups.set(groupKey, group);
     }
 
-    const recipe = recipeFor(menuItem, byKey);
-    const variants = variantRowsFor(menuItem, byKey);
-    const mapped = variants.length
-      ? variants.every((v) => v.mapped)
-      : isMapped(recipe);
-    group.rows.push({ menuItem, recipe, variants, mapped });
-    if (mapped) group.mapped++;
+    const row = buildRow(menuItem, byKey);
+    group.rows.push(row);
+    if (row.mapped) group.mapped++;
     else group.unmapped++;
   }
 

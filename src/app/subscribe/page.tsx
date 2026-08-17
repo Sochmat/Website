@@ -16,6 +16,9 @@ import { type UserAddress } from "@/lib/types";
 import { message } from "antd";
 import { handleRazorpayPayment } from "@/helpers/razorpay";
 import { useStoreStatus } from "@/context/StoreStatusContext";
+import FoodTypeDot from "@/components/FoodTypeDot";
+import PageSkeleton from "@/components/ui/PageSkeleton";
+import type { FoodType } from "@/lib/foodType";
 
 interface SubscribeProduct {
   id: string;
@@ -26,6 +29,7 @@ interface SubscribeProduct {
   originalPrice: number;
   discount?: string;
   image: string;
+  foodType?: FoodType;
   isVeg: boolean;
   type?: string;
 }
@@ -92,6 +96,7 @@ function SubscribeContent() {
             originalPrice: item.originalPrice,
             discount: item.discount,
             image: item.image,
+            foodType: item.foodType,
             isVeg: item.isVeg,
             type: item.type,
           });
@@ -167,10 +172,7 @@ function SubscribeContent() {
         const res = await fetch("/api/users", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            _id: user._id,
-            addresses: updatedAddresses,
-          }),
+          body: JSON.stringify({ addresses: updatedAddresses }),
         });
         const data = await res.json();
         if (data.success && data.user) {
@@ -334,11 +336,7 @@ function SubscribeContent() {
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
-      </main>
-    );
+    return <PageSkeleton cards={4} />;
   }
 
   if (!product) {
@@ -410,17 +408,7 @@ function SubscribeContent() {
       <div className="p-4 space-y-4">
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex gap-3">
-            <div
-              className={`w-4 h-4 border-2 shrink-0 mt-0.5 ${
-                product.isVeg ? "border-green-600" : "border-red-600"
-              } flex items-center justify-center`}
-            >
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  product.isVeg ? "bg-green-600" : "bg-red-600"
-                }`}
-              />
-            </div>
+            <FoodTypeDot item={product} className="mt-0.5" />
             <div className="flex-1 min-w-0">
               <h2 className="font-semibold text-[#111]">{product.name}</h2>
               <div className="flex gap-1.5 mt-1.5 flex-wrap">
@@ -741,13 +729,7 @@ function SubscribeContent() {
 
 export default function SubscribePage() {
   return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-          <p className="text-gray-500">Loading...</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<PageSkeleton cards={4} />}>
       <SubscribeContent />
     </Suspense>
   );

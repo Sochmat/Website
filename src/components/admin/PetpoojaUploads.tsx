@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Modal, Table, Tag, message } from "antd";
+import { Button, Modal, Popconfirm, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { DownloadOutlined, EditOutlined, UploadOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  EditOutlined,
+  UploadOutlined,
+} from "@ant-design/icons";
 import BulkOrdersUpdateModal from "./BulkOrdersUpdateModal";
+import PetpoojaEditModal from "./PetpoojaEditModal";
+import { downloadBlob } from "@/lib/downloadBlob";
 import type {
   PetpoojaItem,
   PetpoojaRowError,
@@ -50,18 +56,6 @@ function enteredOn(row: PetpoojaUploadSummary): string | null {
   return entered === formatIstDay(row.uploadedAt) ? null : entered;
 }
 
-/** Trigger a browser download from an already-fetched blob. */
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
 type UploadRow = PetpoojaUploadSummary & { key: string };
 type UploadDetail = PetpoojaUploadDetail;
 
@@ -80,6 +74,8 @@ export default function PetpoojaUploads() {
   const [detail, setDetail] = useState<UploadDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -143,8 +139,10 @@ export default function PetpoojaUploads() {
         `${data.stockRows ?? 0} stock row${data.stockRows === 1 ? "" : "s"} deducted`,
       ];
       const skipped = Number(data.skippedRows ?? 0);
-      if (skipped) parts.push(`${skipped} row${skipped === 1 ? "" : "s"} skipped`);
-      if (data.shortfallRows) parts.push(`${data.shortfallRows} short of stock`);
+      if (skipped)
+        parts.push(`${skipped} row${skipped === 1 ? "" : "s"} skipped`);
+      if (data.shortfallRows)
+        parts.push(`${data.shortfallRows} short of stock`);
       const unmapped: string[] = data.unmapped ?? [];
       if (unmapped.length) parts.push(`no recipe for ${unmapped.join(", ")}`);
 
@@ -155,6 +153,31 @@ export default function PetpoojaUploads() {
       message.error("Upload failed — please try again");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleDelete(row: UploadRow) {
+    setDeletingId(row._id);
+    try {
+      const res = await fetch(`/api/admin/petpooja-uploads/${row._id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!data?.success) {
+        message.error(data?.message ?? "Could not delete that entry");
+        return;
+      }
+      const rows = Number(data.restoredRows ?? 0);
+      message.success(
+        rows > 0
+          ? `Entry deleted · stock put back on ${rows} row${rows === 1 ? "" : "s"}`
+          : "Entry deleted · no stock had been deducted",
+      );
+      await load();
+    } catch {
+      message.error("Could not delete that entry");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -188,8 +211,9 @@ export default function PetpoojaUploads() {
             <div style={{ fontWeight: 500 }}>{formatUploadedAt(value)}</div>
             <div style={{ fontSize: 12, color: "#888" }}>
               {/* A manual entry has no file to name, so it says what it is. */}
-              {row.source === "manual" ? "Bulk Orders Update" : row.fileName} ·{" "}
-              {row.uploadedByRole}
+              {row.source === "manual"
+                ? "Bulk Orders Update"
+                : row.fileName} · {row.uploadedByRole}
             </div>
             {/* Only on a backdated entry: the date above is the day it sold,
                 and the day it was typed is the other half of that story. */}
@@ -252,14 +276,41 @@ export default function PetpoojaUploads() {
     {
       title: "Action",
       key: "action",
+      width: 260,
       render: (_: unknown, row) => (
-        <Button
-          size="small"
-          loading={detailLoading}
-          onClick={() => openDetails(row._id)}
-        >
-          View details
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            size="small"
+            loading={detailLoading}
+            onClick={() => openDetails(row._id)}
+          >
+            View details
+          </Button>
+          <Button size="small" onClick={() => setEditingId(row._id)}>
+            Edit
+          </Button>
+          <Popconfirm
+            title="Delete this entry?"
+            // Deleting moves stock, so the prompt names exactly what is about
+            // to be put back rather than asking a generic "are you sure".
+            description={
+              row.consumptionError || row.stockRows === 0
+                ? "No stock was deducted, so nothing will be put back."
+                : `Stock will be put back across ${row.stockRows} row${
+                    row.stockRows === 1 ? "" : "s"
+                  }. This cannot be undone.`
+            }
+            okText="Delete and restock"
+            okButtonProps={{ danger: true }}
+            cancelText="Cancel"
+            placement="topRight"
+            onConfirm={() => handleDelete(row)}
+          >
+            <Button size="small" danger loading={deletingId === row._id}>
+              Delete
+            </Button>
+          </Popconfirm>
+        </div>
       ),
     },
   ];
@@ -337,7 +388,9 @@ export default function PetpoojaUploads() {
     if (!lines.length) return null;
     return (
       <div style={{ marginTop: 20 }}>
-        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{title}</h4>
+        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+          {title}
+        </h4>
         <Table<PetpoojaStockLine & { key: string }>
           columns={stockColumns}
           dataSource={lines.map((l, i) => ({ ...l, key: `${l.id}-${i}` }))}
@@ -404,6 +457,12 @@ export default function PetpoojaUploads() {
         }}
       />
 
+      <PetpoojaEditModal
+        uploadId={editingId}
+        onClose={() => setEditingId(null)}
+        onSaved={load}
+      />
+
       <Table<UploadRow>
         columns={columns}
         dataSource={uploads}
@@ -465,7 +524,8 @@ export default function PetpoojaUploads() {
 
             {detail.consumptionError && (
               <p style={{ marginTop: 16, fontSize: 13, color: "#cf1322" }}>
-                Stock was not deducted for this upload: {detail.consumptionError}
+                Stock was not deducted for this upload:{" "}
+                {detail.consumptionError}
               </p>
             )}
 
@@ -499,7 +559,9 @@ export default function PetpoojaUploads() {
                     key: `${e.rowNumber}-${i}`,
                   }))}
                   size="small"
-                  pagination={detail.errors.length > 5 ? { pageSize: 5 } : false}
+                  pagination={
+                    detail.errors.length > 5 ? { pageSize: 5 } : false
+                  }
                 />
               </div>
             )}

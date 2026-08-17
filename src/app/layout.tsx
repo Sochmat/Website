@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import RouteProgress from "@/components/ui/RouteProgress";
 import { CartProvider } from "@/context/CartContext";
 import { LocationProvider } from "@/context/LocationContext";
 import { UserProvider } from "@/context/UserContext";
@@ -29,21 +31,30 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.variable} antialiased`}>
-        <script
+        {/* Suspense: RouteProgress reads useSearchParams, which without a
+            boundary opts every route into client-side rendering. */}
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
+        {/* <script
           src="http://localhost:8899/embed.js"
           data-env="development"
-        ></script>
+        ></script> */}
         <UserProvider>
           <LoginPopupProvider>
             <CartProvider>
-              <StoreStatusProvider>
-                <LocationProvider>
+              {/* Location wraps StoreStatus: store/delivery availability is now
+                  per-location, so the status provider reads the selected
+                  society. LocationProvider has no store-status dependency, so
+                  this nesting cannot cycle. */}
+              <LocationProvider>
+                <StoreStatusProvider>
                   {/* <LocationPrompt /> */}
                   {children}
                   <LoginPopup />
                   {/* <OrderPromptModal /> */}
-                </LocationProvider>
-              </StoreStatusProvider>
+                </StoreStatusProvider>
+              </LocationProvider>
             </CartProvider>
           </LoginPopupProvider>
         </UserProvider>

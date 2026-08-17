@@ -1,6 +1,7 @@
 "use client";
 
 import { CartItem as CartItemType, useCart } from "@/context/CartContext";
+import FoodTypeDot from "./FoodTypeDot";
 
 interface CartItemProps {
   item: CartItemType;
@@ -12,17 +13,7 @@ export default function CartItem({ item }: CartItemProps) {
   return (
     <div className="flex gap-2 items-start py-0.5 w-full">
       <div className="flex items-center py-1">
-        <div
-          className={`w-3 h-3 border-2 ${
-            item.isVeg ? "border-green-600" : "border-red-600"
-          } flex items-center justify-center`}
-        >
-          <div
-            className={`w-1.5 h-1.5 rounded-full ${
-              item.isVeg ? "bg-green-600" : "bg-red-600"
-            }`}
-          />
-        </div>
+        <FoodTypeDot item={item} size={12} />
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5">

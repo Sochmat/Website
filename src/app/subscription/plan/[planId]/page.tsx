@@ -30,6 +30,7 @@ import VegDot from "@/components/subscription/VegDot";
 import BatchPlanner from "@/components/subscription/BatchPlanner";
 import MealPickerSheet from "@/components/subscription/MealPickerSheet";
 import MealAddressSheet from "@/components/subscription/MealAddressSheet";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 import {
   TIER_LABELS,
   type SubscriptionItem,
@@ -263,11 +264,7 @@ export default function SchedulerPage({
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-        <p className="text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageSkeleton cards={4} />;
   }
   if (notFound || !plan || !accounting) {
     return (

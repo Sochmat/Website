@@ -15,6 +15,20 @@ export const CUSTOMER_COOKIE = "user_session";
 // would log a customer out part-way through their own plan.
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+/**
+ * Bump to invalidate every outstanding session at once — verification rejects
+ * any token stamped with a different version, so the next request from every
+ * browser 401s and the customer signs in again.
+ *
+ * Version 1 exists to flush the tokens issued before identity moved off
+ * `localStorage`. Those carry no `v` at all, so they fail the check for free.
+ *
+ * Rotating the signing secret would do the same job, but `sessionSecret()`
+ * falls through to ADMIN_SESSION_SECRET, so rotating it to log out customers
+ * would take the admin surface down with it.
+ */
+const SESSION_VERSION = 1;
+
 const encoder = new TextEncoder();
 
 function sessionSecret(): string {
@@ -64,6 +78,8 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 export interface CustomerSession {
   userId: string;
   exp: number;
+  /** Absent on tokens issued before versioning; those are no longer valid. */
+  v?: number;
 }
 
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
@@ -72,7 +88,11 @@ export async function signCustomerSession(userId: string): Promise<string> {
   if (!OBJECT_ID.test(userId)) {
     throw new Error("signCustomerSession expects a 24-hex ObjectId");
   }
-  const payload: CustomerSession = { userId, exp: Date.now() + SESSION_TTL_MS };
+  const payload: CustomerSession = {
+    userId,
+    exp: Date.now() + SESSION_TTL_MS,
+    v: SESSION_VERSION,
+  };
   const body = base64UrlEncode(encoder.encode(JSON.stringify(payload)));
   const sig = base64UrlEncode(await hmac(body));
   return `${body}.${sig}`;
@@ -100,7 +120,8 @@ export async function verifyCustomerSession(
       typeof payload.userId !== "string" ||
       !OBJECT_ID.test(payload.userId) ||
       typeof payload.exp !== "number" ||
-      payload.exp < Date.now()
+      payload.exp < Date.now() ||
+      payload.v !== SESSION_VERSION
     ) {
       return null;
     }

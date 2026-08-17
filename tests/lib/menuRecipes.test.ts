@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   groupMenuItems,
+  isAddOnMenuItem,
   isMapped,
+  menuRecipeRows,
   orphanRecipes,
+  partitionAddOns,
   recipeFor,
   recipesByNameKey,
   soldRecipes,
@@ -342,5 +345,69 @@ describe("orphanRecipes", () => {
     expect(orphanRecipes([menuItem("Dal Rice")], [recipe("dal rice")])).toEqual(
       [],
     );
+  });
+});
+
+describe("isAddOnMenuItem", () => {
+  it("counts an item flagged as an add-on", () => {
+    expect(isAddOnMenuItem({ ...menuItem("Cheese"), isAddOn: true })).toBe(true);
+  });
+
+  it("counts an item with no category — the Uncategorised heap", () => {
+    expect(isAddOnMenuItem(menuItem("Papad", "", ""))).toBe(true);
+  });
+
+  it("counts an item whose category was deleted, leaving no name", () => {
+    expect(isAddOnMenuItem(menuItem("Papad", "gone", ""))).toBe(true);
+  });
+
+  it("leaves a categorised dish alone", () => {
+    expect(isAddOnMenuItem(menuItem("Dal Rice"))).toBe(false);
+  });
+});
+
+describe("partitionAddOns", () => {
+  it("splits the menu the way the two Setup screens divide it", () => {
+    const cheese = { ...menuItem("Cheese"), isAddOn: true };
+    const papad = menuItem("Papad", "", "");
+    const dal = menuItem("Dal Rice");
+
+    const { addOns, dishes } = partitionAddOns([dal, cheese, papad]);
+
+    expect(addOns.map((i) => i.name)).toEqual(["Cheese", "Papad"]);
+    expect(dishes.map((i) => i.name)).toEqual(["Dal Rice"]);
+  });
+
+  it("loses nothing — every item lands on exactly one side", () => {
+    const items = [
+      menuItem("Dal Rice"),
+      { ...menuItem("Cheese"), isAddOn: true },
+      menuItem("Papad", "", ""),
+    ];
+    const { addOns, dishes } = partitionAddOns(items);
+    expect(addOns.length + dishes.length).toBe(items.length);
+  });
+});
+
+describe("menuRecipeRows", () => {
+  it("pairs each item with its recipe, sorted by name", () => {
+    const rows = menuRecipeRows(
+      [menuItem("Papad", "", ""), menuItem("Cheese", "", "")],
+      [recipe("Cheese")],
+    );
+
+    expect(rows.map((r) => r.menuItem.name)).toEqual(["Cheese", "Papad"]);
+    expect(rows[0].mapped).toBe(true);
+    expect(rows[1].mapped).toBe(false);
+    expect(rows[1].recipe).toBeNull();
+  });
+
+  it("reads an empty recipe as unmapped, same as the grouped view", () => {
+    const [row] = menuRecipeRows(
+      [menuItem("Cheese", "", "")],
+      [recipe("Cheese", 0)],
+    );
+    expect(row.recipe).not.toBeNull();
+    expect(row.mapped).toBe(false);
   });
 });

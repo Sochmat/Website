@@ -7,6 +7,9 @@ import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import AddToCartSheet from "./AddToCartSheet";
 import IngredientsSheet from "./IngredientsSheet";
+import FoodTypeDot from "./FoodTypeDot";
+import Shimmer from "@/components/ui/Shimmer";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface MenuItemProps {
   product: Product;
@@ -112,8 +115,7 @@ export default function MenuItem({
       <div className="flex gap-[12px]">
         {/* Thumbnail */}
         <div className="relative w-[112px] h-[112px] shrink-0 rounded-[12px] overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ShimmerImg
             src={product.image || "/food.png"}
             alt={product.name}
             className="w-full h-full object-cover"
@@ -121,17 +123,10 @@ export default function MenuItem({
 
           {/* Veg / non-veg marker — sits on the photo, so it needs an opaque
               backing to stay legible. */}
-          <div
-            className={`absolute top-[6px] left-[6px] w-[16px] h-[16px] bg-white border-2 ${
-              product.isVeg ? "border-green-600" : "border-red-600"
-            } flex items-center justify-center rounded-[2px]`}
-          >
-            <div
-              className={`w-[8px] h-[8px] rounded-full ${
-                product.isVeg ? "bg-green-600" : "bg-red-600"
-              }`}
-            />
-          </div>
+          <FoodTypeDot
+            item={product}
+            className="absolute top-[6px] left-[6px] bg-white rounded-[2px]"
+          />
         </div>
 
         {/* Content area */}
@@ -207,6 +202,36 @@ export default function MenuItem({
         product={product}
         footer={priceRow}
       />
+    </div>
+  );
+}
+
+/**
+ * A MenuItem-shaped placeholder: same 112px thumbnail, same content column.
+ *
+ * Kept next to the real card on purpose — the two layouts have to stay in step,
+ * and they will drift if the skeleton lives somewhere else.
+ */
+export function MenuItemSkeleton() {
+  return (
+    <div className="bg-white overflow-hidden relative">
+      <div className="flex gap-[12px]">
+        <Shimmer
+          rounded="rounded-[12px]"
+          className="w-[112px] h-[112px] shrink-0"
+        />
+        <div className="flex-1 min-w-0 flex flex-col gap-[8px]">
+          <Shimmer rounded="rounded" className="h-5 w-2/3" />
+          <div className="flex items-center gap-[4px]">
+            <Shimmer rounded="rounded-[18px]" className="h-6 w-20" />
+            <Shimmer rounded="rounded-[18px]" className="h-6 w-16" />
+          </div>
+          <div className="flex items-center justify-between gap-2 mt-auto">
+            <Shimmer rounded="rounded" className="h-5 w-16" />
+            <Shimmer rounded="rounded-[8px]" className="h-9 w-24" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

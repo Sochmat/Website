@@ -3,6 +3,7 @@
 import VegDot from "./VegDot";
 import SheetCloseButton from "./SheetCloseButton";
 import type { SubscriptionItem } from "./types";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 /**
  * A bottom sheet grid of meals for picking/swapping one meal. Shared by the
@@ -46,8 +47,7 @@ export default function MealPickerSheet({
                   }`}
                 >
                   <div className="relative aspect-[4/3] w-full bg-[#f2f2f2]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <ShimmerImg
                       src={it.image || "/food.png"}
                       alt={it.name.trim()}
                       loading="lazy"

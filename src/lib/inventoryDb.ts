@@ -706,6 +706,51 @@ export async function recalcProductionItemPrices(): Promise<number> {
  * Ids that no longer exist are skipped: a recipe pointing at a deleted item
  * has nothing to spend.
  */
+/**
+ * Put back stock a previous draw-down took, from the lines it recorded.
+ *
+ * The exact inverse of drawDownStock's write: it `$inc`s by the full
+ * `consumedQty`, so this adds the same figure back. Deliberately NOT
+ * `consumedQty - shortfall` — `shortfall` is a reporting figure that says how
+ * much of the draw-down the shelf could not cover, but the deduction spent the
+ * whole amount regardless and let `currentStock` go negative. Restoring the
+ * reduced figure would strand the difference, permanently losing stock on every
+ * item that went into the red.
+ *
+ * No history lines are returned: this unwinds a movement rather than making a
+ * new one, so nothing new should appear in an audit trail.
+ *
+ * Ids that no longer exist are skipped, as in drawDownStock — an item deleted
+ * since the deduction has nothing to restore.
+ */
+export async function restoreDrawnDownStock(
+  db: Db,
+  collectionName: string,
+  // Matches AuditLine, where consumedQty is optional — and the stored lines are
+  // untyped Mongo documents besides. A missing or unusable quantity restores
+  // nothing rather than throwing.
+  lines: ReadonlyArray<{ id: string; consumedQty?: number | null }>,
+  now: Date,
+): Promise<number> {
+  const writes = lines
+    .filter((line) => isValidId(line.id) && Number(line.consumedQty) > 0)
+    .map((line) => ({
+      updateOne: {
+        filter: { _id: new ObjectId(line.id) },
+        update: {
+          $inc: { currentStock: Number(line.consumedQty) },
+          $set: { updatedAt: now },
+        },
+      },
+    }));
+
+  if (writes.length === 0) return 0;
+  const result = await db
+    .collection(collectionName)
+    .bulkWrite(writes, { ordered: false });
+  return result.modifiedCount ?? 0;
+}
+
 export async function drawDownStock(
   db: Db,
   collectionName: string,

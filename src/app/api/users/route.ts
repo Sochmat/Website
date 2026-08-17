@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
+import { getCustomerUserId, unauthorized } from "@/lib/customerSession";
 
 export async function GET(request: NextRequest) {
   try {
@@ -126,14 +127,14 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    // The target is always the caller. A body `_id` used to select the row,
+    // which let anyone rewrite any account's name, email, and addresses by
+    // posting someone else's id. It is now destructured off and discarded.
+    const userId = await getCustomerUserId(request);
+    if (!userId) return unauthorized();
+
     const body = await request.json();
-    const { _id, ...update } = body;
-    if (!_id) {
-      return NextResponse.json(
-        { success: false, message: "_id is required" },
-        { status: 400 }
-      );
-    }
+    const { _id: _ignored, ...update } = body;
     const allowed = [
       "name",
       "email",
@@ -151,16 +152,14 @@ export async function PATCH(request: NextRequest) {
     const { db } = await connectToDatabase();
     const result = await db
       .collection("users")
-      .updateOne({ _id: new ObjectId(_id) }, { $set: set });
+      .updateOne({ _id: userId }, { $set: set });
     if (result.matchedCount === 0) {
       return NextResponse.json(
         { success: false, message: "User not found" },
         { status: 404 }
       );
     }
-    const user = await db
-      .collection("users")
-      .findOne({ _id: new ObjectId(_id) });
+    const user = await db.collection("users").findOne({ _id: userId });
     if (!user) {
       return NextResponse.json(
         { success: false, message: "User not found" },

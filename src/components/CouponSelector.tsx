@@ -17,7 +17,14 @@ export type AppliedCoupon = {
 };
 
 interface CouponSelectorProps {
+  /** Item subtotal. Minimum-order conditions are checked against this. */
   totalPrice: number;
+  /**
+   * What a percentage coupon is a percentage *of* — the item subtotal after the
+   * location discount comes off. Defaults to `totalPrice` when there is no
+   * location discount.
+   */
+  discountBase?: number;
   /** Selected delivery location — some codes only run at certain locations. */
   societyId: string;
   onCouponChange: (coupon: AppliedCoupon | null) => void;
@@ -25,9 +32,11 @@ interface CouponSelectorProps {
 
 export default function CouponSelector({
   totalPrice,
+  discountBase,
   societyId,
   onCouponChange,
 }: CouponSelectorProps) {
+  const priceBase = discountBase ?? totalPrice;
   const [codeInput, setCodeInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<StoreCoupon | null>(null);
   const [applying, setApplying] = useState("");
@@ -89,13 +98,13 @@ export default function CouponSelector({
     if (!appliedCoupon) return;
     onCouponChange({
       code: appliedCoupon.code,
-      discountAmount: computeCouponDiscount(appliedCoupon, totalPrice),
+      discountAmount: computeCouponDiscount(appliedCoupon, priceBase),
       freeItem:
         appliedCoupon.discountType === "freeItem" && appliedCoupon.freeItem
           ? appliedCoupon.freeItem
           : undefined,
     });
-  }, [appliedCoupon, totalPrice, onCouponChange]);
+  }, [appliedCoupon, priceBase, onCouponChange]);
 
   // Both entry points — the typed code and a tapped offer — apply through here,
   // so the server re-checks every condition either way.
@@ -226,15 +235,15 @@ export default function CouponSelector({
           <p className="text-sm text-[#00a86e]">
             Coupon &quot;{appliedCoupon.code}&quot; applied. You get{" "}
             {appliedCoupon.freeItem?.name ?? "an item"} free
-            {computeCouponDiscount(appliedCoupon, totalPrice) > 0
-              ? ` and save Rs ${computeCouponDiscount(appliedCoupon, totalPrice)}`
+            {computeCouponDiscount(appliedCoupon, priceBase) > 0
+              ? ` and save Rs ${computeCouponDiscount(appliedCoupon, priceBase)}`
               : ""}
             !
           </p>
         ) : (
           <p className="text-sm text-[#00a86e]">
             Coupon &quot;{appliedCoupon.code}&quot; applied. You save Rs{" "}
-            {computeCouponDiscount(appliedCoupon, totalPrice)}.
+            {computeCouponDiscount(appliedCoupon, priceBase)}.
           </p>
         ))}
     </div>

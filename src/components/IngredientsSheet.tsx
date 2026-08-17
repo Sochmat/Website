@@ -3,6 +3,8 @@
 import { useEffect, useRef, useCallback, useState, ReactNode } from "react";
 import { Product } from "@/context/CartContext";
 import SheetCloseButton from "./subscription/SheetCloseButton";
+import FoodTypeDot from "./FoodTypeDot";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface IngredientsSheetProps {
   open: boolean;
@@ -115,8 +117,7 @@ export default function IngredientsSheet({
 
         {/* Image */}
         <div className="w-full h-[246px] overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ShimmerImg
             src={product.image || "/food.png"}
             alt={product.name}
             className="w-full h-full object-cover"
@@ -146,17 +147,7 @@ export default function IngredientsSheet({
         >
           {/* Veg indicator + Title */}
           <div className="flex gap-[16px] items-center">
-            <div
-              className={`w-[16px] h-[16px] shrink-0 border-2 ${
-                product.isVeg ? "border-green-600" : "border-red-600"
-              } flex items-center justify-center rounded-[2px]`}
-            >
-              <div
-                className={`w-[8px] h-[8px] rounded-full ${
-                  product.isVeg ? "bg-green-600" : "bg-red-600"
-                }`}
-              />
-            </div>
+            <FoodTypeDot item={product} className="rounded-[2px]" />
             <h3 className="text-black text-[16px] font-semibold leading-[24px]">
               {product.name}
             </h3>
@@ -177,39 +168,28 @@ export default function IngredientsSheet({
             <h4 className="text-black text-[14px] font-semibold leading-[16px]">
               Nutrient Info
             </h4>
-            <div className="flex gap-[12px]">
-              <div className="flex-1 bg-[rgba(0,153,64,0.1)] rounded-[8px] px-[12px] py-[8px] flex flex-col items-center justify-center">
-                <span className="text-[#009940] text-[16px] font-medium tracking-[-0.8px] leading-[16px]">
-                  {product.kcal}
-                </span>
-                <span className="text-[#009940] text-[12px] tracking-[-0.6px] leading-[16px]">
-                  kcal
-                </span>
-              </div>
-              <div className="flex-1 bg-[rgba(0,153,64,0.1)] rounded-[8px] px-[12px] py-[8px] flex flex-col items-center justify-center">
-                <span className="text-[#009940] text-[16px] font-medium tracking-[-0.8px] leading-[16px]">
-                  {product.protein}g
-                </span>
-                <span className="text-[#009940] text-[12px] tracking-[-0.6px] leading-[16px]">
-                  Protein
-                </span>
-              </div>
-              <div className="flex-1 bg-[rgba(0,153,64,0.1)] rounded-[8px] px-[12px] py-[8px] flex flex-col items-center justify-center">
-                <span className="text-[#009940] text-[16px] font-medium tracking-[-0.8px] leading-[16px]">
-                  {product.fiber ?? 0}g
-                </span>
-                <span className="text-[#009940] text-[12px] tracking-[-0.6px] leading-[16px]">
-                  Fiber
-                </span>
-              </div>
-              <div className="flex-1 bg-[rgba(0,153,64,0.1)] rounded-[8px] px-[12px] py-[8px] flex flex-col items-center justify-center">
-                <span className="text-[#009940] text-[16px] font-medium tracking-[-0.8px] leading-[16px]">
-                  {product.carbs ?? 0}g
-                </span>
-                <span className="text-[#009940] text-[12px] tracking-[-0.6px] leading-[16px]">
-                  Carbs
-                </span>
-              </div>
+            <div className="grid grid-cols-5 gap-[8px]">
+              {(
+                [
+                  [String(product.kcal ?? 0), "kcal"],
+                  [`${product.protein ?? 0}g`, "Protein"],
+                  [`${product.carbs ?? 0}g`, "Carbs"],
+                  [`${product.fat ?? 0}g`, "Fat"],
+                  [`${product.fiber ?? 0}g`, "Fiber"],
+                ] as const
+              ).map(([value, label]) => (
+                <div
+                  key={label}
+                  className="bg-[rgba(0,153,64,0.1)] rounded-[8px] px-[6px] py-[8px] flex flex-col items-center justify-center"
+                >
+                  <span className="text-[#009940] text-[16px] font-medium tracking-[-0.8px] leading-[16px]">
+                    {value}
+                  </span>
+                  <span className="text-[#009940] text-[12px] tracking-[-0.6px] leading-[16px]">
+                    {label}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
 

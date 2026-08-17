@@ -33,13 +33,20 @@ import {
   isDeliveryOpenNow,
   slotWindowLabel,
 } from "@/lib/societySlots";
-import { computeSocietyDiscount } from "@/lib/societyDiscounts";
+import {
+  computeSocietyDiscount,
+  offerDiscountBase,
+} from "@/lib/societyDiscounts";
 import {
   computeFirstOrderDiscount,
   resolveOfferDiscount,
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
-import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
+import {
+  computePointsApplied,
+  computePointsEarned,
+  rewardBaseFor,
+} from "@/lib/rewards";
 import {
   DEFAULT_RULE,
   amountToFreeDelivery,
@@ -76,7 +83,7 @@ export default function OrderPage() {
     society,
     societyDiscountPercent,
   } = useLocation();
-  const { user, isAuthenticated, isLoading: userLoading } = useUser();
+  const { user, setUser, isAuthenticated, isLoading: userLoading } = useUser();
   const { openLoginPopup } = useLoginPopup();
   const {
     open: storeOpen,
@@ -158,6 +165,7 @@ export default function OrderPage() {
               reviews: item.reviews ?? "",
               badge: item.badge ?? null,
               image: item.image,
+              foodType: item.foodType,
               isVeg: item.isVeg,
             }));
           setRecommendedProducts(recommended);
@@ -388,10 +396,18 @@ export default function OrderPage() {
 
     setPlacingOrder(true);
     try {
+      // Location discount: % of item subtotal, all order types, and it comes
+      // off first — the offer below prices off what remains. Authoritatively
+      // re-derived on the server from societyId.
+      const societyDiscountAmount = computeSocietyDiscount(
+        totalPrice,
+        societyDiscountPercent,
+      );
+      const offerBase = offerDiscountBase(totalPrice, societyDiscountAmount);
       const couponDiscountAmount = appliedCoupon?.discountAmount ?? 0;
       // First-order 20% discount — best value vs the coupon (they don't stack).
       const firstOrderDiscountAmount = firstOrderOffered
-        ? computeFirstOrderDiscount(totalPrice)
+        ? computeFirstOrderDiscount(offerBase)
         : 0;
       const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
         couponDiscountAmount,
@@ -400,12 +416,6 @@ export default function OrderPage() {
       // When the first-order discount wins, the coupon (incl. any free item) is
       // not applied to this order.
       const couponActive = !firstOrderApplied && !!appliedCoupon;
-      // Location discount: % of item subtotal, stacks on top of the offer, all
-      // order types. Authoritatively re-derived on the server from societyId.
-      const societyDiscountAmount = computeSocietyDiscount(
-        totalPrice,
-        societyDiscountPercent,
-      );
       const discountedAmount = Math.max(
         0,
         totalPrice - offerDiscount - societyDiscountAmount,
@@ -471,6 +481,16 @@ export default function OrderPage() {
         body: JSON.stringify({ ...orderPayload, useWallet, useRewardPoints }),
       });
       const data = await res.json();
+      // The session died between page load and checkout. Toasting alone left
+      // the UI insisting the customer was signed in while every order 401'd,
+      // with no way out — drop the stale user and ask them to sign in again.
+      if (res.status === 401) {
+        setUser(null);
+        message.error(data.message ?? "Please sign in to place an order");
+        openLoginPopup();
+        setPlacingOrder(false);
+        return;
+      }
       if (!data.success) {
         message.error(data.message ?? "Failed to place order");
         setPlacingOrder(false);
@@ -542,10 +562,18 @@ export default function OrderPage() {
     }
   };
 
+  // Flat location discount for the selected society (% of item subtotal). It
+  // comes off first and the offer below prices off what remains, so the two
+  // still stack. Authoritatively re-derived server-side.
+  const societyDiscount = computeSocietyDiscount(
+    totalPrice,
+    societyDiscountPercent,
+  );
+  const offerBase = offerDiscountBase(totalPrice, societyDiscount);
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   // First-order 20% discount — best value vs the coupon (they don't stack).
   const firstOrderDiscountPreview = firstOrderOffered
-    ? computeFirstOrderDiscount(totalPrice)
+    ? computeFirstOrderDiscount(offerBase)
     : 0;
   const { offerDiscount, firstOrderApplied } = resolveOfferDiscount(
     couponDiscount,
@@ -559,12 +587,6 @@ export default function OrderPage() {
     ? undefined
     : appliedCoupon?.freeItem;
   const couponSuperseded = firstOrderApplied && Boolean(appliedCoupon);
-  // Flat location discount for the selected society (% of item subtotal),
-  // stacks on top of the offer. Authoritatively re-derived server-side.
-  const societyDiscount = computeSocietyDiscount(
-    totalPrice,
-    societyDiscountPercent,
-  );
   const discountedSubtotal = Math.max(
     0,
     totalPrice - offerDiscount - societyDiscount,
@@ -600,10 +622,11 @@ export default function OrderPage() {
           .pointsApplied
       : 0;
   const payable = finalPrice - walletApplied - pointsApplied;
-  // Points this order will earn: the streak rate off the pre-tax total.
-  // Redeeming doesn't shrink the base — points are consideration, not a discount.
+  // Points this order will earn: the streak rate off what the customer actually
+  // pays, so it moves as wallet credit and points are toggled. Mirrors
+  // rewardBaseFor, which the award path uses server-side.
   const pointsWillEarn = computePointsEarned(
-    discountedSubtotal,
+    rewardBaseFor({ totalAmount: finalPrice, netAmount: payable }),
     rewardNextRate,
   );
 
@@ -806,6 +829,7 @@ export default function OrderPage() {
 
         <CouponSelector
           totalPrice={totalPrice}
+          discountBase={offerBase}
           societyId={society.id}
           onCouponChange={setAppliedCoupon}
         />

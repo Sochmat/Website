@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { DatePicker, Segmented, message } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
+import ExportSalesReport from "@/components/admin/ExportSalesReport";
+import FoodTypeDot from "@/components/FoodTypeDot";
+import type { FoodType } from "@/lib/foodType";
 
 const { RangePicker } = DatePicker;
 
@@ -12,7 +15,12 @@ const { RangePicker } = DatePicker;
 const TOP_ITEMS_SHOWN = 10;
 
 interface StatusBucket {
-  paidAmount: number;
+  /** Billed on paid docs, incl. tax, before any balance was spent. */
+  grossAmount: number;
+  /** Actually charged — gross less wallet credit and reward points. */
+  collectedAmount: number;
+  /** Wallet credit + reward points spent on paid docs in range. */
+  redeemedAmount: number;
   paidCount: number;
   pendingCount: number;
   failedCount: number;
@@ -22,6 +30,7 @@ interface StatusBucket {
 interface TopItem {
   productId: string;
   name: string;
+  foodType?: FoodType;
   isVeg: boolean;
   quantity: number;
   revenue: number;
@@ -32,7 +41,12 @@ interface DashboardData {
   sales: {
     orders: StatusBucket;
     subscriptions: StatusBucket;
-    totalPaidAmount: number;
+    /** Billed across orders + subscriptions. */
+    totalGrossAmount: number;
+    /** Money actually taken — what a settlement report should match. */
+    totalCollectedAmount: number;
+    /** The gap: paid from wallet credit and reward points. */
+    totalRedeemedAmount: number;
   };
   users: {
     total: number;
@@ -89,17 +103,6 @@ const inr = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 const num = new Intl.NumberFormat("en-IN");
-
-function VegDot({ isVeg }: { isVeg: boolean }) {
-  return (
-    <span
-      className={`w-3 h-3 shrink-0 border-2 ${isVeg ? "border-green-600" : "border-red-600"} inline-flex items-center justify-center`}
-      aria-label={isVeg ? "Veg" : "Non-veg"}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${isVeg ? "bg-green-600" : "bg-red-600"}`} />
-    </span>
-  );
-}
 
 const CHIP_TONE: Record<string, string> = {
   amber: "bg-amber-50 text-amber-700",
@@ -251,6 +254,7 @@ function DashboardView() {
             format="D MMM YY"
             maxDate={dayjs()}
           />
+          <ExportSalesReport defaultRange={range} />
         </div>
       </div>
 
@@ -264,10 +268,17 @@ function DashboardView() {
         sales &&
         users && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Gross is the headline (it's what was sold); the sub-line says
+                how much of it was actually money in, since balances spent are
+                sales that never reach a settlement report. */}
             <StatCard
               label="Total sales"
-              value={inr.format(sales.totalPaidAmount)}
-              sub="Paid revenue in range"
+              value={inr.format(sales.totalGrossAmount)}
+              sub={
+                sales.totalRedeemedAmount > 0
+                  ? `${inr.format(sales.totalCollectedAmount)} collected · ${inr.format(sales.totalRedeemedAmount)} from balances`
+                  : "Gross billed in range · all collected"
+              }
             >
               <Chip label="orders" value={sales.orders.paidCount} tone="green" />
               <Chip label="subs" value={sales.subscriptions.paidCount} tone="green" />
@@ -276,7 +287,7 @@ function DashboardView() {
             <StatCard
               label="Orders"
               value={num.format(sales.orders.paidCount)}
-              sub={`${inr.format(sales.orders.paidAmount)} · paid`}
+              sub={`${inr.format(sales.orders.grossAmount)} gross · ${inr.format(sales.orders.collectedAmount)} collected`}
             >
               {sales.orders.pendingCount > 0 && (
                 <Chip label="pending" value={sales.orders.pendingCount} tone="amber" />
@@ -292,7 +303,7 @@ function DashboardView() {
             <StatCard
               label="Subscriptions"
               value={num.format(sales.subscriptions.paidCount)}
-              sub={`${inr.format(sales.subscriptions.paidAmount)} · paid`}
+              sub={`${inr.format(sales.subscriptions.grossAmount)} gross · ${inr.format(sales.subscriptions.collectedAmount)} collected`}
             >
               {sales.subscriptions.pendingCount > 0 && (
                 <Chip label="pending" value={sales.subscriptions.pendingCount} tone="amber" />
@@ -413,7 +424,7 @@ function DashboardView() {
                   <td className="px-5 py-2.5 text-gray-400 tabular-nums">{i + 1}</td>
                   <td className="px-2 py-2.5">
                     <div className="flex items-center gap-2 min-w-0">
-                      <VegDot isVeg={item.isVeg} />
+                      <FoodTypeDot item={item} size={12} />
                       <span className="truncate text-[#111]">{item.name}</span>
                     </div>
                   </td>

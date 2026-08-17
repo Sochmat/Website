@@ -84,12 +84,16 @@ interface VariantTarget {
 export default function ItemRecipeForm({
   recipe,
   initialName = "",
+  listPath = LIST_PATH,
 }: {
   /** null = create mode. */
   recipe: ItemRecipe | null;
   /** Create mode only: pre-fills the name, e.g. from the menu item being
    *  mapped. Ignored when editing, where the stored name wins. */
   initialName?: string;
+  /** Where Save and Cancel return to. An add-on is edited by this same form,
+   *  so it must be able to send the user back to the screen they came from. */
+  listPath?: string;
 }) {
   const router = useRouter();
   const [messageApi, messageContextHolder] = message.useMessage();
@@ -490,7 +494,7 @@ export default function ItemRecipeForm({
       }
 
       messageApi.success(recipe?._id ? "Item recipe updated" : "Item recipe added");
-      window.setTimeout(() => router.push(LIST_PATH), 350);
+      window.setTimeout(() => router.push(listPath), 350);
     } catch {
       setFormError("Network error — please try again");
     } finally {
@@ -814,7 +818,7 @@ export default function ItemRecipeForm({
       <div className="mt-5 flex items-center justify-end gap-2">
         <button
           type="button"
-          onClick={() => router.push(LIST_PATH)}
+          onClick={() => router.push(listPath)}
           className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
         >
           Cancel

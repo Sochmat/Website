@@ -6,10 +6,13 @@ import { useSearchParams } from "next/navigation";
 import { Table, message } from "antd";
 import { ArrowLeft } from "lucide-react";
 import dayjs from "dayjs";
+import FoodTypeDot from "@/components/FoodTypeDot";
+import type { FoodType } from "@/lib/foodType";
 
 interface ItemSale {
   productId: string;
   name: string;
+  foodType?: FoodType;
   isVeg: boolean;
   quantity: number;
   revenue: number;
@@ -27,21 +30,6 @@ const inr = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 const num = new Intl.NumberFormat("en-IN");
-
-function VegDot({ isVeg }: { isVeg: boolean }) {
-  return (
-    <span
-      className={`inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border ${
-        isVeg ? "border-green-600" : "border-red-600"
-      }`}
-      aria-label={isVeg ? "Veg" : "Non-veg"}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${isVeg ? "bg-green-600" : "bg-red-600"}`}
-      />
-    </span>
-  );
-}
 
 function ItemsView() {
   const params = useSearchParams();
@@ -138,7 +126,7 @@ function ItemsView() {
               key: "name",
               render: (name: string, row) => (
                 <div className="flex items-center gap-2 min-w-0">
-                  <VegDot isVeg={row.isVeg} />
+                  <FoodTypeDot item={row} size={14} dotSize={6} className="rounded-[3px]" />
                   <span className="truncate text-[#111]">{name}</span>
                 </div>
               ),

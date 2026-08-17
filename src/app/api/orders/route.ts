@@ -6,10 +6,17 @@ import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
 import {
+  LOCATION_AVAILABILITY_KEY,
+  sanitizeLocationAvailability,
+  isStoreOnAt,
+  isDeliveryOnAt,
+} from "@/lib/locationAvailability";
+import {
   SOCIETY_DISCOUNTS_KEY,
   sanitizeDiscountMap,
   discountPercentFor,
   computeSocietyDiscount,
+  offerDiscountBase,
 } from "@/lib/societyDiscounts";
 import { computeFirstOrderDiscount } from "@/lib/firstOrderDiscount";
 import {
@@ -92,15 +99,23 @@ export async function POST(request: NextRequest) {
   if (limited) return limited;
   try {
     const { db: settingsDb } = await connectToDatabase();
-    const [storeDoc, deliveryDoc, societyDiscountsDoc, deliveryFeesDoc] =
-      await Promise.all([
-        settingsDb.collection("settings").findOne({ key: "store" }),
-        settingsDb.collection("settings").findOne({ key: "delivery" }),
-        settingsDb
-          .collection("settings")
-          .findOne({ key: SOCIETY_DISCOUNTS_KEY }),
-        settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
-      ]);
+    const [
+      storeDoc,
+      deliveryDoc,
+      societyDiscountsDoc,
+      deliveryFeesDoc,
+      availabilityDoc,
+    ] = await Promise.all([
+      settingsDb.collection("settings").findOne({ key: "store" }),
+      settingsDb.collection("settings").findOne({ key: "delivery" }),
+      settingsDb.collection("settings").findOne({ key: SOCIETY_DISCOUNTS_KEY }),
+      settingsDb.collection("settings").findOne({ key: DELIVERY_FEES_KEY }),
+      settingsDb
+        .collection("settings")
+        .findOne({ key: LOCATION_AVAILABILITY_KEY }),
+    ]);
+    // Global gate first — it needs no body, so a shut store rejects before we
+    // spend anything parsing the request.
     if (!getEffectiveStoreOpen(storeDoc as StoreSettingsDoc | null, new Date()).open) {
       return NextResponse.json(
         { success: false, message: "Store is currently closed" },
@@ -110,11 +125,26 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Order;
 
-    if (deliveryDoc?.on === false && body.orderType === "delivery") {
+    // Per-location gates. These only ever close: a location switched off is
+    // shut even while the store is globally open, but switching one on cannot
+    // reopen a globally closed store.
+    const availability = sanitizeLocationAvailability(availabilityDoc);
+    if (!isStoreOnAt(availability, body.societyId)) {
       return NextResponse.json(
-        { success: false, message: "Delivery is currently unavailable" },
+        { success: false, message: "Store is currently closed" },
         { status: 503 },
       );
+    }
+
+    if (body.orderType === "delivery") {
+      const deliveryOn =
+        deliveryDoc?.on !== false && isDeliveryOnAt(availability, body.societyId);
+      if (!deliveryOn) {
+        return NextResponse.json(
+          { success: false, message: "Delivery is currently unavailable" },
+          { status: 503 },
+        );
+      }
     }
 
     // The delivery contact, not the account holder — the two are separate, and
@@ -270,13 +300,30 @@ export async function POST(request: NextRequest) {
       serverSubtotal += lineTotal;
     }
 
+    // Per-society flat discount (% of subtotal). Resolved server-side from the
+    // society id so the client can't inflate it. It comes off *first*: the
+    // offer discounts below are a percentage of what remains, not of the raw
+    // subtotal. Being generous here only relaxes the floor, so it never
+    // over-rejects.
+    const societyDiscountPercent = discountPercentFor(
+      sanitizeDiscountMap(societyDiscountsDoc?.discounts),
+      typeof body.societyId === "string" ? body.societyId : undefined,
+    );
+    const societyDiscountAmount = computeSocietyDiscount(
+      serverSubtotal,
+      societyDiscountPercent,
+    );
+    const offerBase = offerDiscountBase(serverSubtotal, societyDiscountAmount);
+
     // Maximum monetary discount this coupon can legitimately grant: flat plus
     // percent (capped by maxDiscount). The free item is already excluded from
     // serverSubtotal, so it needs no offset here. Being generous only relaxes
     // the floor, so this never over-rejects.
     if (coupon) {
       // Honour the coupon's minimum-order condition server-side: below it the
-      // coupon grants nothing, however the client priced the order.
+      // coupon grants nothing, however the client priced the order. The
+      // threshold is a condition on order size, so it reads the raw item
+      // subtotal — not the post-location-discount base the coupon prices off.
       const couponMinAmount = Number(coupon.minAmount) || 0;
       if (couponMinAmount > 0 && serverSubtotal < couponMinAmount) {
         couponAllowed = 0;
@@ -284,7 +331,7 @@ export async function POST(request: NextRequest) {
         let allowed = Number(coupon.discountAmount) || 0;
         const pct = Number(coupon.discountPercent) || 0;
         if (pct > 0) {
-          const pctValue = (serverSubtotal * pct) / 100;
+          const pctValue = (offerBase * pct) / 100;
           const maxDisc = Number(coupon.maxDiscount) || 0;
           allowed += maxDisc > 0 ? Math.min(pctValue, maxDisc) : pctValue;
         }
@@ -302,22 +349,11 @@ export async function POST(request: NextRequest) {
         typeof body.societyId === "string" ? body.societyId : undefined,
       ) && (await isEligibleForFirstOrderDiscount(db, orderUserId));
     const serverFirstOrderDiscount = serverEligibleFirstOrder
-      ? computeFirstOrderDiscount(serverSubtotal)
+      ? computeFirstOrderDiscount(offerBase)
       : 0;
     allowedDiscount = Math.max(couponAllowed, serverFirstOrderDiscount);
 
-    // Per-society flat discount (% of subtotal). Resolved server-side from the
-    // society id so the client can't inflate it; stacks on top of the offer
-    // discount. Being generous here only relaxes the floor, so it never
-    // over-rejects.
-    const societyDiscountPercent = discountPercentFor(
-      sanitizeDiscountMap(societyDiscountsDoc?.discounts),
-      typeof body.societyId === "string" ? body.societyId : undefined,
-    );
-    const societyDiscountAmount = computeSocietyDiscount(
-      serverSubtotal,
-      societyDiscountPercent,
-    );
+    // The location discount stacks on top of whichever offer won.
     allowedDiscount += societyDiscountAmount;
 
     // Small-order delivery fee, resolved server-side from the location's rule
@@ -402,11 +438,6 @@ export async function POST(request: NextRequest) {
       totalAmount,
       discountAmount,
       tax,
-      // The pre-tax total after every discount, computed entirely server-side
-      // (see minAcceptable above) — the base reward points are earned on. It is
-      // conservative by construction: it assumes the largest discount the
-      // customer was entitled to, so a tampered client can never inflate it.
-      rewardBase: minAcceptable,
       netAmount: totalAmount,
       couponCode: body.couponCode ?? undefined,
       paymentStatus: "pending" as const,

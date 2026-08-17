@@ -1,17 +1,24 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeftOutlined } from "@ant-design/icons";
 import ItemRecipeForm from "@/components/inventory/ItemRecipeForm";
 import type { ItemRecipe } from "@/lib/itemRecipes";
+import {
+  recipeListLabel,
+  recipeListPath,
+  recipeNoun,
+} from "@/lib/recipeNav";
 
-export default function EditItemRecipePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
+/**
+ * `from` says which Setup list opened this record — add-ons are edited by the
+ * same form, and Save has to return to the screen the user came from. Isolated
+ * behind Suspense because useSearchParams opts the route out of prerendering.
+ */
+function EditItemRecipeBody({ id }: { id: string }) {
+  const from = useSearchParams().get("from");
   const [recipe, setRecipe] = useState<ItemRecipe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,15 +48,15 @@ export default function EditItemRecipePage({
   return (
     <div>
       <Link
-        href="/inventory-management/setup/item-recipe"
+        href={recipeListPath(from)}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-[#024731] transition-colors"
       >
         <ArrowLeftOutlined />
-        Item recipes
+        {recipeListLabel(from)}
       </Link>
 
       <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1c1c1c]">
-        Edit item recipe
+        Edit {recipeNoun(from)}
       </h1>
 
       {loading && <p className="mt-6 text-sm text-gray-500">Loading…</p>}
@@ -64,9 +71,22 @@ export default function EditItemRecipePage({
           from `recipe` on first render. */}
       {!loading && !error && recipe && (
         <div className="mt-5">
-          <ItemRecipeForm recipe={recipe} />
+          <ItemRecipeForm recipe={recipe} listPath={recipeListPath(from)} />
         </div>
       )}
     </div>
+  );
+}
+
+export default function EditItemRecipePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  return (
+    <Suspense fallback={null}>
+      <EditItemRecipeBody id={id} />
+    </Suspense>
   );
 }

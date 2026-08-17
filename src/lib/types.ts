@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import type { FoodType } from "./foodType";
 
 /** A selectable size/option for a menu item. The price REPLACES the item's
  * base price when chosen (e.g. Small/Medium/Large). `name` is free-text. */
@@ -29,8 +30,14 @@ export interface MenuItem {
   description?: string;
   fiber?: number;
   carbs?: number;
+  fat?: number;
   ingredients?: string[];
   image: string;
+  /** Veg / non-veg / egg. Read it with resolveFoodType() — older documents
+   *  only have `isVeg`. */
+  foodType?: FoodType;
+  /** Legacy two-way flag, still written on every save (egg counts as
+   *  non-veg) so the subscription menu and Petpooja sync keep working. */
   isVeg: boolean;
   isAddOn?: boolean;
   isRecommended?: boolean;
@@ -140,8 +147,6 @@ export interface Order {
   walletApplied?: number;
   /** Amount actually charged (= totalAmount − walletApplied − pointsApplied). */
   amountPayable?: number;
-  /** Server-computed pre-tax total, frozen at creation; the reward earn base. */
-  rewardBase?: number;
   /** Reward points reserved/redeemed against this order; reduces amountPayable. */
   pointsApplied?: number;
   /** Reward points credited when this order was paid. */

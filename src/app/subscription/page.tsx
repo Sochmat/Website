@@ -36,6 +36,7 @@ import DietCard from "@/components/subscription/DietCard";
 import MealOptionsSheet from "@/components/subscription/MealOptionsSheet";
 import DeliveryTimePicker from "@/components/subscription/DeliveryTimePicker";
 import SubscriptionItemCard from "@/components/subscription/SubscriptionItemCard";
+import PageSkeleton from "@/components/ui/PageSkeleton";
 import {
   rupees,
   TIER_LABELS,
@@ -269,7 +270,7 @@ function PurchaseWizard() {
     fetch("/api/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _id: user._id, addresses: merged }),
+      body: JSON.stringify({ addresses: merged }),
     })
       .then((r) => r.json())
       .then((d) => {
@@ -800,13 +801,7 @@ function PurchaseWizard() {
 
 export default function SubscriptionPage() {
   return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-          <p className="text-gray-500">Loading…</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<PageSkeleton cards={4} />}>
       <PurchaseWizard />
     </Suspense>
   );

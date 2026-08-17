@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import MenuItem from "./MenuItem";
+import MenuItem, { MenuItemSkeleton } from "./MenuItem";
 import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 import { Product } from "@/context/CartContext";
 import { Category, MenuVariant } from "@/lib/types";
+import { resolveFoodType, type FoodType } from "@/lib/foodType";
 
 const defaultCategories = [
   {
@@ -62,8 +63,10 @@ function mapApiItemToProduct(item: {
   description?: string;
   fiber?: number;
   carbs?: number;
+  fat?: number;
   ingredients?: string[];
   image: string;
+  foodType?: FoodType;
   isVeg: boolean;
   category?: string;
   type?: string;
@@ -88,8 +91,10 @@ function mapApiItemToProduct(item: {
     description: item.description ?? "",
     fiber: item.fiber ?? 0,
     carbs: item.carbs ?? 0,
+    fat: item.fat ?? 0,
     ingredients: item.ingredients ?? [],
     image: item.image,
+    foodType: resolveFoodType(item),
     isVeg: item.isVeg,
     category: item.category,
     showOnHomePage: item.showOnHomePage ?? false,
@@ -382,7 +387,14 @@ export default function Menu({
     // the space between two of them.
     <div className="py-0 flex flex-col divide-y divide-[#e6e6e6]">
       {loading ? (
-        <p className="text-center text-gray-500 py-8">Loading menu...</p>
+        // Six cards is about a phone screenful — enough that the list reads as
+        // populated, not so many that the scrollbar promises a longer menu
+        // than may actually arrive.
+        Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="shrink-0 py-[22px]">
+            <MenuItemSkeleton />
+          </div>
+        ))
       ) : error ? (
         <p className="text-center text-red-500 py-8">{error}</p>
       ) : (
@@ -452,12 +464,13 @@ export default function Menu({
                           className="max-w-full flex items-center gap-3 pl-2 pr-4 py-2 bg-white border border-[#d9d9d9] rounded-[16px] text-left"
                         >
                           {thumbnail ? (
-                            <Image
+                            <ShimmerImage
                               src={thumbnail}
                               alt=""
                               width={32}
                               height={32}
                               className="w-8 h-8 shrink-0 rounded-[8px] object-cover"
+                              wrapperClassName="w-8 h-8 shrink-0 rounded-[8px] overflow-hidden"
                               unoptimized
                             />
                           ) : (

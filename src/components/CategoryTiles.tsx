@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Shimmer from "@/components/ui/Shimmer";
 
 interface Tile {
   _id: string;
@@ -71,7 +72,10 @@ const FALLBACK_TILES: Tile[] = [
 ];
 
 export default function CategoryTiles() {
-  const [tiles, setTiles] = useState<Tile[]>([]);
+  // null means "not answered yet" — distinct from an answered-but-empty [].
+  // Collapsing the two is what made the strip render nothing while loading and
+  // then pop in, indistinguishable from a section that simply has no tiles.
+  const [tiles, setTiles] = useState<Tile[] | null>(null);
 
   useEffect(() => {
     fetch("/api/tiles")
@@ -82,6 +86,22 @@ export default function CategoryTiles() {
       })
       .catch(() => setTiles([]));
   }, []);
+
+  if (tiles === null) {
+    return (
+      <div className="px-4 mt-4">
+        <div className="flex flex-wrap gap-[14px] justify-center">
+          {Array.from({ length: FALLBACK_TILES.length }).map((_, i) => (
+            <Shimmer
+              key={i}
+              rounded="rounded-[9.6px]"
+              className="w-[96px] h-[120px] shrink-0"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (tiles.length === 0) return null;
 

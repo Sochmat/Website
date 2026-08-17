@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Image from "next/image";
+import Shimmer from "@/components/ui/Shimmer";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 
 interface BannerSlide {
   _id: string;
@@ -13,7 +15,10 @@ const FALLBACK = "/bg1.png";
 const AUTO_PLAY_MS = 3500;
 
 export default function HeroCarousel() {
-  const [slides, setSlides] = useState<BannerSlide[]>([]);
+  // null until the banner request answers. Starting at [] instead would show
+  // the static fallback banner first and then swap it for the real one, which
+  // reads as a mis-load rather than a load.
+  const [slides, setSlides] = useState<BannerSlide[] | null>(null);
   const [current, setCurrent] = useState(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -21,12 +26,12 @@ export default function HeroCarousel() {
     fetch("/api/banner")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.slides.length > 0) setSlides(data.slides);
+        setSlides(data.success && data.slides.length > 0 ? data.slides : []);
       })
-      .catch(() => {});
+      .catch(() => setSlides([]));
   }, []);
 
-  const total = slides.length;
+  const total = slides?.length ?? 0;
 
   const next = useCallback(() => {
     setCurrent((c) => (c + 1) % total);
@@ -44,6 +49,16 @@ export default function HeroCarousel() {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [current, total, next]);
+
+  // Still asking — hold the banner's exact footprint so nothing below it moves.
+  if (slides === null) {
+    return (
+      <Shimmer
+        rounded="rounded-[16px]"
+        className="h-[160px] mt-4 mx-4"
+      />
+    );
+  }
 
   // No slides from DB — show static fallback
   if (total === 0) {
@@ -63,7 +78,7 @@ export default function HeroCarousel() {
             i === current ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
         >
-          <Image
+          <ShimmerImage
             src={slide.url}
             alt={`Banner ${i + 1}`}
             fill

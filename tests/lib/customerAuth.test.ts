@@ -93,6 +93,54 @@ describe("verifyCustomerSession", () => {
   });
 });
 
+describe("session versioning (forced global logout)", () => {
+  /**
+   * Mint a correctly-signed token for an arbitrary payload, so these tests
+   * exercise the version check rather than the signature check.
+   */
+  async function signPayload(payload: Record<string, unknown>): Promise<string> {
+    const { createHmac } = await import("node:crypto");
+    const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const sig = createHmac("sha256", process.env.CUSTOMER_SESSION_SECRET!)
+      .update(body)
+      .digest("base64url");
+    return `${body}.${sig}`;
+  }
+
+  it("stamps newly signed tokens with the current version", async () => {
+    const session = await verifyCustomerSession(await signCustomerSession(USER_ID));
+    expect(session?.v).toBe(1);
+  });
+
+  it("rejects a validly-signed token issued before versioning", async () => {
+    // The pre-migration token shape: right signature, no `v`. Deploying the
+    // version bump has to log these browsers out — that is the whole feature.
+    const token = await signPayload({
+      userId: USER_ID,
+      exp: Date.now() + 100_000,
+    });
+    expect(await verifyCustomerSession(token)).toBeNull();
+  });
+
+  it("rejects a validly-signed token from a superseded version", async () => {
+    const token = await signPayload({
+      userId: USER_ID,
+      exp: Date.now() + 100_000,
+      v: 0,
+    });
+    expect(await verifyCustomerSession(token)).toBeNull();
+  });
+
+  it("accepts the current version, so a fresh login survives the bump", async () => {
+    const token = await signPayload({
+      userId: USER_ID,
+      exp: Date.now() + 100_000,
+      v: 1,
+    });
+    expect((await verifyCustomerSession(token))?.userId).toBe(USER_ID);
+  });
+});
+
 describe("customerCookieOptions", () => {
   it("is httpOnly, lax, root-scoped", () => {
     const o = customerCookieOptions();
