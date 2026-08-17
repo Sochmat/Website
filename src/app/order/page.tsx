@@ -42,7 +42,11 @@ import {
   resolveOfferDiscount,
 } from "@/lib/firstOrderDiscount";
 import { computeWalletApplied } from "@/lib/walletMath";
-import { computePointsApplied, computePointsEarned } from "@/lib/rewards";
+import {
+  computePointsApplied,
+  computePointsEarned,
+  rewardBaseFor,
+} from "@/lib/rewards";
 import {
   DEFAULT_RULE,
   amountToFreeDelivery,
@@ -617,10 +621,11 @@ export default function OrderPage() {
           .pointsApplied
       : 0;
   const payable = finalPrice - walletApplied - pointsApplied;
-  // Points this order will earn: the streak rate off the pre-tax total.
-  // Redeeming doesn't shrink the base — points are consideration, not a discount.
+  // Points this order will earn: the streak rate off what the customer actually
+  // pays, so it moves as wallet credit and points are toggled. Mirrors
+  // rewardBaseFor, which the award path uses server-side.
   const pointsWillEarn = computePointsEarned(
-    discountedSubtotal,
+    rewardBaseFor({ totalAmount: finalPrice, netAmount: payable }),
     rewardNextRate,
   );
 

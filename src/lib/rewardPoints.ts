@@ -1,6 +1,12 @@
 import { Db, ObjectId } from "mongodb";
 import { istMonth, istToday } from "./ist";
-import { computePointsEarned, nextStreak, type StreakState } from "./rewards";
+import type { OrderAmountFields } from "./orderAmounts";
+import {
+  computePointsEarned,
+  nextStreak,
+  rewardBaseFor,
+  type StreakState,
+} from "./rewards";
 import {
   STREAK_LADDERS_KEY,
   isStreakDisabled,
@@ -190,6 +196,11 @@ export async function creditRewardPointsRefund(
 /**
  * Credit the points a paid order earned and advance the customer's streak.
  *
+ * The rate applies to what the customer was actually charged — see
+ * `rewardBaseFor`. That figure only settles once wallet credit and redeemed
+ * points have been written, which is why the base is read here at payment time
+ * rather than frozen onto the order at creation.
+ *
  * Self-idempotent: `rewardsAwarded` is claimed atomically before anything is
  * credited, mirroring `creditReferral` in wallet.ts, so two concurrent
  * callers for the same order (verify racing the webhook, or a manual re-run)
@@ -209,10 +220,22 @@ export async function awardRewardPoints(
   orderId: ObjectId,
   now: Date,
 ): Promise<void> {
-  const order = await db
-    .collection(ORDERS)
-    .findOne({ _id: orderId }, { projection: { rewardBase: 1, societyId: 1 } });
-  const rewardBase = Number(order?.rewardBase ?? 0);
+  const order = await db.collection(ORDERS).findOne(
+    { _id: orderId },
+    {
+      projection: {
+        totalAmount: 1,
+        netAmount: 1,
+        amountPayable: 1,
+        walletApplied: 1,
+        pointsApplied: 1,
+        societyId: 1,
+      },
+    },
+  );
+  // The charged amount, read from the order at payment time — by which point
+  // redemption has been applied and netAmount is final.
+  const rewardBase = rewardBaseFor((order ?? {}) as OrderAmountFields);
   if (!(rewardBase > 0)) return;
 
   const societyId = typeof order?.societyId === "string" ? order.societyId : null;
