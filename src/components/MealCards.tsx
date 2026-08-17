@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import Shimmer from "@/components/ui/Shimmer";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface MealCard {
   _id: string;
@@ -14,16 +16,32 @@ interface MealCard {
 }
 
 export default function MealCards() {
-  const [cards, setCards] = useState<MealCard[]>([]);
+  // null while the request is outstanding, so "loading" and "no cards
+  // configured" stop looking identical to the page below them.
+  const [cards, setCards] = useState<MealCard[] | null>(null);
 
   useEffect(() => {
     fetch("/api/meal-cards")
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && data.cards.length > 0) setCards(data.cards);
+        setCards(data.success && data.cards.length > 0 ? data.cards : []);
       })
-      .catch(() => {});
+      .catch(() => setCards([]));
   }, []);
+
+  if (cards === null) {
+    // Two cards at the real 314px height — this is the tallest block on the
+    // home page, so guessing its size wrong is what would move the footer.
+    return (
+      <div className="pt-6 pb-6 px-[20px]">
+        <div className="flex flex-col gap-4">
+          {[0, 1].map((i) => (
+            <Shimmer key={i} rounded="rounded-[12px]" className="h-[314px]" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (cards.length === 0) return null;
 
@@ -164,13 +182,18 @@ function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
         }}
       >
         {slides.map((src, idx) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          // The slide, not the <img>, carries the track sizing: the shimmer
+          // overlays absolutely, so each one needs its own positioned box.
+          <div
             key={`${src}-${idx}`}
-            src={src}
-            alt={alt}
-            className="w-full h-full shrink-0 object-cover"
-          />
+            className="relative w-full h-full shrink-0 overflow-hidden"
+          >
+            <ShimmerImg
+              src={src}
+              alt={alt}
+              className="w-full h-full object-cover"
+            />
+          </div>
         ))}
       </div>
 

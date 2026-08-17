@@ -82,7 +82,11 @@ export default function ReferPage() {
 
       <div className="space-y-4 p-4">
         {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <>
+            <Shimmer rounded="rounded-xl" className="h-24" />
+            <Shimmer rounded="rounded-xl" className="h-14" />
+            <Shimmer rounded="rounded-xl" className="h-40" />
+          </>
         ) : signedOut || !info ? (
           <button
             onClick={openLoginPopup}

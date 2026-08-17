@@ -331,11 +331,7 @@ function SubscribeContent() {
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
-      </main>
-    );
+    return <PageSkeleton cards={4} />;
   }
 
   if (!product) {
@@ -738,13 +734,7 @@ function SubscribeContent() {
 
 export default function SubscribePage() {
   return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-          <p className="text-gray-500">Loading...</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<PageSkeleton cards={4} />}>
       <SubscribeContent />
     </Suspense>
   );

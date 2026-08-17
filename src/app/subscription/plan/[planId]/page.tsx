@@ -263,11 +263,7 @@ export default function SchedulerPage({
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen bg-[#f5f5f5] max-w-[430px] mx-auto flex items-center justify-center">
-        <p className="text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageSkeleton cards={4} />;
   }
   if (notFound || !plan || !accounting) {
     return (

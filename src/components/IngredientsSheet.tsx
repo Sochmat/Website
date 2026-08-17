@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback, useState, ReactNode } from "react";
 import { Product } from "@/context/CartContext";
 import SheetCloseButton from "./subscription/SheetCloseButton";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface IngredientsSheetProps {
   open: boolean;
@@ -116,7 +117,7 @@ export default function IngredientsSheet({
         {/* Image */}
         <div className="w-full h-[246px] overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ShimmerImg
             src={product.image || "/food.png"}
             alt={product.name}
             className="w-full h-full object-cover"

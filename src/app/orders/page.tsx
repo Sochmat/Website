@@ -207,10 +207,7 @@ export default function MyOrdersPage() {
       ) : loading ? (
         <div className="px-4 pt-4 space-y-3">
           {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="bg-white rounded-xl border border-[#e5e5e5] p-4 h-28 animate-pulse"
-            />
+            <Shimmer key={i} rounded="rounded-xl" className="h-28" />
           ))}
         </div>
       ) : orders.length === 0 ? (

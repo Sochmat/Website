@@ -6,6 +6,7 @@ import Link from "next/link";
 import Menu from "@/components/Menu";
 import CartBar from "@/components/CartBar";
 import StoreClosedBanner from "@/components/StoreClosedBanner";
+import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface MealCardData {
   _id: string;
@@ -87,7 +88,7 @@ function MealCardCarousel({ images, alt }: { images: string[]; alt: string }) {
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <ShimmerImg
         src={images[current]}
         alt={alt}
         className="w-full h-full object-cover"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import ShimmerImage from "@/components/ui/ShimmerImage";
 import { cn } from "@/lib/cn";
 
 interface Category {
@@ -105,12 +105,13 @@ export default function CategoryFilter({
                   : "bg-[#f0f0f0] border-[#f0f0f0]"
               )}
             >
-              <Image
+              <ShimmerImage
                 src={cat.image}
                 alt={cat.name}
                 width={56}
                 height={56}
                 className="w-[56px] h-[56px] object-contain"
+                wrapperClassName="w-[56px] h-[56px] rounded-lg overflow-hidden"
                 unoptimized
               />
             </div>

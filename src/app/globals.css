@@ -214,6 +214,66 @@ button {
   }
 }
 
+/* Loading shimmer — a highlight sweeping left to right across a grey block.
+   Used by <Shimmer> and the image placeholders. The sweep is what separates a
+   "still loading" surface from one that has genuinely finished and is empty. */
+@keyframes shimmer-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  background-color: #ededed;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: shimmer-sweep 1.4s linear infinite;
+}
+
+/* The route-transition bar: an indeterminate crawl toward 90%, so it always
+   reads as progress even though no real percentage is knowable. The finishing
+   dash to 100% is applied inline when navigation completes. */
+@keyframes route-progress-crawl {
+  0% {
+    transform: scaleX(0.02);
+  }
+  40% {
+    transform: scaleX(0.45);
+  }
+  75% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(0.9);
+  }
+}
+
+.animate-route-progress {
+  transform-origin: 0 50%;
+  animation: route-progress-crawl 8s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+/* Respect a stated preference for less motion: the placeholders stay (they
+   still communicate "not ready"), they just stop sweeping. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer,
+  .animate-route-progress {
+    animation: none;
+  }
+  .animate-route-progress {
+    transform: scaleX(0.9);
+  }
+}
+
 .font-squada {
   font-family: "Squada One", sans-serif;
 }
