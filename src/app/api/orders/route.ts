@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
-import { Order, User } from "@/lib/types";
+import { AddOnCategory, Order, User } from "@/lib/types";
+import { cheapestAddOnPrice } from "@/lib/addOnGroups";
 import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { getEffectiveStoreOpen, type StoreSettingsDoc } from "@/lib/storeState";
@@ -257,6 +258,18 @@ export async function POST(request: NextRequest) {
     const menuMap = new Map<string, Record<string, unknown>>();
     for (const m of menuDocs) menuMap.set(String(m._id), m);
 
+    // An add-on can be sold below its own price when an add-on category
+    // overrides it (a ₹0 "Free Extras" mayo, say). Those overrides are part of
+    // the floor, so load them whenever the cart carries add-ons — otherwise a
+    // perfectly legitimate order looks like an underpayment and gets rejected.
+    const cartHasAddOns = body.orderItems.some((it) => it?.addOns?.length);
+    const addOnCategories = cartHasAddOns
+      ? ((await db
+          .collection("addOnCategories")
+          .find({})
+          .toArray()) as unknown as AddOnCategory[])
+      : [];
+
     let serverSubtotal = 0;
     for (const it of body.orderItems) {
       // Skip the coupon's granted free item — it's free, so it must not raise
@@ -292,8 +305,13 @@ export async function POST(request: NextRequest) {
       let lineTotal = unit * qty;
       for (const a of it?.addOns ?? []) {
         const addMenu = a?.id ? menuMap.get(String(a.id)) : undefined;
+        // Unknown add-on → trust the line price (fail-open, as above).
         const addUnit = addMenu
-          ? Number(addMenu.price) || 0
+          ? cheapestAddOnPrice(
+              String(a.id),
+              Number(addMenu.price) || 0,
+              addOnCategories,
+            )
           : Number(a.price) || 0;
         lineTotal += addUnit * Math.max(0, Number(a.quantity) || 0);
       }

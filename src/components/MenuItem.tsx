@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Product, useCart, buildCartItemId } from "@/context/CartContext";
+import type { AddOnGroup } from "@/lib/addOnGroups";
 import { useStoreStatus } from "@/context/StoreStatusContext";
 import SubscriptionChoiceSheet from "./SubscriptionChoiceSheet";
 import AddToCartSheet from "./AddToCartSheet";
@@ -13,12 +14,13 @@ import { ShimmerImg } from "@/components/ui/ShimmerImage";
 
 interface MenuItemProps {
   product: Product;
-  addOnProducts?: Product[];
+  /** Add-on groups offered for this product, already resolved by Menu. */
+  addOnGroups?: AddOnGroup<Product>[];
 }
 
 export default function MenuItem({
   product,
-  addOnProducts = [],
+  addOnGroups = [],
 }: MenuItemProps) {
   const router = useRouter();
   const { items, addToCart, updateQuantity } = useCart();
@@ -30,7 +32,7 @@ export default function MenuItem({
   // Items with variants and/or add-ons are configured in a sheet and can land
   // on multiple cart lines, so the card just totals the quantity across them.
   const hasOptions =
-    (product.variants?.length ?? 0) > 0 || addOnProducts.length > 0;
+    (product.variants?.length ?? 0) > 0 || addOnGroups.length > 0;
   const plainCartItemId = buildCartItemId(product.id);
   const plainLine = items.find((item) => item.cartItemId === plainCartItemId);
   const quantity = hasOptions
@@ -191,7 +193,7 @@ export default function MenuItem({
           open
           onClose={() => setAddSheetOpen(false)}
           product={product}
-          addOnProducts={addOnProducts}
+          addOnGroups={addOnGroups}
           onConfirm={(selection) => addToCart(product, selection)}
         />
       )}

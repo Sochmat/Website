@@ -8,7 +8,8 @@ import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
 import ShimmerImage from "@/components/ui/ShimmerImage";
 import { Product } from "@/context/CartContext";
-import { Category, MenuVariant } from "@/lib/types";
+import { AddOnCategory, Category, MenuVariant } from "@/lib/types";
+import { buildAddOnGroups, type AddOnGroup } from "@/lib/addOnGroups";
 import { resolveFoodType, type FoodType } from "@/lib/foodType";
 
 const defaultCategories = [
@@ -44,6 +45,16 @@ type MenuProduct = Product & {
   showOnHomePage?: boolean;
   isAddOn?: boolean;
   isRecommended?: boolean;
+};
+
+/** Add-on categories as /api/menu serves them: hidden ones already withheld,
+ *  `_id` flattened to `id`, already in display order. */
+type ApiAddOnCategory = {
+  id: string;
+  name: string;
+  members: { addOnId: string; price?: number }[];
+  itemIds?: string[];
+  menuCategoryIds?: string[];
 };
 
 const RECENT_SEARCHES_KEY = "sochmat:recent-searches";
@@ -128,6 +139,7 @@ export default function Menu({
   );
   const [products, setProducts] = useState<MenuProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [addOnCategories, setAddOnCategories] = useState<AddOnCategory[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +215,15 @@ export default function Menu({
         if (cancelled || !data.success) return;
         const items = (data.items ?? []).map(mapApiItemToProduct);
         setProducts(items);
+        setAddOnCategories(
+          (data.addOnCategories ?? []).map((c: ApiAddOnCategory) => ({
+            _id: c.id,
+            name: c.name,
+            members: c.members ?? [],
+            itemIds: c.itemIds ?? [],
+            menuCategoryIds: c.menuCategoryIds ?? [],
+          })),
+        );
         if (data.categories?.length) {
           const cats = data.categories.map((c: Category) => ({
             id: c.id,
@@ -225,13 +246,19 @@ export default function Menu({
     };
   }, []);
 
-  // Add-ons are stored as ID references to other menu items; resolve them so
-  // each card can offer its add-ons in the add-to-cart sheet.
+  // Add-ons are stored as ID references to other menu items: the item's own
+  // picks, plus the members of every add-on category offered on it. The
+  // categories own that mapping, so which ones apply is decided by scanning
+  // them rather than by reading a field off the item.
   const addOnsById = new Map(products.map((p) => [p.id, p]));
-  const resolveAddOns = (product: MenuProduct): Product[] =>
-    (product.addOns ?? [])
-      .map((id) => addOnsById.get(id))
-      .filter((p): p is MenuProduct => Boolean(p));
+  const resolveAddOnGroups = (product: MenuProduct): AddOnGroup<Product>[] =>
+    buildAddOnGroups<MenuProduct>({
+      itemId: product.id,
+      menuCategoryId: product.category,
+      addOnIds: product.addOns,
+      productsById: addOnsById,
+      categories: addOnCategories,
+    });
 
   // While searching, match by name/description across the whole menu and ignore
   // the selected category; otherwise filter by the chosen category.
@@ -416,7 +443,7 @@ export default function Menu({
             <div key={product.id} className="shrink-0 py-[22px]">
               <MenuItem
                 product={product}
-                addOnProducts={resolveAddOns(product)}
+                addOnGroups={resolveAddOnGroups(product)}
               />
             </div>
           ));

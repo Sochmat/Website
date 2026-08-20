@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { resolveFoodType } from "@/lib/foodType";
+import { sortAddOnCategories } from "@/lib/addOnGroups";
+import type { AddOnCategory } from "@/lib/types";
 
 export async function GET() {
   try {
@@ -11,6 +13,12 @@ export async function GET() {
       .toArray();
     const categories = await db
       .collection("categories")
+      .find({ hidden: { $ne: true } })
+      .toArray();
+    // Groups of add-ons an item can offer wholesale (see lib/addOnGroups.ts).
+    // Hidden ones are withheld, exactly like hidden items and categories.
+    const addOnCategories = await db
+      .collection("addOnCategories")
       .find({ hidden: { $ne: true } })
       .toArray();
 
@@ -50,6 +58,21 @@ export async function GET() {
       success: true,
       items: formattedItems,
       categories,
+      // Already in display order, so the storefront can render them as they
+      // come. The group carries the mapping: which items and which menu
+      // categories it is offered on.
+      addOnCategories: sortAddOnCategories(
+        addOnCategories as unknown as AddOnCategory[],
+      ).map((cat) => ({
+        id: String(cat._id),
+        name: cat.name,
+        members: (cat.members ?? []).map((m) => ({
+          addOnId: String(m?.addOnId ?? ""),
+          price: typeof m?.price === "number" ? m.price : undefined,
+        })),
+        itemIds: cat.itemIds ?? [],
+        menuCategoryIds: cat.menuCategoryIds ?? [],
+      })),
     });
   } catch (error) {
     console.error("Error fetching menu:", error);

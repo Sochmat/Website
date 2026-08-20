@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Product, CartSelection } from "@/context/CartContext";
 import type { MenuVariant, SelectedAddOn } from "@/lib/types";
+import type { AddOnGroup } from "@/lib/addOnGroups";
 import FoodTypeDot from "./FoodTypeDot";
 
 interface AddToCartSheetProps {
   open: boolean;
   onClose: () => void;
   product: Product | null;
-  /** Resolved add-on items offered for this product. */
-  addOnProducts: Product[];
+  /** Resolved add-on groups offered for this product: the item's own picks
+   *  first, then a group per mapped add-on category. See lib/addOnGroups.ts. */
+  addOnGroups: AddOnGroup<Product>[];
   onConfirm: (selection: CartSelection) => void;
 }
 
@@ -18,7 +20,7 @@ export default function AddToCartSheet({
   open,
   onClose,
   product,
-  addOnProducts,
+  addOnGroups,
   onConfirm,
 }: AddToCartSheetProps) {
   const variants = useMemo(() => product?.variants ?? [], [product]);
@@ -27,8 +29,16 @@ export default function AddToCartSheet({
   // Variant is required when present; default to the first one. The sheet is
   // mounted only while open (see MenuItem), so fresh state resets each time.
   const [variantIndex, setVariantIndex] = useState(0);
-  // Add-on id -> chosen quantity (0 = not selected).
+  // Option key -> chosen quantity (0 = not selected). Keyed by option, not by
+  // add-on: the same add-on can appear in two groups at two prices, and those
+  // are separate offers that must count separately.
   const [addOnQty, setAddOnQty] = useState<Record<string, number>>({});
+
+  // Every option across every group, for pricing and for building the result.
+  const addOnOptions = useMemo(
+    () => addOnGroups.flatMap((group) => group.options),
+    [addOnGroups],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -47,23 +57,25 @@ export default function AddToCartSheet({
     ? variants[variantIndex]
     : undefined;
   const basePrice = selectedVariant ? selectedVariant.price : product.price;
-  const addOnsSum = addOnProducts.reduce(
-    (sum, a) => sum + a.price * (addOnQty[a.id] ?? 0),
+  const addOnsSum = addOnOptions.reduce(
+    (sum, option) => sum + option.price * (addOnQty[option.key] ?? 0),
     0,
   );
   const total = basePrice + addOnsSum;
 
-  const setQty = (id: string, qty: number) =>
-    setAddOnQty((prev) => ({ ...prev, [id]: Math.max(0, qty) }));
+  const setQty = (key: string, qty: number) =>
+    setAddOnQty((prev) => ({ ...prev, [key]: Math.max(0, qty) }));
 
   const handleConfirm = () => {
-    const addOns: SelectedAddOn[] = addOnProducts
-      .filter((a) => (addOnQty[a.id] ?? 0) > 0)
-      .map((a) => ({
-        id: a.id,
-        name: a.name,
-        price: a.price,
-        quantity: addOnQty[a.id],
+    // The add-on id is what the kitchen and the order API key off, so that is
+    // what travels — the price carries the group's override with it.
+    const addOns: SelectedAddOn[] = addOnOptions
+      .filter((option) => (addOnQty[option.key] ?? 0) > 0)
+      .map((option) => ({
+        id: option.product.id,
+        name: option.product.name,
+        price: option.price,
+        quantity: addOnQty[option.key],
       }));
     onConfirm({ variant: selectedVariant, addOns });
     onClose();
@@ -136,16 +148,19 @@ export default function AddToCartSheet({
             </div>
           )}
 
-          {/* Add-ons */}
-          {addOnProducts.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm font-semibold text-[#111] mb-2">Add-ons</p>
+          {/* Add-ons, one block per group: the item's own picks, then a block
+              per mapped add-on category. */}
+          {addOnGroups.map((group) => (
+            <div key={group.key} className="mt-4">
+              <p className="text-sm font-semibold text-[#111] mb-2">
+                {group.title}
+              </p>
               <div className="flex flex-col gap-2">
-                {addOnProducts.map((a) => {
-                  const qty = addOnQty[a.id] ?? 0;
+                {group.options.map(({ key, product: a, price }) => {
+                  const qty = addOnQty[key] ?? 0;
                   return (
                     <div
-                      key={a.id}
+                      key={key}
                       className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-gray-200"
                     >
                       <div className="flex items-center gap-2 min-w-0">
@@ -154,7 +169,7 @@ export default function AddToCartSheet({
                           {a.name}
                         </span>
                         <span className="text-sm text-[#666] shrink-0">
-                          ₹{a.price}
+                          {price > 0 ? `₹${price}` : "Free"}
                         </span>
                       </div>
 
@@ -162,14 +177,14 @@ export default function AddToCartSheet({
                         <div className="bg-[rgba(245,98,21,0.1)] border border-[#f56215] flex items-center justify-between px-2.5 py-1 rounded-md text-[#f56215] text-sm w-[80px] shrink-0">
                           <button
                             type="button"
-                            onClick={() => setQty(a.id, qty - 1)}
+                            onClick={() => setQty(key, qty - 1)}
                           >
                             -
                           </button>
                           <span>{qty}</span>
                           <button
                             type="button"
-                            onClick={() => setQty(a.id, qty + 1)}
+                            onClick={() => setQty(key, qty + 1)}
                           >
                             +
                           </button>
@@ -177,7 +192,7 @@ export default function AddToCartSheet({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setQty(a.id, 1)}
+                          onClick={() => setQty(key, 1)}
                           className="border border-[#f56215] text-[#f56215] text-sm font-semibold rounded-md px-4 py-1 shrink-0"
                         >
                           Add
@@ -188,7 +203,7 @@ export default function AddToCartSheet({
                 })}
               </div>
             </div>
-          )}
+          ))}
         </div>
 
         {/* Confirm */}

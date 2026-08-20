@@ -55,6 +55,46 @@ export interface MenuItem {
   updatedAt?: Date;
 }
 
+/** One add-on inside an add-on category. `price` overrides the add-on's own
+ *  price for this category only; leave it unset to charge the add-on's price.
+ *  The same add-on may sit in several categories at different prices. */
+export interface AddOnCategoryMember {
+  /** `menuItems` document id of an add-on. */
+  addOnId: string;
+  price?: number;
+}
+
+/**
+ * A named group of add-ons offered on many menu items at once, instead of
+ * picking the same add-ons item by item. Deliberately separate from `Category`
+ * (which groups menu items): the admin's add-on tab treats any item with no
+ * `category` as an add-on, so add-ons have to stay uncategorized there.
+ *
+ * The mapping is owned by this side — the group names the items it applies to,
+ * via `itemIds` and `menuCategoryIds`; menu items carry no reference back.
+ *
+ * `members` is the display order within the group — the admin reorders it with
+ * the arrow buttons in the category editor.
+ */
+export interface AddOnCategory {
+  _id?: ObjectId | string;
+  name: string;
+  hidden?: boolean;
+  members: AddOnCategoryMember[];
+  /** Menu items this group is offered on, by `menuItems` document id. */
+  itemIds?: string[];
+  /** Menu categories this group is offered on, by `Category.id`. Every item in
+   *  one gets the group, including items added later. */
+  menuCategoryIds?: string[];
+  /** Position among all add-on categories, low first. It is a single global
+   *  order — the item no longer holds the list, so it cannot order the groups
+   *  itself. Absent on documents written before ordering existed; those sort
+   *  last. */
+  sortOrder?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export interface Category {
   _id?: ObjectId | string;
   id: string;

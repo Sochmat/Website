@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { MenuItem, Category } from "@/lib/types";
+import { MenuItem, Category, AddOnCategory } from "@/lib/types";
+import {
+  addOnCategoryAppliesTo,
+  sortAddOnCategories,
+} from "@/lib/addOnGroups";
 import { Select, Drawer } from "antd";
 import { useAdminRole } from "@/lib/useAdminRole";
 import FoodTypeDot from "@/components/FoodTypeDot";
 import FoodTypeRadio from "@/components/FoodTypeRadio";
 import AddOnDrawer from "./AddOnDrawer";
+import AddOnCategoryDrawer from "./AddOnCategoryDrawer";
 import {
   FOOD_TYPE_OPTIONS,
   isVegFoodType,
@@ -78,6 +83,125 @@ function parseDiscountPercent(discount: string): number | null {
   return pct >= 0 && pct <= 100 ? pct : null;
 }
 
+/**
+ * The eye / pencil / bin buttons that end every row in this page's lists. One
+ * component so the add-on list and the add-on category list can't drift apart.
+ */
+function RowActions({
+  hidden,
+  onToggleHidden,
+  onEdit,
+  onDelete,
+  name,
+  showEditDelete = true,
+}: {
+  hidden?: boolean;
+  onToggleHidden: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  /** What the row is, for the buttons' labels. */
+  name: string;
+  showEditDelete?: boolean;
+}) {
+  return (
+    <div className="flex gap-2 shrink-0">
+      <button
+        type="button"
+        onClick={onToggleHidden}
+        title={hidden ? "Show on website" : "Hide from website"}
+        aria-label={`${hidden ? "Show" : "Hide"} ${name}`}
+        className={`p-2 rounded-lg transition-colors ${
+          hidden
+            ? "text-gray-500 hover:bg-gray-100"
+            : "text-green-600 hover:bg-green-50"
+        }`}
+      >
+        {hidden ? (
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+            />
+          </svg>
+        ) : (
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+            />
+          </svg>
+        )}
+      </button>
+      {showEditDelete && (
+        <>
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit"
+            aria-label={`Edit ${name}`}
+            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Delete"
+            aria-label={`Delete ${name}`}
+            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AdminMenuPage() {
   const role = useAdminRole();
   const isShop = role === "shop";
@@ -110,6 +234,17 @@ export default function AdminMenuPage() {
   // Add-ons get their own trimmed form rather than the full menu-item one.
   const [addOnDrawerOpen, setAddOnDrawerOpen] = useState(false);
   const [editingAddOn, setEditingAddOn] = useState<MenuItem | null>(null);
+  // Add-on categories: groups of add-ons that can be mapped onto an item in
+  // one go. They live in a panel at the top of the Addons tab, collapsed by
+  // default so the add-on list itself stays the focus.
+  const [addOnCategories, setAddOnCategories] = useState<AddOnCategory[]>([]);
+  const [addOnCategoriesExpanded, setAddOnCategoriesExpanded] = useState(false);
+  const [addOnsExpanded, setAddOnsExpanded] = useState(true);
+  const [addOnCategoryDrawerOpen, setAddOnCategoryDrawerOpen] = useState(false);
+  const [reorderingAddOnCategories, setReorderingAddOnCategories] =
+    useState(false);
+  const [editingAddOnCategory, setEditingAddOnCategory] =
+    useState<AddOnCategory | null>(null);
 
   // Search + filters for the Menu Items list.
   const [search, setSearch] = useState("");
@@ -130,6 +265,7 @@ export default function AdminMenuPage() {
   useEffect(() => {
     fetchMenuItems();
     fetchCategories();
+    fetchAddOnCategories();
   }, []);
 
   useEffect(() => {
@@ -169,6 +305,88 @@ export default function AdminMenuPage() {
       if (data.success) setCategories(data.categories ?? []);
     } catch (err) {
       console.error("Failed to fetch categories:", err);
+    }
+  };
+
+  const fetchAddOnCategories = async () => {
+    try {
+      const res = await fetch("/api/admin/addon-categories");
+      const data = await res.json();
+      if (data.success) {
+        setAddOnCategories(sortAddOnCategories(data.categories ?? []));
+      }
+    } catch (err) {
+      console.error("Failed to fetch add-on categories:", err);
+    }
+  };
+
+  /** Move a group in the one global order every item follows. The whole list
+   *  is sent back, so a failed write can never leave two groups fighting over
+   *  the same position — and the local list is only trusted once it lands. */
+  const moveAddOnCategory = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= addOnCategories.length) return;
+    const reordered = [...addOnCategories];
+    [reordered[index], reordered[target]] = [
+      reordered[target],
+      reordered[index],
+    ];
+    setAddOnCategories(reordered);
+    setReorderingAddOnCategories(true);
+    try {
+      await fetch("/api/admin/addon-categories/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: reordered.map((c) => String(c._id)) }),
+      });
+    } catch (err) {
+      console.error("Failed to reorder add-on categories:", err);
+    }
+    await fetchAddOnCategories();
+    setReorderingAddOnCategories(false);
+  };
+
+  const openAddAddOnCategory = () => {
+    setEditingAddOnCategory(null);
+    setAddOnCategoryDrawerOpen(true);
+  };
+
+  const openEditAddOnCategory = (cat: AddOnCategory) => {
+    setEditingAddOnCategory(cat);
+    setAddOnCategoryDrawerOpen(true);
+  };
+
+  const toggleAddOnCategoryHidden = async (cat: AddOnCategory) => {
+    if (!cat._id) return;
+    try {
+      await fetch("/api/admin/addon-categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ _id: String(cat._id), hidden: !cat.hidden }),
+      });
+      fetchAddOnCategories();
+    } catch (err) {
+      console.error("Failed to toggle add-on category visibility:", err);
+    }
+  };
+
+  const handleDeleteAddOnCategory = async (cat: AddOnCategory) => {
+    if (!cat._id) return;
+    // Deleting also unmaps the group from every item, so say so up front.
+    if (
+      !confirm(
+        `Delete the "${cat.name}" add-on category? The add-ons themselves are kept, but the ${(cat.members ?? []).length} add-ons in it stop being offered on the items it is mapped to.`,
+      )
+    )
+      return;
+    try {
+      await fetch(`/api/admin/addon-categories?id=${String(cat._id)}`, {
+        method: "DELETE",
+      });
+      fetchAddOnCategories();
+      fetchMenuItems();
+    } catch (err) {
+      console.error("Failed to delete add-on category:", err);
     }
   };
 
@@ -504,6 +722,16 @@ export default function AdminMenuPage() {
     if (value.trim() !== "") setSelectedCategory("all");
   };
 
+  // Which groups this add-on sits in. Membership lives on the category, so the
+  // add-on row can only show it read-only — it is edited in the category.
+  const addOnCategoryNamesFor = (item: MenuItem): string[] => {
+    const id = String(item._id ?? "");
+    if (!id) return [];
+    return addOnCategories
+      .filter((cat) => (cat.members ?? []).some((m) => m.addOnId === id))
+      .map((cat) => cat.name);
+  };
+
   const renderItemRow = (
     item: MenuItem,
     edit: (item: MenuItem) => void = handleEdit,
@@ -528,97 +756,19 @@ export default function AdminMenuPage() {
           ₹{item.price} • {item.kcal} kcal • {item.protein}g protein
         </p>
         <p className="text-xs text-gray-400">
-          {item.category} • {item.type}
+          {isAddOnItem(item)
+            ? addOnCategoryNamesFor(item).join(", ") || "No add-on category"
+            : `${item.category} • ${item.type}`}
         </p>
       </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => toggleMenuItemHidden(item)}
-          title={item.hidden ? "Show on website" : "Hide from website"}
-          className={`p-2 rounded-lg transition-colors ${
-            item.hidden
-              ? "text-gray-500 hover:bg-gray-100"
-              : "text-green-600 hover:bg-green-50"
-          }`}
-        >
-          {item.hidden ? (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-              />
-            </svg>
-          ) : (
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-              />
-            </svg>
-          )}
-        </button>
-        {!isShop && (
-          <>
-            <button
-              onClick={() => edit(item)}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                />
-              </svg>
-            </button>
-            <button
-              onClick={() => handleDelete(item._id?.toString() || "")}
-              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
-              </svg>
-            </button>
-          </>
-        )}
-      </div>
+      <RowActions
+        name={item.name}
+        hidden={item.hidden}
+        onToggleHidden={() => toggleMenuItemHidden(item)}
+        onEdit={() => edit(item)}
+        onDelete={() => handleDelete(item._id?.toString() || "")}
+        showEditDelete={!isShop}
+      />
     </div>
   );
 
@@ -1356,12 +1506,157 @@ export default function AdminMenuPage() {
       )}
 
       {!isShop && activeTab === "addons" && (
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setAddOnCategoriesExpanded((open) => !open)}
+              aria-expanded={addOnCategoriesExpanded}
+              className="flex items-center gap-2 text-lg font-bold text-gray-800"
+            >
+              <span
+                className={`text-gray-400 text-sm transition-transform ${
+                  addOnCategoriesExpanded ? "rotate-90" : ""
+                }`}
+              >
+                ▶
+              </span>
+              Addon Categories ({addOnCategories.length})
+            </button>
+            <button
+              type="button"
+              onClick={openAddAddOnCategory}
+              className="shrink-0 bg-[#1c1c1c] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#024731] transition-colors"
+            >
+              + Add Category
+            </button>
+          </div>
+
+          {addOnCategoriesExpanded && (
+            <>
+              {addOnCategories.length === 0 ? (
+                <p className="mt-4 text-gray-500 text-center py-6">
+                  No add-on categories yet.
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {addOnCategories.map((cat, index) => {
+                    const members = cat.members ?? [];
+                    const usedBy = menuPool.filter((item) =>
+                      addOnCategoryAppliesTo(
+                        cat,
+                        String(item._id ?? ""),
+                        item.category,
+                      ),
+                    ).length;
+                    return (
+                      <div
+                        key={String(cat._id)}
+                        className={`border border-gray-200 rounded-lg p-4 ${
+                          cat.hidden ? "opacity-60" : ""
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-col gap-1 shrink-0 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => moveAddOnCategory(index, -1)}
+                              disabled={index === 0 || reorderingAddOnCategories}
+                              aria-label={`Move ${cat.name} up`}
+                              className="w-6 h-6 rounded border border-gray-300 text-gray-600 text-xs leading-none disabled:opacity-30 hover:bg-gray-50"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveAddOnCategory(index, 1)}
+                              disabled={
+                                index === addOnCategories.length - 1 ||
+                                reorderingAddOnCategories
+                              }
+                              aria-label={`Move ${cat.name} down`}
+                              className="w-6 h-6 rounded border border-gray-300 text-gray-600 text-xs leading-none disabled:opacity-30 hover:bg-gray-50"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-gray-800 truncate">
+                              {cat.name}
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {members.length} add-on
+                              {members.length === 1 ? "" : "s"} · offered on{" "}
+                              {usedBy} item{usedBy === 1 ? "" : "s"}
+                            </p>
+                          </div>
+                          <RowActions
+                            name={cat.name}
+                            hidden={cat.hidden}
+                            onToggleHidden={() =>
+                              toggleAddOnCategoryHidden(cat)
+                            }
+                            onEdit={() => openEditAddOnCategory(cat)}
+                            onDelete={() => handleDeleteAddOnCategory(cat)}
+                          />
+                        </div>
+
+                        {members.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {members.map((member) => {
+                              const addOn = menuItems.find(
+                                (i) => String(i._id) === member.addOnId,
+                              );
+                              const price =
+                                member.price ?? addOn?.price ?? 0;
+                              return (
+                                <span
+                                  key={member.addOnId}
+                                  className="text-xs bg-gray-100 text-gray-700 rounded-full px-3 py-1"
+                                >
+                                  {addOn?.name ?? "(deleted add-on)"} · ₹{price}
+                                  {member.price !== undefined &&
+                                  addOn &&
+                                  member.price !== addOn.price
+                                    ? " *"
+                                    : ""}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-gray-400">
+                    * price overridden for this category.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {!isShop && activeTab === "addons" && (
         <div className="bg-white rounded-xl shadow-lg p-6">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <h2 className="text-lg font-bold text-gray-800">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setAddOnsExpanded((open) => !open)}
+              aria-expanded={addOnsExpanded}
+              className="flex items-center gap-2 text-lg font-bold text-gray-800"
+            >
+              <span
+                className={`text-gray-400 text-sm transition-transform ${
+                  addOnsExpanded ? "rotate-90" : ""
+                }`}
+              >
+                ▶
+              </span>
               Addons ({filteredAddOns.length}
               {filtersActive ? ` / ${addOnPool.length}` : ""})
-            </h2>
+            </button>
             <div className="flex items-center gap-3">
               {filtersActive && (
                 <button
@@ -1382,46 +1677,48 @@ export default function AdminMenuPage() {
             </div>
           </div>
 
-          <p className="mb-4 text-sm text-gray-500">
-            Items flagged as add-ons, plus any item with no category. These are
-            offered inside the add-to-cart sheet and never appear as standalone
-            menu cards on the website.
-          </p>
+          {addOnsExpanded && (
+            <>
+              <div className="relative mt-4 mb-4">
+                <svg
+                  className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  placeholder="Search add-ons by name or description"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                />
+              </div>
 
-          <div className="relative mb-4">
-            <svg
-              className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
-              />
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search add-ons by name or description"
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
-            />
-          </div>
-
-          <div className="space-y-3 max-h-[1000px] overflow-y-auto">
-            {addOnPool.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No add-ons yet.</p>
-            ) : filteredAddOns.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">
-                No add-ons match your search or filters.
-              </p>
-            ) : (
-              filteredAddOns.map((item) => renderItemRow(item, openEditAddOn))
-            )}
-          </div>
+              <div className="space-y-3 max-h-[1000px] overflow-y-auto">
+                {addOnPool.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    No add-ons yet.
+                  </p>
+                ) : filteredAddOns.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">
+                    No add-ons match your search or filters.
+                  </p>
+                ) : (
+                  filteredAddOns.map((item) =>
+                    renderItemRow(item, openEditAddOn),
+                  )
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1433,6 +1730,20 @@ export default function AdminMenuPage() {
             setEditingAddOn(null);
           }}
           onSaved={fetchMenuItems}
+        />
+      )}
+
+      {!isShop && addOnCategoryDrawerOpen && (
+        <AddOnCategoryDrawer
+          editing={editingAddOnCategory}
+          addOns={addOnPool}
+          items={menuPool}
+          menuCategories={categories}
+          onClose={() => {
+            setAddOnCategoryDrawerOpen(false);
+            setEditingAddOnCategory(null);
+          }}
+          onSaved={fetchAddOnCategories}
         />
       )}
 

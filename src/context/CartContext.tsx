@@ -74,11 +74,14 @@ export function buildCartItemId(
   variantName?: string,
   addOns?: SelectedAddOn[],
 ): string {
+  // Price is part of the signature, not just the id: an add-on that sits in two
+  // add-on categories at different prices is two different offers, so "Mayo ₹10"
+  // and "Mayo ₹0" have to stay on separate cart lines instead of merging.
   const addOnSig = (addOns ?? [])
     .filter((a) => a.quantity > 0)
     .slice()
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((a) => `${a.id}:${a.quantity}`)
+    .sort((a, b) => a.id.localeCompare(b.id) || a.price - b.price)
+    .map((a) => `${a.id}@${a.price}:${a.quantity}`)
     .join(",");
   return `${productId}|${variantName ?? ""}|${addOnSig}`;
 }
