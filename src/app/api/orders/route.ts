@@ -456,11 +456,6 @@ export async function POST(request: NextRequest) {
       totalAmount,
       discountAmount,
       tax,
-      // The pre-tax total after every discount, computed entirely server-side
-      // (see minAcceptable above) — the base reward points are earned on. It is
-      // conservative by construction: it assumes the largest discount the
-      // customer was entitled to, so a tampered client can never inflate it.
-      rewardBase: minAcceptable,
       netAmount: totalAmount,
       couponCode: body.couponCode ?? undefined,
       paymentStatus: "pending" as const,

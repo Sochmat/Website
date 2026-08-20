@@ -3,6 +3,7 @@ import {
   nextStreak,
   computePointsEarned,
   computePointsApplied,
+  rewardBaseFor,
   sanitizeExemptDates,
 } from "@/lib/rewards";
 
@@ -88,8 +89,83 @@ describe("nextStreak", () => {
   });
 });
 
+describe("rewardBaseFor", () => {
+  it("earns on the full bill when nothing was redeemed", () => {
+    // 500 items − 100 discount + 20 GST + 20 delivery.
+    expect(rewardBaseFor({ totalAmount: 440, netAmount: 440 })).toBe(440);
+  });
+
+  it("earns on GST and the delivery charge, not just the food", () => {
+    // The old rule took 10% of the 400 pre-tax food total (40 points); the
+    // charged amount includes tax and delivery, so it is 44.
+    expect(computePointsEarned(rewardBaseFor({ totalAmount: 440 }), 10)).toBe(
+      44,
+    );
+  });
+
+  it("drops wallet credit out of the base", () => {
+    expect(
+      rewardBaseFor({
+        totalAmount: 440,
+        walletApplied: 100,
+        netAmount: 340,
+      }),
+    ).toBe(340);
+  });
+
+  it("drops redeemed points out of the base", () => {
+    expect(
+      rewardBaseFor({
+        totalAmount: 440,
+        pointsApplied: 200,
+        netAmount: 240,
+      }),
+    ).toBe(240);
+  });
+
+  it("drops both balances when they were applied together", () => {
+    expect(
+      rewardBaseFor({
+        totalAmount: 440,
+        walletApplied: 100,
+        pointsApplied: 200,
+        netAmount: 140,
+      }),
+    ).toBe(140);
+  });
+
+  it("falls back to the bill minus redemptions when netAmount was never written", () => {
+    // Orders that predate the redemption writes carry neither netAmount nor
+    // amountPayable.
+    expect(
+      rewardBaseFor({ totalAmount: 440, walletApplied: 100 }),
+    ).toBe(340);
+  });
+
+  it("prefers netAmount over amountPayable — it is what Razorpay was charged", () => {
+    expect(
+      rewardBaseFor({ totalAmount: 440, netAmount: 340, amountPayable: 999 }),
+    ).toBe(340);
+  });
+
+  it("treats a stored null netAmount as absent, not as a ₹0 charge", () => {
+    expect(rewardBaseFor({ totalAmount: 440, netAmount: null })).toBe(440);
+  });
+
+  it("earns nothing on an order with no money on it", () => {
+    expect(rewardBaseFor({})).toBe(0);
+    expect(computePointsEarned(rewardBaseFor({}), 20)).toBe(0);
+  });
+
+  it("never goes negative when the balances exceed the bill", () => {
+    expect(
+      rewardBaseFor({ totalAmount: 100, walletApplied: 500 }),
+    ).toBe(0);
+  });
+});
+
 describe("computePointsEarned", () => {
-  it("takes the rate off the pre-tax base, rounded to a whole point", () => {
+  it("takes the rate off the charged amount, rounded to a whole point", () => {
     expect(computePointsEarned(450, 14)).toBe(63);
     expect(computePointsEarned(500, 10)).toBe(50);
     expect(computePointsEarned(500, 20)).toBe(100);

@@ -11,7 +11,7 @@ import type {
   AuditType,
 } from "@/lib/stockAudits";
 import { formatCurrency } from "@/lib/rawMaterials";
-import VarianceTag, { formatQty } from "./VarianceTag";
+import VarianceTag, { StockQty, formatQty } from "./VarianceTag";
 
 /** "27 Jul 2026, 4:35 pm" in IST, wherever the browser happens to be. */
 function formatSavedAt(iso: string): string {
@@ -27,15 +27,7 @@ function formatSavedAt(iso: string): string {
 }
 
 function qtyCell(value: number, unit: string, strong = false) {
-  return (
-    <span
-      className={`whitespace-nowrap tabular-nums ${
-        strong ? "font-medium text-gray-900" : "text-gray-600"
-      }`}
-    >
-      {formatQty(value)} {unit}
-    </span>
-  );
+  return <StockQty value={value} unit={unit} strong={strong} />;
 }
 
 /** The "before" side, shared by both histories. */

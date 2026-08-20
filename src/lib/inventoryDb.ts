@@ -498,6 +498,9 @@ export async function listProductionItems(
     recipe: toRecipeLines(d.recipe),
     pricePerPurchaseUnit: Number(d.pricePerPurchaseUnit ?? 0),
     alertQty: Number(d.alertQty ?? 0),
+    // Absent on everything written before the flag existed, which is exactly
+    // what "kept prepared in advance" was and still is — see the field's doc.
+    onSpot: d.onSpot === true,
     // Only surface stock when it is genuinely tracked — see isBelowAlert.
     ...(typeof d.currentStock === "number"
       ? { currentStock: d.currentStock }

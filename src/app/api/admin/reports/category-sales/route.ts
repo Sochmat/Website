@@ -1,52 +1,52 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { parseIstRange } from "@/lib/adminRange";
-import { itemSalesInRange } from "@/lib/adminItemSales";
-import { groupByCategory } from "@/lib/categorySales";
+import {
+  reportOrdersInRange,
+  categoryByProductId,
+} from "@/lib/adminCategorySales";
+import { buildCategorySalesReport } from "@/lib/categorySales";
 import { buildCategorySalesWorkbook } from "@/lib/categorySalesSheet";
-import { salesReportFilename, istTimestampLabel } from "@/lib/reportFilename";
+import { salesReportFilename } from "@/lib/reportFilename";
 
 /**
  * The category-wise sales report as an .xlsx download.
  * `?from=YYYY-MM-DD&to=YYYY-MM-DD`, defaulting to the last 7 days like every
  * other admin stats endpoint. Admin-only (middleware-guarded).
- *
- * Shares `itemSalesInRange` with the dashboard on purpose: the report and the
- * top-sellers panel are the same numbers, so they must not drift apart.
  */
 export async function GET(request: NextRequest) {
   try {
     const params = new URL(request.url).searchParams;
     const now = new Date();
-    const { from, to, gte, lt } = parseIstRange(
+    const { gte, lt } = parseIstRange(
       params.get("from"),
       params.get("to"),
       now,
     );
 
     const { db } = await connectToDatabase();
-    const [items, categories] = await Promise.all([
-      itemSalesInRange(db, gte, lt),
-      db
-        .collection("categories")
-        .find({})
-        .project({ id: 1, name: 1 })
-        .toArray(),
-    ]);
+    const { orders, productIds } = await reportOrdersInRange(db, gte, lt);
 
-    // menuItems.category holds Category.id (a slug), not the _id.
-    const categoryNames = new Map<string, string>();
+    // menuItems.category holds Category.id (a slug), so resolve the slug to a
+    // readable name in one more lookup.
+    const [categoryIdByProduct, categories] = await Promise.all([
+      categoryByProductId(db, productIds),
+      db.collection("categories").find({}).project({ id: 1, name: 1 }).toArray(),
+    ]);
+    const nameById = new Map<string, string>();
     for (const c of categories) {
       const id = String(c.id ?? "");
-      if (id) categoryNames.set(id, String(c.name ?? "") || id);
+      if (id) nameById.set(id, String(c.name ?? "") || id);
     }
 
-    const report = groupByCategory(items, categoryNames);
-    const buffer = await buildCategorySalesWorkbook(report, {
-      from,
-      to,
-      generatedAt: istTimestampLabel(now),
-    });
+    const categoryOf = new Map<string, string>();
+    for (const [productId, categoryId] of categoryIdByProduct) {
+      const name = nameById.get(categoryId);
+      if (name) categoryOf.set(productId, name);
+    }
+
+    const rows = buildCategorySalesReport(orders, categoryOf);
+    const buffer = await buildCategorySalesWorkbook(rows);
 
     const filename = salesReportFilename(now);
     return new NextResponse(new Uint8Array(buffer), {

@@ -1,119 +1,124 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { buildCategorySalesWorkbook } from "@/lib/categorySalesSheet";
-import { groupByCategory } from "@/lib/categorySales";
-import type { ItemSale } from "@/lib/adminItemSales";
+import { buildCategorySalesReport } from "@/lib/categorySales";
 
-const NAMES = new Map([
-  ["biryani", "Biryani"],
-  ["bev", "Beverages"],
-]);
-
-const sale = (over: Partial<ItemSale>): ItemSale => ({
-  productId: "p",
-  name: "Item",
-  isVeg: true,
-  category: "biryani",
-  quantity: 1,
-  revenue: 100,
-  ...over,
-});
-
-const META = {
-  from: "2026-08-10",
-  to: "2026-08-16",
-  generatedAt: "16 Aug 2026, 18:34:52",
-};
+/** The header row of the reference workbook, verbatim. */
+const REFERENCE_HEADERS = [
+  "Category",
+  "Total Items Ordered",
+  "Net Amount (₹)",
+  "Total Discount (₹)",
+  "Total Tax (₹)",
+  "Total Sales (₹)",
+  "Net Sales (₹)(N.A - T.D)",
+  "Percentage (%)",
+];
 
 /** Build a workbook and read it back the way Excel would. */
-async function render(items: ItemSale[], meta = META) {
-  const buffer = await buildCategorySalesWorkbook(
-    groupByCategory(items, NAMES),
-    meta,
-  );
+async function render(rows: Parameters<typeof buildCategorySalesWorkbook>[0]) {
+  const buffer = await buildCategorySalesWorkbook(rows);
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(new Uint8Array(buffer).buffer as ArrayBuffer);
   const sheet = wb.getWorksheet("Category Wise");
   if (!sheet) throw new Error("no Category Wise sheet");
 
-  const rows: string[][] = [];
+  const grid: unknown[][] = [];
   sheet.eachRow({ includeEmpty: true }, (row) => {
-    rows.push(
-      [1, 2, 3, 4].map((c) => {
-        const v = row.getCell(c).value;
-        return v === null || v === undefined ? "" : String(v);
-      }),
-    );
+    grid.push([1, 2, 3, 4, 5, 6, 7, 8].map((c) => row.getCell(c).value));
   });
-  return { sheet, rows };
+  return { sheet, grid };
 }
 
+const SAMPLE = buildCategorySalesReport(
+  [
+    {
+      discount: 216.7,
+      tax: 85.88,
+      lines: [{ productId: "curry", quantity: 7, revenue: 1934 }],
+    },
+    {
+      discount: 1136.5,
+      tax: 255.06,
+      lines: [{ productId: "rice", quantity: 22, revenue: 6237 }],
+    },
+  ],
+  new Map([
+    ["curry", "Indian Curries"],
+    ["rice", "Fried Rice Bowls"],
+  ]),
+);
+
 describe("buildCategorySalesWorkbook", () => {
-  it("lays out categories, their items, subtotals and a grand total", async () => {
-    const { rows } = await render([
-      sale({ productId: "a", name: "Chicken Biryani", quantity: 42, revenue: 12600 }),
-      sale({ productId: "b", name: "Veg Biryani", quantity: 18, revenue: 4320 }),
-      sale({ productId: "c", name: "Masala Chai", category: "bev", quantity: 95, revenue: 2375 }),
+  it("puts the calculation notes above the columns they explain", async () => {
+    const { grid } = await render(SAMPLE);
+    // Category and the item count need no explanation, so those two sit blank.
+    expect(grid[0][0] ?? "").toBe("");
+    expect(grid[0][1] ?? "").toBe("");
+    expect(grid[0][2]).toBe("Total Items*Price of that item");
+    expect(grid[0][3]).toBe("Total Discount= Location+Coupon+Reward");
+    expect(grid[0][5]).toBe("Total Sales= Net Amount -Discount+ Tax)");
+    expect(grid[0][6]).toBe("Net Sales= Net Amount-Discount");
+    expect(grid[0][7]).toBe(
+      "Percentage= (Net sales of any category/Sum of net sales)*100",
+    );
+  });
+
+  it("matches the reference workbook's headers exactly, on row 2", async () => {
+    const { grid } = await render(SAMPLE);
+    expect(grid[1]).toEqual(REFERENCE_HEADERS);
+  });
+
+  it("writes one row per category, starting at row 3", async () => {
+    const { grid } = await render(SAMPLE);
+    // Fried Rice earns more, so it ranks first.
+    expect(grid[2]).toEqual([
+      "Fried Rice Bowls",
+      22,
+      6237,
+      1136.5,
+      255.06,
+      5355.56,
+      5100.5,
+      74.81,
     ]);
-
-    const flat = rows.map((r) => r.join("|"));
-    expect(flat).toContain("Biryani|||");
-    expect(flat).toContain("|Chicken Biryani|42|12600");
-    expect(flat).toContain("|Veg Biryani|18|4320");
-    expect(flat).toContain("|Subtotal|60|16920");
-    expect(flat).toContain("Beverages|||");
-    expect(flat).toContain("|Masala Chai|95|2375");
-    expect(flat).toContain("|Subtotal|95|2375");
-    expect(flat).toContain("GRAND TOTAL||155|19295");
-  });
-
-  it("carries the period and the caveat in the title block", async () => {
-    const { rows } = await render([sale({})]);
-    const head = rows.slice(0, 4).map((r) => r[0]);
-    expect(head[0]).toBe("Sales Report — Category Wise");
-    expect(head[1]).toBe("Period: 10 Aug 2026 – 16 Aug 2026");
-    expect(head[2]).toBe("Generated: 16 Aug 2026, 18:34:52 IST");
-    expect(head[3]).toContain("pre-tax");
-  });
-
-  it("collapses the period to one date for a single-day report", async () => {
-    const { rows } = await render([sale({})], {
-      ...META,
-      from: "2026-08-16",
-      to: "2026-08-16",
-    });
-    expect(rows[1][0]).toBe("Period: 16 Aug 2026");
-  });
-
-  it("writes money as numbers so the recipient can sum them", async () => {
-    // The failure this guards: pre-formatting "₹12,600" makes every revenue
-    // cell text, and the totals row of a downstream pivot silently reads 0.
-    const { sheet } = await render([
-      sale({ name: "Chicken Biryani", quantity: 42, revenue: 12600.5 }),
+    expect(grid[3]).toEqual([
+      "Indian Curries",
+      7,
+      1934,
+      216.7,
+      85.88,
+      1803.18,
+      1717.3,
+      25.19,
     ]);
-
-    let checked = false;
-    sheet.eachRow((row) => {
-      if (String(row.getCell(2).value ?? "") !== "Chicken Biryani") return;
-      expect(typeof row.getCell(3).value).toBe("number");
-      expect(row.getCell(4).value).toBe(12600.5);
-      expect(row.getCell(4).numFmt).toContain("₹");
-      checked = true;
-    });
-    expect(checked).toBe(true);
+    expect(grid).toHaveLength(4); // notes + headers + two categories, nothing else
   });
 
-  it("freezes the header row so it stays visible down a long menu", async () => {
-    const { sheet, rows } = await render([sale({})]);
-    const headerRow = rows.findIndex((r) => r[0] === "Category") + 1;
-    expect(headerRow).toBeGreaterThan(1);
-    expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: headerRow });
+  it("writes every figure as a number so the columns can be summed", async () => {
+    // The failure this guards: pre-formatting "₹1,934" makes the cell text, and
+    // a downstream pivot's total silently reads 0.
+    const { grid } = await render(SAMPLE);
+    for (const cell of grid[2].slice(1)) {
+      expect(typeof cell).toBe("number");
+    }
   });
 
-  it("still produces a readable sheet for a range with no sales", async () => {
-    const { rows } = await render([]);
-    const flat = rows.map((r) => r.join("|"));
-    expect(flat.some((r) => r.includes("No sales in this period"))).toBe(true);
-    expect(flat).toContain("GRAND TOTAL||0|0");
+  it("shows no item rows, subtotals or grand total", async () => {
+    const { grid } = await render(SAMPLE);
+    const firstColumn = grid.map((r) => String(r[0] ?? ""));
+    expect(firstColumn).not.toContain("Subtotal");
+    expect(firstColumn).not.toContain("GRAND TOTAL");
+  });
+
+  it("freezes the notes and headers so they stay in view", async () => {
+    const { sheet } = await render(SAMPLE);
+    expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: 2 });
+  });
+
+  it("still produces a headed sheet for a range with no sales", async () => {
+    const { grid } = await render([]);
+    expect(grid[1]).toEqual(REFERENCE_HEADERS);
+    expect(grid).toHaveLength(2);
   });
 });

@@ -108,6 +108,19 @@ export interface ProductionItem {
   pricePerPurchaseUnit: number;
   /** Optional low-stock threshold, in consumptionUnit. 0 = none set. */
   alertQty?: number;
+  /**
+   * Made to order, never kept prepared in advance.
+   *
+   * An on-spot item holds no stock: there is no shelf of it to count, and
+   * nothing to draw down when it sells. Whatever asks for it — a menu recipe or
+   * another production item's recipe — is expanded THROUGH it, into the raw
+   * material it is made from, scaled by batchYieldQty. See expandOnSpot.
+   *
+   * Absent means false, which is every item written before this existed and is
+   * what the kitchen does with most of them: prepare a batch, keep it, sell
+   * from it.
+   */
+  onSpot?: boolean;
   /** Not tracked yet — the Adjustment screen will maintain it. Absent means
    *  "stock unknown", which is different from zero. */
   currentStock?: number;
@@ -267,6 +280,101 @@ export function recipeConsumption(
   return [...byComponent.values()];
 }
 
+/** What expanding an on-spot item needs: its recipe, and what a batch yields. */
+export interface OnSpotItem {
+  recipe: ProductionRecipeLine[];
+  batchYieldQty: number;
+}
+
+/** Demand with every on-spot item resolved away, and a note of which. */
+export interface ExpandedDemand {
+  /** Only things that sit on a shelf — what may actually be drawn down. */
+  demand: ConsumedComponent[];
+  /**
+   * How much of each on-spot item was made, by id, at every depth reached.
+   *
+   * Nothing drew these down — there was no stock to take. They are reported
+   * because "we made 750 gm of gravy to order today" is a real figure the
+   * expansion is the only place that knows, and it is thrown away otherwise.
+   */
+  onSpotQty: Map<string, number>;
+}
+
+/**
+ * Replace every on-spot production item in a demand with what it is made of.
+ *
+ * An on-spot item is prepared when the order lands, so there is no shelf of it
+ * to draw down — the raw material goes straight from store to pan. Demand for
+ * one is therefore not a draw-down at all but a pointer to its recipe, scaled
+ * the way recipeConsumption scales one:
+ *
+ *   consumed = qtyUsed × (demanded ÷ batchYieldQty)
+ *
+ * This is the exact inverse of the rule for a stocked production item, and the
+ * reason both are right is the same: spend the thing that actually sits on a
+ * shelf. A stocked item IS that thing; an on-spot item never was.
+ *
+ * Runs as a pass over finished demand rather than inside either walk, so the
+ * sale path and the production-run path get identical behaviour from one piece
+ * of code — and neither has to know the rule exists.
+ *
+ * Expansion is recursive: an on-spot item made from another on-spot item
+ * resolves all the way down to what is stocked. `seen` guards data that
+ * already contains a loop; nothing can store one, but this must terminate
+ * anyway. A looping item contributes nothing rather than recursing forever.
+ *
+ * An on-spot item with no usable recipe or batch yield expands to nothing —
+ * the honest answer when we cannot know what it consumed, and the same one
+ * recipeConsumption gives.
+ */
+export function expandOnSpot(
+  demand: readonly ConsumedComponent[],
+  onSpotById: ReadonlyMap<string, OnSpotItem>,
+): ExpandedDemand {
+  const totals = new Map<string, ConsumedComponent>();
+  const onSpotQty = new Map<string, number>();
+
+  const add = (refType: StockComponentType, refId: string, qty: number) => {
+    const key = componentKey(refType, refId);
+    const existing = totals.get(key);
+    if (existing) existing.qty += qty;
+    else totals.set(key, { refType, refId, qty });
+  };
+
+  const walk = (
+    line: ConsumedComponent,
+    ancestry: ReadonlySet<string>,
+  ): void => {
+    const onSpot =
+      line.refType === "production" ? onSpotById.get(line.refId) : undefined;
+
+    if (!onSpot) {
+      add(line.refType, line.refId, line.qty);
+      return;
+    }
+    if (ancestry.has(line.refId)) return;
+
+    // Counted before the recipe is walked, so an item whose recipe yields
+    // nothing usable is still reported as having been made — it was.
+    onSpotQty.set(line.refId, (onSpotQty.get(line.refId) ?? 0) + line.qty);
+
+    // recipeConsumption already does the scaling, the per-component summing and
+    // the guards against a zero yield — reused rather than restated, so an
+    // on-spot item consumes exactly what producing that much of it would.
+    const inner = recipeConsumption(
+      onSpot.recipe,
+      onSpot.batchYieldQty,
+      line.qty,
+    );
+    const deeper = new Set([...ancestry, line.refId]);
+    for (const part of inner) walk(part, deeper);
+  };
+
+  for (const line of demand) walk(line, new Set());
+
+  return { demand: [...totals.values()], onSpotQty };
+}
+
 export interface ProductionItemInput {
   name?: unknown;
   consumptionUnit?: unknown;
@@ -274,6 +382,7 @@ export interface ProductionItemInput {
   unitConversion?: unknown;
   batchYieldQty?: unknown;
   alertQty?: unknown;
+  onSpot?: unknown;
   recipe?: unknown;
 }
 
@@ -442,6 +551,10 @@ export function sanitizeProductionItem(
       unitConversion,
       batchYieldQty,
       alertQty,
+      // Anything truthy off the wire is a checked box; absent is unchecked.
+      // Always written, so clearing the box on an existing item really clears
+      // it rather than leaving the old value in place under a $set.
+      onSpot: input.onSpot === true || input.onSpot === "true",
       recipe,
       pricePerPurchaseUnit,
     },

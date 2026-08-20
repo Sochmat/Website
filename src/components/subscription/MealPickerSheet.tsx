@@ -47,7 +47,6 @@ export default function MealPickerSheet({
                   }`}
                 >
                   <div className="relative aspect-[4/3] w-full bg-[#f2f2f2]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <ShimmerImg
                       src={it.image || "/food.png"}
                       alt={it.name.trim()}

@@ -93,12 +93,15 @@ export default function WastageFormModal({
     selected && parsed !== null && selected.unitCost
       ? parsed * selected.unitCost
       : null;
-  // Stock floors at zero, so a wastage bigger than the count lands at 0 and
-  // the excess is flagged here rather than after saving.
+  // Mirrors buildWastage exactly, so the preview promises what the save does:
+  // stock is not floored, and a wastage bigger than the count lands in the red
+  // rather than at zero. The excess is flagged here rather than after saving.
   const available = selected?.savedStock ?? 0;
-  const remaining = parsed === null ? null : Math.max(0, available - parsed);
+  const remaining = parsed === null ? null : available - parsed;
   const shortfall =
-    selected && parsed !== null ? Math.max(0, parsed - available) : 0;
+    selected && parsed !== null
+      ? Math.max(0, parsed - Math.max(0, available))
+      : 0;
 
   const changeKind = (next: WastageKind) => {
     setKind(next);
@@ -244,7 +247,13 @@ export default function WastageFormModal({
             </div>
             <div className="mt-1.5 flex items-center justify-between gap-3">
               <span className="text-gray-600">Qty remaining after</span>
-              <span className="font-medium tabular-nums text-gray-900">
+              <span
+                className={`font-medium tabular-nums ${
+                  // A figure about to go into the red is the one thing on this
+                  // preview worth catching before the save, not after.
+                  (remaining ?? 0) < 0 ? "text-red-600" : "text-gray-900"
+                }`}
+              >
                 {typeof selected.savedStock === "number" || parsed > 0
                   ? `${formatQty(remaining ?? 0)} ${selected.unit}`
                   : "—"}
@@ -254,7 +263,7 @@ export default function WastageFormModal({
               <p className="mt-2 text-xs text-amber-700">
                 Only {formatQty(available)} {selected.unit} is on record —{" "}
                 {formatQty(shortfall)} {selected.unit} more than that. The
-                quantity stops at 0; check the count.
+                quantity goes into the red; check the count.
               </p>
             )}
           </div>

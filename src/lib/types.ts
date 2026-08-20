@@ -187,8 +187,6 @@ export interface Order {
   walletApplied?: number;
   /** Amount actually charged (= totalAmount − walletApplied − pointsApplied). */
   amountPayable?: number;
-  /** Server-computed pre-tax total, frozen at creation; the reward earn base. */
-  rewardBase?: number;
   /** Reward points reserved/redeemed against this order; reduces amountPayable. */
   pointsApplied?: number;
   /** Reward points credited when this order was paid. */

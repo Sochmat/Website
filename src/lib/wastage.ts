@@ -65,10 +65,21 @@ export interface WastageMovement {
 /**
  * Take a wasted quantity off what is on record.
  *
- * Same flooring rule as buildConsumptionLine: an item with no stock figure is
- * treated as empty, and throwing away more than the books hold means the item
- * was under-counted, not that the shelf now holds a negative quantity. The
- * uncovered part survives as `shortfall` so that fact is recorded.
+ * Exactly the same arithmetic as buildConsumptionLine, and for the same reason:
+ * the quantity is NOT floored at zero. Throwing away more than the books hold
+ * means the item was under-counted, and the closing figure carries that debt
+ * rather than rounding it away — a shelf silently reset to 0 would forgive the
+ * gap, and the next delivery would read as if it had never happened.
+ *
+ * An item with no stock figure is treated as empty, so the whole wastage is a
+ * shortfall and the closing figure is the debt.
+ *
+ * Flooring also had a worse consequence than the forgiveness: an item already
+ * in the red was RAISED to zero by recording a wastage against it. Binning food
+ * can never put stock back on a shelf.
+ *
+ * `shortfall` still measures only what THIS wastage could not cover, so an item
+ * sitting at −20 is not blamed for a debt that predates it.
  *
  * The cost values the FULL wasted quantity, not just the part the books could
  * cover — what went in the bin went in the bin, whatever the count said.
@@ -84,8 +95,10 @@ export function buildWastage(input: {
   const unitCost = input.unitCost || null;
   return {
     qty,
-    closingStock: roundQty(Math.max(0, available - qty)),
-    shortfall: roundQty(Math.max(0, qty - available)),
+    closingStock: roundQty(available - qty),
+    // Stock already in the red counts as nothing available rather than as a
+    // negative to be subtracted — the same rule buildConsumptionLine applies.
+    shortfall: roundQty(Math.max(0, qty - Math.max(0, available))),
     unitCost,
     cost: costOf(qty, unitCost),
   };

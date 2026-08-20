@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Modal, Popconfirm, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { DownloadOutlined, EditOutlined, UploadOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  EditOutlined,
+  UploadOutlined,
+} from "@ant-design/icons";
 import BulkOrdersUpdateModal from "./BulkOrdersUpdateModal";
 import PetpoojaEditModal from "./PetpoojaEditModal";
 import { downloadBlob } from "@/lib/downloadBlob";
@@ -26,6 +30,30 @@ function formatUploadedAt(iso: string): string {
     minute: "2-digit",
     hour12: true,
   }).format(new Date(iso));
+}
+
+/** "27 Jul 2026" in IST — a day, with no time to read into it. */
+function formatIstDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(iso));
+}
+
+/**
+ * When an entry was typed, if that was a different IST day from the one it is
+ * for. Null on everything else — including entries predating backdating, which
+ * carry no recordedAt at all.
+ *
+ * Both instants are reduced to their IST day first: an entry saved at 9 am for
+ * that same day is not "entered later", it is just an entry.
+ */
+function enteredOn(row: PetpoojaUploadSummary): string | null {
+  if (!row.recordedAt) return null;
+  const entered = formatIstDay(row.recordedAt);
+  return entered === formatIstDay(row.uploadedAt) ? null : entered;
 }
 
 type UploadRow = PetpoojaUploadSummary & { key: string };
@@ -111,8 +139,10 @@ export default function PetpoojaUploads() {
         `${data.stockRows ?? 0} stock row${data.stockRows === 1 ? "" : "s"} deducted`,
       ];
       const skipped = Number(data.skippedRows ?? 0);
-      if (skipped) parts.push(`${skipped} row${skipped === 1 ? "" : "s"} skipped`);
-      if (data.shortfallRows) parts.push(`${data.shortfallRows} short of stock`);
+      if (skipped)
+        parts.push(`${skipped} row${skipped === 1 ? "" : "s"} skipped`);
+      if (data.shortfallRows)
+        parts.push(`${data.shortfallRows} short of stock`);
       const unmapped: string[] = data.unmapped ?? [];
       if (unmapped.length) parts.push(`no recipe for ${unmapped.join(", ")}`);
 
@@ -174,16 +204,27 @@ export default function PetpoojaUploads() {
       dataIndex: "uploadedAt",
       key: "uploadedAt",
       width: 260,
-      render: (value: string, row) => (
-        <div style={{ lineHeight: 1.35 }}>
-          <div style={{ fontWeight: 500 }}>{formatUploadedAt(value)}</div>
-          <div style={{ fontSize: 12, color: "#888" }}>
-            {/* A manual entry has no file to name, so it says what it is. */}
-            {row.source === "manual" ? "Bulk Orders Update" : row.fileName} ·{" "}
-            {row.uploadedByRole}
+      render: (value: string, row) => {
+        const entered = enteredOn(row);
+        return (
+          <div style={{ lineHeight: 1.35 }}>
+            <div style={{ fontWeight: 500 }}>{formatUploadedAt(value)}</div>
+            <div style={{ fontSize: 12, color: "#888" }}>
+              {/* A manual entry has no file to name, so it says what it is. */}
+              {row.source === "manual"
+                ? "Bulk Orders Update"
+                : row.fileName} · {row.uploadedByRole}
+            </div>
+            {/* Only on a backdated entry: the date above is the day it sold,
+                and the day it was typed is the other half of that story. */}
+            {entered && (
+              <Tag color="blue" style={{ marginTop: 4 }}>
+                entered {entered}
+              </Tag>
+            )}
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       title: "Total items",
@@ -320,7 +361,18 @@ export default function PetpoojaUploads() {
         <>
           {/* "never counted" is not the same as "had none", so an untracked
               row says so rather than printing a 0 it never held. */}
-          {row.previousStock === null ? "—" : row.previousStock} → {row.closingStock}
+          {row.previousStock === null ? "—" : row.previousStock} →{" "}
+          {/* A closing figure below zero is a debt this entry left behind;
+              coloured the way every other screen colours one. */}
+          <span
+            style={
+              row.closingStock < 0
+                ? { color: "#cf1322", fontWeight: 600 }
+                : undefined
+            }
+          >
+            {row.closingStock}
+          </span>
           {row.shortfall > 0 && (
             <Tag color="orange" style={{ marginLeft: 6 }}>
               {row.shortfall} short
@@ -336,7 +388,9 @@ export default function PetpoojaUploads() {
     if (!lines.length) return null;
     return (
       <div style={{ marginTop: 20 }}>
-        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{title}</h4>
+        <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+          {title}
+        </h4>
         <Table<PetpoojaStockLine & { key: string }>
           columns={stockColumns}
           dataSource={lines.map((l, i) => ({ ...l, key: `${l.id}-${i}` }))}
@@ -443,6 +497,9 @@ export default function PetpoojaUploads() {
               </span>{" "}
               — {detail.totalItems} item{detail.totalItems === 1 ? "" : "s"},
               total qty {detail.totalQty}
+              {/* The title above dates this entry to the day it sold; on a
+                  backdated one, that is not the day it was typed. */}
+              {enteredOn(detail) && ` · entered ${enteredOn(detail)}`}
             </p>
 
             <Table<PetpoojaItem & { key: string }>
@@ -467,7 +524,8 @@ export default function PetpoojaUploads() {
 
             {detail.consumptionError && (
               <p style={{ marginTop: 16, fontSize: 13, color: "#cf1322" }}>
-                Stock was not deducted for this upload: {detail.consumptionError}
+                Stock was not deducted for this upload:{" "}
+                {detail.consumptionError}
               </p>
             )}
 
@@ -501,7 +559,9 @@ export default function PetpoojaUploads() {
                     key: `${e.rowNumber}-${i}`,
                   }))}
                   size="small"
-                  pagination={detail.errors.length > 5 ? { pageSize: 5 } : false}
+                  pagination={
+                    detail.errors.length > 5 ? { pageSize: 5 } : false
+                  }
                 />
               </div>
             )}

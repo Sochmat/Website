@@ -15,7 +15,11 @@ import {
 } from "@/lib/orderConsumption";
 import { componentDemand, type SoldItem } from "@/lib/recipeDemand";
 import { componentBreakdown } from "@/lib/recipeBreakdown";
-import { loadItemRecipesByNameKey, spendComponentDemand } from "@/lib/stockSpend";
+import {
+  loadItemRecipesByNameKey,
+  loadOnSpotProductionItems,
+  spendComponentDemand,
+} from "@/lib/stockSpend";
 
 /** One document per order that spent stock — the trail behind the deduction. */
 export const ORDER_CONSUMPTIONS_COLLECTION = "inventoryOrderConsumptions";
@@ -138,7 +142,14 @@ export async function consumeStockForOrder(
     // demand above. Recorded now rather than reconstructed later: the recipe
     // that was in force is the one being deducted, and it may well have been
     // rewritten by the time anyone reads this back.
-    const breakdown = componentBreakdown(items, recipes);
+    //
+    // Expanded with the same on-spot map the spend used, so a share never
+    // names an item the deduction resolved away.
+    const breakdown = componentBreakdown(
+      items,
+      recipes,
+      await loadOnSpotProductionItems(db),
+    );
 
     const result: OrderStockResult = {
       consumed: spent.rowCount > 0,
@@ -155,6 +166,11 @@ export async function consumeStockForOrder(
       consumedAt: claimedAt,
       rawLines: spent.rawLines,
       productionLines: spent.productionLines,
+      // Made-to-order items this order passed through. Left off entirely when
+      // there were none, which is every order until one is flagged on spot.
+      ...(spent.onSpotLines.length > 0
+        ? { onSpotLines: spent.onSpotLines }
+        : {}),
       breakdown,
       unmapped,
       rowCount: spent.rowCount,

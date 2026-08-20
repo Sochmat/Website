@@ -8,8 +8,6 @@ export interface ItemSale {
    *  resolveFoodType(), which falls back to `isVeg`. */
   foodType?: FoodType;
   isVeg: boolean;
-  /** The menu item's category id (Category.id, a slug). "" when unknown. */
-  category: string;
   quantity: number;
   revenue: number;
 }
@@ -65,7 +63,7 @@ const ADD_ONS_UNIT_COST = {
  * Getting both right is what lets a category report reconcile against the
  * order subtotals it came from.
  */
-const SOLD_LINES = {
+export const SOLD_LINES = {
   $concatArrays: [
     {
       $map: {
@@ -172,12 +170,12 @@ export async function itemSalesInRange(
     ? await db
         .collection("menuItems")
         .find({ $or: orQuery })
-        .project({ name: 1, isVeg: 1, foodType: 1, category: 1 })
+        .project({ name: 1, isVeg: 1, foodType: 1 })
         .toArray()
     : [];
   const productMap = new Map<
     string,
-    { name: string; foodType: FoodType; isVeg: boolean; category: string }
+    { name: string; foodType: FoodType; isVeg: boolean }
   >();
   for (const p of products) {
     productMap.set(String(p._id), {
@@ -187,7 +185,6 @@ export async function itemSalesInRange(
         isVeg: Boolean(p.isVeg),
       }),
       isVeg: Boolean(p.isVeg),
-      category: String(p.category ?? ""),
     });
   }
 
@@ -199,7 +196,6 @@ export async function itemSalesInRange(
       name: meta?.name || "Unknown item",
       foodType: meta?.foodType ?? "nonveg",
       isVeg: meta?.isVeg ?? false,
-      category: meta?.category ?? "",
       quantity: g.quantity,
       revenue: g.revenue,
     };

@@ -27,6 +27,12 @@ export interface RecordEntryInput {
   errors?: PetpoojaRowError[];
   /** Rows read before merging duplicates; defaults to the item count. */
   rowsRead?: number;
+  /**
+   * The instant these sales HAPPENED, when it is not now — a Bulk Orders
+   * Update entered for an earlier day. Defaults to the moment of saving, which
+   * is what a sheet upload and a same-day entry both mean.
+   */
+  entryAt?: Date;
   /** The session role recording this; the console has no per-user identity. */
   role: string;
 }
@@ -52,17 +58,25 @@ export interface RecordEntryResult {
  *
  * Never throws on a deduction failure: the list is real either way, and the
  * caller reports the failure rather than pretending nothing was recorded.
+ *
+ * An entry may be dated to an earlier day than the one it is saved on, so two
+ * timestamps are kept. `uploadedAt` is the day the sales happened — what the
+ * list sorts by and what the consumption report files this under. `recordedAt`
+ * is when it was actually typed, which only the audit trail cares about. They
+ * are the same instant unless the admin picked an earlier date.
  */
 export async function recordPetpoojaEntry(
   db: Db,
   input: RecordEntryInput,
 ): Promise<RecordEntryResult> {
   const { source, items, errors = [], role } = input;
-  const uploadedAt = new Date();
+  const recordedAt = new Date();
+  const uploadedAt = input.entryAt ?? recordedAt;
   const collection = db.collection(PETPOOJA_UPLOADS_COLLECTION);
 
   const inserted = await collection.insertOne({
     uploadedAt,
+    recordedAt,
     uploadedByRole: role,
     source,
     ...(input.fileName ? { fileName: input.fileName } : {}),
@@ -77,10 +91,19 @@ export async function recordPetpoojaEntry(
   // Petpooja has already served this food by the time we see it, so recording
   // it IS the moment the stock left. Each item is spent exactly as if it had
   // been ordered that many times — same recipes as a delivered website order.
+  //
+  // The deduction is filed under `uploadedAt` (the day sold) but happens at
+  // `recordedAt`: backdating an entry moves where it READS in the consumption
+  // report, and cannot rewind a shelf that has been counted since.
   let consumption: PetpoojaConsumption | undefined;
   let consumptionError: string | undefined;
   try {
-    consumption = await consumeStockForPetpoojaItems(db, items, uploadedAt);
+    consumption = await consumeStockForPetpoojaItems(
+      db,
+      items,
+      uploadedAt,
+      recordedAt,
+    );
     await collection.updateOne(
       { _id: inserted.insertedId },
       { $set: { consumption } },

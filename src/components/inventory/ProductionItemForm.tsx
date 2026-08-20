@@ -104,6 +104,7 @@ export default function ProductionItemForm({
   const [alertQty, setAlertQty] = useState(
     item?.alertQty ? String(item.alertQty) : "",
   );
+  const [onSpot, setOnSpot] = useState(item?.onSpot === true);
   const [lines, setLines] = useState<DraftLine[]>(
     item?.recipe.map((r) => ({
       refType: r.refType,
@@ -269,6 +270,7 @@ export default function ProductionItemForm({
         unitConversion,
         batchYieldQty,
         alertQty,
+        onSpot,
         recipe: lines.map((l) => ({
           refType: l.refType,
           refId: l.refId,
@@ -550,7 +552,11 @@ export default function ProductionItemForm({
 
             <Field
               label="Alert qty"
-              hint={`Optional low-stock threshold, in ${consumptionUnit || "consumption units"}`}
+              hint={
+                onSpot
+                  ? "Not used — a made-to-order item holds no stock to fall below a threshold"
+                  : `Optional low-stock threshold, in ${consumptionUnit || "consumption units"}`
+              }
               error={errors.alertQty}
             >
               <input
@@ -559,9 +565,30 @@ export default function ProductionItemForm({
                 onChange={(e) => setAlertQty(e.target.value)}
                 placeholder="Leave blank for none"
                 inputMode="decimal"
+                disabled={onSpot}
               />
             </Field>
           </div>
+
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <input
+              type="checkbox"
+              checked={onSpot}
+              onChange={(e) => setOnSpot(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#024731]"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-gray-900">
+                On spot production
+              </span>
+              <span className="mt-0.5 block text-xs text-gray-600">
+                Made when the order comes in, never kept prepared in advance.
+                No stock is held for it: selling this consumes the raw material
+                below directly, scaled from the batch yield. It is left off the
+                Stocks, Add Stock, Adjustment and Wastage screens.
+              </span>
+            </span>
+          </label>
         </section>
 
         {/* Computed price */}

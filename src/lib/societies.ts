@@ -56,12 +56,10 @@ export const SOCIETIES: Society[] = [
     label: "Zomato office, Sector 62",
     towers: ["T1", "T2"],
     collectRoom: false,
-    slots: [
-      { orderBefore: "12:30", getTill: "13:00" },
-      { orderBefore: "13:30", getTill: "14:00" },
-      { orderBefore: "14:30", getTill: "15:00" },
-      { orderBefore: "15:00", getTill: "15:30" },
-    ],
+    // No slots: delivery here runs whenever the store is open, same as Pivotal
+    // Paradise. It used to be restricted to four lunchtime windows, which shut
+    // delivery off after 15:00 even with the store open.
+    slots: [],
     offersFirstOrderDiscount: true,
   },
 ];
