@@ -3,6 +3,11 @@ import type { NextRequest } from "next/server";
 import { limiters, rateLimit } from "@/lib/rateLimit";
 import { ADMIN_COOKIE, verifySession } from "@/lib/adminAuth";
 import { isSubscriptionHost } from "@/lib/subscription";
+import {
+  SHOP_HOME,
+  shopMayCallApi,
+  shopMayOpenPage,
+} from "@/lib/shopAccess";
 
 // Public admin paths that must NOT require a session (otherwise you could never
 // log in). Everything else under /admin and /api/admin requires a valid cookie.
@@ -83,6 +88,33 @@ export async function middleware(request: NextRequest) {
       }
       const loginUrl = new URL("/admin/login", request.url);
       return NextResponse.redirect(loginUrl);
+    }
+
+    // A valid session is not the same as a session for this. The shop role is
+    // scoped to Menu, Orders and Add Stock; everything else on the admin
+    // surface is refused here, on the server, rather than merely hidden by the
+    // sidebar. See src/lib/shopAccess.ts.
+    //
+    // One deliberate looseness: /api/admin/menu is allowed as PUT so the
+    // kitchen can mark an item sold out, which is more than the shop UI
+    // exposes. Narrowing it to the `hidden` field means reading the body, and
+    // that belongs in the route handler, not in Edge middleware that would
+    // have to buffer every request to do it.
+    if (session.role === "shop") {
+      if (pathname.startsWith("/api/")) {
+        if (!shopMayCallApi(pathname, request.method)) {
+          return NextResponse.json(
+            { success: false, message: "Forbidden" },
+            { status: 403 },
+          );
+        }
+      } else if (!shopMayOpenPage(pathname)) {
+        // /admin itself is left alone: it is a bare redirector that already
+        // sends the shop role to its own landing page.
+        if (pathname !== "/admin") {
+          return NextResponse.redirect(new URL(SHOP_HOME, request.url));
+        }
+      }
     }
   }
 

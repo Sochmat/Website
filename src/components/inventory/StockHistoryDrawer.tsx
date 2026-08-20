@@ -30,6 +30,45 @@ function qtyCell(value: number, unit: string, strong = false) {
   return <StockQty value={value} unit={unit} strong={strong} />;
 }
 
+/**
+ * Which console a save came from.
+ *
+ * Worth picking out rather than printing as plain text: a batch recorded from
+ * the shop console was entered by whoever was on shift, working from what they
+ * actually cooked, while an office save came from someone reading a delivery
+ * note. When a quantity later looks wrong, that is the difference between two
+ * entirely different conversations, so the list has to make it visible at a
+ * glance instead of making you read every row.
+ *
+ * Only the shop is coloured. Most rows are admin saves, and badging those just
+ * as loudly would leave nothing standing out — the quiet grey is what makes
+ * the amber mean something.
+ *
+ * This is the role the session carried at save time, not a person: every chef
+ * shares one shop login, so the tag names a console. Anything unrecognised is
+ * shown as stored rather than guessed at or hidden.
+ */
+function SavedByTag({ role }: { role: string }) {
+  const isShop = role === "shop";
+  const label = isShop ? "Shop" : role === "admin" ? "Admin" : role;
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+        isShop
+          ? "bg-amber-100 text-amber-800"
+          : "bg-gray-100 text-gray-600"
+      }`}
+      title={
+        isShop
+          ? "Recorded from the shop console — a batch the kitchen made"
+          : "Recorded from the admin console"
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 /** The "before" side, shared by both histories. */
 const PREVIOUS_COLUMN: ColumnsType<AuditLine>[number] = {
   title: "Qty Remaining",
@@ -308,8 +347,12 @@ export default function StockHistoryDrawer({
       render: (value: string, row) => (
         <div>
           <div className="font-medium text-gray-900">{formatSavedAt(value)}</div>
-          <div className="text-xs text-gray-500">
-            {row.rowCount} item{row.rowCount === 1 ? "" : "s"} · {row.savedByRole}
+          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+            <span>
+              {row.rowCount} item{row.rowCount === 1 ? "" : "s"}
+            </span>
+            <span aria-hidden="true">·</span>
+            <SavedByTag role={row.savedByRole} />
           </div>
         </div>
       ),

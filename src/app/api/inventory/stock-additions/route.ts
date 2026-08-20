@@ -70,6 +70,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Read once, up here: it decides whether this save is allowed at all, and
+    // is the same session the audit record is stamped with further down.
+    const session = await verifySession(request.cookies.get(ADMIN_COOKIE)?.value);
+
+    // The shop role reaches this endpoint for one reason — the kitchen's Add
+    // Stock screen, recording a batch it cooked. Which kind is being added
+    // lives in the body, so the allowlist in src/lib/shopAccess.ts cannot see
+    // it and this is the only place the distinction can be made. Receiving a
+    // raw-material delivery is office work and stays with the admin role.
+    if (session?.role === "shop" && kind !== "production") {
+      return NextResponse.json(
+        { success: false, message: "Forbidden" },
+        { status: 403 },
+      );
+    }
+
     const updates: UpdateInput[] = Array.isArray(body?.updates)
       ? body.updates
       : [];
@@ -280,7 +296,6 @@ export async function POST(request: NextRequest) {
     );
     const consumedLines = [...consumedProduction, ...consumedRaw];
 
-    const session = await verifySession(request.cookies.get(ADMIN_COOKIE)?.value);
     // Written after the stock, so a failed write is never recorded as history.
     const audit = await db.collection(STOCK_AUDITS_COLLECTION).insertOne({
       kind,

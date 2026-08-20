@@ -23,13 +23,17 @@ import {
   RightOutlined,
   MenuOutlined,
   CloseOutlined,
+  PlusSquareOutlined,
 } from "@ant-design/icons";
 import type { AdminRole } from "@/lib/useAdminRole";
 
-const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu"];
+const SHOP_ALLOWED_PATHS = ["/admin/orders", "/admin/menu", "/admin/add-stock"];
 
 // Sidebar navigation, in display order. `adminOnly` items are hidden for the
-// shop role (which only ever reaches Menu and Orders — see SHOP_ALLOWED_PATHS).
+// shop role, and `shopOnly` items are hidden for everyone else — the two are
+// exclusive, and an item setting neither shows to both. See
+// SHOP_ALLOWED_PATHS for the matching route list, and src/lib/shopAccess.ts
+// for the server-side rule that actually enforces it.
 // A `children` entry renders as a collapsible group; everything else is a
 // plain link.
 const NAV_ITEMS: {
@@ -37,6 +41,7 @@ const NAV_ITEMS: {
   label: string;
   icon: React.ReactNode;
   adminOnly: boolean;
+  shopOnly?: boolean;
   children?: { href: string; label: string }[];
 }[] = [
   {
@@ -50,6 +55,16 @@ const NAV_ITEMS: {
     label: "Menu",
     icon: <BookOutlined />,
     adminOnly: false,
+  },
+  {
+    // Kitchen-only: record a batch cooked in advance. Admins have the fuller
+    // version of this at /inventory-management/add-stock, which also covers
+    // raw materials, so a second entry point here would only be ambiguous.
+    href: "/admin/add-stock",
+    label: "Add Stock",
+    icon: <PlusSquareOutlined />,
+    adminOnly: false,
+    shopOnly: true,
   },
   {
     href: "/admin/banner",
@@ -409,7 +424,9 @@ export default function AdminLayout({
 
   const sidebarNav = (
     <nav className="flex flex-col gap-1 p-3">
-      {NAV_ITEMS.filter((item) => !item.adminOnly || !isShop).map((item) => {
+      {NAV_ITEMS.filter(
+        (item) => (item.adminOnly ? !isShop : true) && (item.shopOnly ? isShop : true),
+      ).map((item) => {
         if (!item.children) {
           const active = pathname === item.href;
           return (
