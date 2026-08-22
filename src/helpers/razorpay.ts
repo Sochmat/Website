@@ -259,8 +259,13 @@ async function handleStandardCheckout(options: RazorpayOptions, order: any) {
       }
     },
     modal: {
-      ondismiss: () => {
+      ondismiss: async () => {
         logClient("cancelled", options, { razorpayOrderId: order?.id });
+        // Release the checkout as well as logging it. A closed sheet strands
+        // the wallet/points reservation exactly like a decline does, and the
+        // retry is a fresh order — so without this the customer's balance is
+        // missing from the very next attempt.
+        await markOrderFailed(options);
         options.onError?.(new Error("Payment cancelled"));
       },
     },

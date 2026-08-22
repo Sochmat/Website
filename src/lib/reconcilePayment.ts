@@ -6,6 +6,11 @@ import { pushOrderToPetpooja, recordPushResult } from "@/lib/petpooja";
 import { logPayment, type PaymentLogEntry } from "@/lib/paymentLog";
 import { settleWallet, creditReferral } from "@/lib/wallet";
 import { awardRewardPoints, settleRewardPoints } from "@/lib/rewardPoints";
+import {
+  expectedChargePaise,
+  type OrderChargeFields,
+} from "@/lib/orderAmounts";
+import { reapplyOrderRedemptions } from "@/lib/orderRedemption";
 
 /** The correlation fields shared by every log row in a reconciliation. */
 type LogBase = Pick<
@@ -215,8 +220,12 @@ async function reconcileOrder(
     };
   }
 
-  const expectedAmount = Math.round(
-    Number(order.netAmount ?? order.totalAmount) * 100,
+  // The amount this Razorpay order was raised for, frozen at create-order time.
+  // It survives a fail-time refund handing the customer's balance back, so a
+  // payment that captures late still reconciles at the figure it was made for.
+  const expectedAmount = expectedChargePaise(
+    order as OrderChargeFields,
+    razorpayOrderId,
   );
   const orderIdMatches = payment.order_id === razorpayOrderId;
   const isCaptured = payment.status === "captured";
@@ -316,8 +325,33 @@ async function reconcileOrder(
   // so a verify/webhook race never double-settles, double-credits, or double-pushes.
   if (didTransition) {
     const userId = order.userId as ObjectId | undefined;
-    const walletApplied = Number(order.walletApplied ?? 0);
-    const pointsApplied = Number(order.pointsApplied ?? 0);
+    // A failed/abandoned checkout hands the wallet credit and reward points
+    // back immediately. This payment says the checkout was not abandoned after
+    // all, so retake them BEFORE settling — and before awardRewardPoints, which
+    // reads netAmount to work out what the customer was actually charged.
+    const retaken = await reapplyOrderRedemptions(db, _id);
+    if (retaken.shortfall) {
+      await logPayment(db, {
+        ...logBase,
+        stage: "redemption-reapply-short",
+        outcome: "failure",
+        message:
+          "Late payment settled an order whose released redemption could not be fully retaken",
+        meta: { ...(logBase.meta ?? {}), shortfall: retaken.shortfall },
+      });
+    }
+    // Read the applied figures back rather than trusting the copy fetched at
+    // the top of this call: a release (or the retake above) may have rewritten
+    // them since, and settling anything other than what the order really
+    // redeemed would file a ledger row for money that was never held.
+    const settled = await db
+      .collection("orders")
+      .findOne(
+        { _id },
+        { projection: { walletApplied: 1, pointsApplied: 1 } },
+      );
+    const walletApplied = Number(settled?.walletApplied ?? 0);
+    const pointsApplied = Number(settled?.pointsApplied ?? 0);
     if (userId) {
       // Settle the wallet reservation (balance was decremented at reserve) and
       // credit the referrer for this user's first paid order (idempotent).

@@ -95,3 +95,39 @@ export function orderAmounts(order: OrderAmountFields): OrderAmounts {
     hasRedemption: walletApplied > 0 || pointsApplied > 0,
   };
 }
+
+/** The fields that decide what Razorpay was asked to charge for an order. */
+export interface OrderChargeFields extends OrderAmountFields {
+  razorpayOrderId?: unknown;
+  razorpayAmountPaise?: unknown;
+}
+
+/**
+ * What a captured payment for `razorpayOrderId` must be worth, in paise.
+ *
+ * `razorpayAmountPaise` is frozen onto the order at create-order time — it is
+ * the amount the Razorpay order was actually created for, derived server-side
+ * from the order, never from the client. Freezing it is what lets a failed
+ * checkout hand the customer's wallet credit and reward points back
+ * immediately: the refund rewrites `netAmount` up to the full bill, but a
+ * payment that captures late still has to match the reduced figure it was
+ * raised for, and that figure no longer moves.
+ *
+ * Only honoured when the frozen figure belongs to THIS Razorpay order — a
+ * retry raises a new one, and the stale amount must not vouch for it. Orders
+ * that predate the freeze fall back to the live `netAmount`, which is correct
+ * for them because their redemption is never released.
+ */
+export function expectedChargePaise(
+  order: OrderChargeFields,
+  razorpayOrderId?: string | null,
+): number {
+  const frozen = money(order.razorpayAmountPaise);
+  const boundTo =
+    typeof order.razorpayOrderId === "string" ? order.razorpayOrderId : null;
+  if (frozen !== null && frozen > 0 && boundTo && boundTo === razorpayOrderId) {
+    return Math.round(frozen);
+  }
+  const live = money(order.netAmount) ?? money(order.totalAmount) ?? 0;
+  return Math.round(live * 100);
+}
