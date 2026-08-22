@@ -117,6 +117,21 @@ export interface Order {
   paymentSignature?: string;
   /** Razorpay order id bound to this order at payment verification time. */
   razorpayOrderId?: string;
+  /**
+   * What the Razorpay order above was raised for, in paise, frozen at
+   * create-order time. Reconcile verifies captured payments against this rather
+   * than the live `netAmount`, so a failed checkout can return the customer's
+   * balance (which moves `netAmount`) without stranding a late payment.
+   */
+  razorpayAmountPaise?: number;
+  /**
+   * What a failed/abandoned checkout handed back to the customer's balances.
+   * Present only while released; `reapplyOrderRedemptions` clears it when a
+   * late payment retakes them.
+   */
+  redemptionReleased?: { wallet: number; points: number; at?: Date | string };
+  /** What a late payment could not retake (the customer had already spent it). */
+  redemptionShortfall?: { wallet: number; points: number };
   /** Razorpay refund id + time, set when an order is rejected & refunded. */
   refundId?: string;
   refundedAt?: Date;
