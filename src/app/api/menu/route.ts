@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/mongodb";
 import { resolveFoodType } from "@/lib/foodType";
-import { sortAddOnCategories } from "@/lib/addOnGroups";
+import { resolveSelectionType, sortAddOnCategories } from "@/lib/addOnGroups";
 import type { AddOnCategory } from "@/lib/types";
 
 export async function GET() {
@@ -66,9 +66,14 @@ export async function GET() {
       ).map((cat) => ({
         id: String(cat._id),
         name: cat.name,
+        required: Boolean(cat.required),
+        // Resolved here so the storefront never has to know that a missing
+        // type means the quantity stepper.
+        selectionType: resolveSelectionType(cat),
         members: (cat.members ?? []).map((m) => ({
           addOnId: String(m?.addOnId ?? ""),
           price: typeof m?.price === "number" ? m.price : undefined,
+          defaultSelected: Boolean(m?.defaultSelected),
         })),
         itemIds: cat.itemIds ?? [],
         menuCategoryIds: cat.menuCategoryIds ?? [],

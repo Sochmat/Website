@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { connectToDatabase } from "@/lib/mongodb";
-import type { AddOnCategory, AddOnCategoryMember } from "@/lib/types";
+import type {
+  AddOnCategory,
+  AddOnCategoryMember,
+  AddOnSelectionType,
+} from "@/lib/types";
 
 /**
  * CRUD for add-on categories — named groups of add-ons offered on many menu
@@ -18,11 +22,12 @@ import type { AddOnCategory, AddOnCategoryMember } from "@/lib/types";
 const COLLECTION = "addOnCategories";
 
 /** Members arrive from the browser, so trust nothing: keep well-formed ids,
- *  drop the rest, and let an absent/blank price mean "charge the add-on's own
- *  price" rather than storing a bogus 0. */
+ *  drop the rest, let an absent/blank price mean "charge the add-on's own
+ *  price" rather than storing a bogus 0, and keep at most one default. */
 function sanitizeMembers(input: unknown): AddOnCategoryMember[] {
   if (!Array.isArray(input)) return [];
   const members: AddOnCategoryMember[] = [];
+  let defaulted = false;
   for (const raw of input) {
     const addOnId = String(
       (raw as { addOnId?: unknown })?.addOnId ?? "",
@@ -33,13 +38,26 @@ function sanitizeMembers(input: unknown): AddOnCategoryMember[] {
       rawPrice === null || rawPrice === undefined || rawPrice === ""
         ? undefined
         : Number(rawPrice);
-    members.push(
-      price !== undefined && Number.isFinite(price)
-        ? { addOnId, price: Math.max(0, price) }
-        : { addOnId },
-    );
+    // One default per category, whatever the browser sent: the sheet opens on
+    // it, and two defaults would mean two different opening states.
+    const defaultSelected =
+      !defaulted && Boolean((raw as { defaultSelected?: unknown })?.defaultSelected);
+    if (defaultSelected) defaulted = true;
+    members.push({
+      addOnId,
+      ...(price !== undefined && Number.isFinite(price)
+        ? { price: Math.max(0, price) }
+        : {}),
+      ...(defaultSelected ? { defaultSelected: true } : {}),
+    });
   }
   return members;
+}
+
+/** Unknown types fall back to `add`, the behaviour every group had before
+ *  types existed. */
+function sanitizeSelectionType(input: unknown): AddOnSelectionType {
+  return input === "single" || input === "multi" ? input : "add";
 }
 
 /** Ids from the browser: keep non-empty strings, drop blanks and duplicates. */
@@ -89,6 +107,8 @@ export async function POST(request: NextRequest) {
     const category = {
       name,
       hidden: Boolean(data.hidden),
+      required: Boolean(data.required),
+      selectionType: sanitizeSelectionType(data.selectionType),
       members: sanitizeMembers(data.members),
       itemIds: sanitizeIds(data.itemIds),
       menuCategoryIds: sanitizeIds(data.menuCategoryIds),
@@ -139,6 +159,10 @@ export async function PUT(request: NextRequest) {
       update.name = name;
     }
     if (data.hidden !== undefined) update.hidden = Boolean(data.hidden);
+    if (data.required !== undefined) update.required = Boolean(data.required);
+    if (data.selectionType !== undefined) {
+      update.selectionType = sanitizeSelectionType(data.selectionType);
+    }
     if (data.members !== undefined) {
       update.members = sanitizeMembers(data.members);
     }

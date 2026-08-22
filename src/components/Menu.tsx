@@ -7,7 +7,12 @@ import RecommendedItem from "./RecommendedItem";
 import CategoryFilter from "./CategoryFilter";
 import ShimmerImage from "@/components/ui/ShimmerImage";
 import { Product } from "@/context/CartContext";
-import { AddOnCategory, Category, MenuVariant } from "@/lib/types";
+import {
+  AddOnCategory,
+  AddOnSelectionType,
+  Category,
+  MenuVariant,
+} from "@/lib/types";
 import { buildAddOnGroups, type AddOnGroup } from "@/lib/addOnGroups";
 import { resolveFoodType, type FoodType } from "@/lib/foodType";
 
@@ -51,7 +56,13 @@ type MenuProduct = Product & {
 type ApiAddOnCategory = {
   id: string;
   name: string;
-  members: { addOnId: string; price?: number }[];
+  required?: boolean;
+  selectionType?: AddOnSelectionType;
+  members: {
+    addOnId: string;
+    price?: number;
+    defaultSelected?: boolean;
+  }[];
   itemIds?: string[];
   menuCategoryIds?: string[];
 };
@@ -218,6 +229,8 @@ export default function Menu({
           (data.addOnCategories ?? []).map((c: ApiAddOnCategory) => ({
             _id: c.id,
             name: c.name,
+            required: c.required,
+            selectionType: c.selectionType,
             members: c.members ?? [],
             itemIds: c.itemIds ?? [],
             menuCategoryIds: c.menuCategoryIds ?? [],

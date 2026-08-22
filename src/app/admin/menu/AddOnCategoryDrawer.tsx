@@ -5,12 +5,14 @@ import { Drawer, Select, Tree } from "antd";
 import type {
   AddOnCategory,
   AddOnCategoryMember,
+  AddOnSelectionType,
   Category,
   MenuItem,
 } from "@/lib/types";
 import FoodTypeDot from "@/components/FoodTypeDot";
 import {
   addOnCategoryAppliesTo,
+  resolveSelectionType,
   splitCheckedMapping,
 } from "@/lib/addOnGroups";
 
@@ -28,7 +30,7 @@ import {
  * arrow buttons.
  */
 
-type MemberForm = { addOnId: string; price: string };
+type MemberForm = { addOnId: string; price: string; defaultSelected: boolean };
 
 /**
  * Tree keys are namespaced so one flat `checkedKeys` array can carry both
@@ -41,6 +43,31 @@ const isCatKey = (key: string) => key.startsWith("cat:");
 const isItemKey = (key: string) => key.startsWith("item:");
 const idFromKey = (key: string) => key.slice(key.indexOf(":") + 1);
 
+/** How the customer picks from the group. New groups start on `multi` — the
+ *  common case — while groups created before types existed resolve to `add`,
+ *  which is how they have always behaved. */
+const SELECTION_TYPES: {
+  value: AddOnSelectionType;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "single",
+    label: "Single select",
+    hint: "Radio — customer picks one add-on, e.g. choice of sauce.",
+  },
+  {
+    value: "multi",
+    label: "Multi select",
+    hint: "Checkbox — customer ticks any number of add-ons, one of each.",
+  },
+  {
+    value: "add",
+    label: "Add quantity",
+    hint: "Stepper — customer can take several of the same add-on, e.g. 2x cheese.",
+  },
+];
+
 const inputClass =
   "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent";
 
@@ -48,6 +75,7 @@ function membersFor(editing: AddOnCategory | null): MemberForm[] {
   return (editing?.members ?? []).map((m) => ({
     addOnId: m.addOnId,
     price: m.price === undefined || m.price === null ? "" : String(m.price),
+    defaultSelected: Boolean(m.defaultSelected),
   }));
 }
 
@@ -75,6 +103,10 @@ export default function AddOnCategoryDrawer({
 }: AddOnCategoryDrawerProps) {
   const [name, setName] = useState(editing?.name ?? "");
   const [hidden, setHidden] = useState(Boolean(editing?.hidden));
+  const [required, setRequired] = useState(Boolean(editing?.required));
+  const [selectionType, setSelectionType] = useState<AddOnSelectionType>(() =>
+    editing ? resolveSelectionType(editing) : "multi",
+  );
   const [members, setMembers] = useState<MemberForm[]>(() =>
     membersFor(editing),
   );
@@ -194,7 +226,10 @@ export default function AddOnCategoryDrawer({
   const pickable = addOns.filter((a) => !chosen.has(String(a._id)));
 
   const addMember = (addOnId: string) =>
-    setMembers((prev) => [...prev, { addOnId, price: "" }]);
+    setMembers((prev) => [
+      ...prev,
+      { addOnId, price: "", defaultSelected: false },
+    ]);
 
   const removeMember = (index: number) =>
     setMembers((prev) => prev.filter((_, i) => i !== index));
@@ -202,6 +237,13 @@ export default function AddOnCategoryDrawer({
   const setPrice = (index: number, price: string) =>
     setMembers((prev) =>
       prev.map((m, i) => (i === index ? { ...m, price } : m)),
+    );
+
+  /** Only one add-on per category opens pre-selected, so ticking one unticks
+   *  whichever held it; ticking the ticked one clears the default entirely. */
+  const setDefaultSelected = (index: number, defaultSelected: boolean) =>
+    setMembers((prev) =>
+      prev.map((m, i) => ({ ...m, defaultSelected: defaultSelected && i === index })),
     );
 
   /** Swap with the neighbour in `direction`; the ends simply don't move. */
@@ -220,14 +262,16 @@ export default function AddOnCategoryDrawer({
     try {
       // A blank price box means "charge the add-on's own price", so it must go
       // over the wire as absent — not as 0, which is a real free-extra price.
-      const payloadMembers: AddOnCategoryMember[] = members.map((m) =>
-        m.price.trim() === ""
-          ? { addOnId: m.addOnId }
-          : { addOnId: m.addOnId, price: Number(m.price) || 0 },
-      );
+      const payloadMembers: AddOnCategoryMember[] = members.map((m) => ({
+        addOnId: m.addOnId,
+        ...(m.price.trim() === "" ? {} : { price: Number(m.price) || 0 }),
+        ...(m.defaultSelected ? { defaultSelected: true } : {}),
+      }));
       const body = {
         name: name.trim(),
         hidden,
+        required,
+        selectionType,
         members: payloadMembers,
         itemIds,
         menuCategoryIds,
@@ -271,6 +315,32 @@ export default function AddOnCategoryDrawer({
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Selection type
+          </label>
+          {/* One row of radios: the three types are one choice, and the full
+              explanation of each lives in its tooltip rather than on screen. */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            {SELECTION_TYPES.map((type) => (
+              <label
+                key={type.value}
+                title={type.hint}
+                className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer"
+              >
+                <input
+                  type="radio"
+                  name="selectionType"
+                  checked={selectionType === type.value}
+                  onChange={() => setSelectionType(type.value)}
+                  className="w-4 h-4"
+                />
+                {type.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <div className="flex items-baseline justify-between mb-2">
             <label className="block text-sm font-medium text-gray-700">
               Add-ons in this category
@@ -288,7 +358,8 @@ export default function AddOnCategoryDrawer({
             <div className="space-y-2">
               <div className="flex items-center gap-2 px-1 text-xs text-gray-400">
                 <span className="flex-1">Add-on</span>
-                <span className="w-[104px]">Price (₹)</span>
+                <span className="w-[88px]">Price (₹)</span>
+                <span className="w-[60px] text-center">Default</span>
                 <span className="w-[76px]" />
               </div>
               {members.map((member, index) => {
@@ -317,8 +388,21 @@ export default function AddOnCategoryDrawer({
                       value={member.price}
                       onChange={(e) => setPrice(index, e.target.value)}
                       placeholder={String(basePrice)}
-                      className="w-[104px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
+                      className="w-[88px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#1c1c1c] focus:border-transparent"
                     />
+
+                    <div className="w-[60px] flex justify-center">
+                      <input
+                        type="checkbox"
+                        checked={member.defaultSelected}
+                        onChange={(e) =>
+                          setDefaultSelected(index, e.target.checked)
+                        }
+                        aria-label={`Pre-select ${addOn?.name ?? "add-on"}`}
+                        title="Pre-selected when the customer opens the item (one per category)"
+                        className="w-4 h-4"
+                      />
+                    </div>
 
                     <div className="flex items-center gap-1 w-[76px] justify-end">
                       <button
@@ -418,6 +502,19 @@ export default function AddOnCategoryDrawer({
                 }.`}
           </p>
         </div>
+
+        <label className="flex items-start gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={required}
+            onChange={(e) => setRequired(e.target.checked)}
+            className="w-4 h-4 mt-0.5"
+          />
+          <span>
+            Compulsory — the customer must pick at least one add-on from this
+            group before the item can go in the cart
+          </span>
+        </label>
 
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input

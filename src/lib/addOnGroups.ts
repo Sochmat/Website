@@ -1,4 +1,4 @@
-import type { AddOnCategory } from "./types";
+import type { AddOnCategory, AddOnSelectionType } from "./types";
 
 /**
  * Resolving the add-ons a menu item offers.
@@ -29,11 +29,18 @@ export interface AddOnOption<P> {
   product: P;
   /** What this add-on costs *in this group*. */
   price: number;
+  /** Starts at quantity 1 in the sheet; the customer can still remove it. */
+  defaultSelected?: boolean;
 }
 
 export interface AddOnGroup<P> {
   key: string;
   title: string;
+  /** At least one option must be taken before the item can be added. */
+  required?: boolean;
+  /** How the sheet renders the options — radio, checkbox or quantity
+   *  stepper. See AddOnSelectionType. */
+  selectionType: AddOnSelectionType;
   options: AddOnOption<P>[];
 }
 
@@ -105,6 +112,9 @@ export function buildAddOnGroups<P extends { id: string; price: number }>({
     groups.push({
       key: DIRECT_GROUP_KEY,
       title: DIRECT_GROUP_TITLE,
+      // The item's own add-ons belong to no category, so there is nothing to
+      // carry a type: they keep the quantity stepper they have always had.
+      selectionType: "add",
       options: direct,
     });
   }
@@ -127,14 +137,70 @@ export function buildAddOnGroups<P extends { id: string; price: number }>({
         key: `${categoryId}:${member.addOnId}`,
         product,
         price: resolveMemberPrice(member.price, product.price),
+        defaultSelected: Boolean(member.defaultSelected),
       });
     }
     if (options.length) {
-      groups.push({ key: categoryId, title: category.name, options });
+      groups.push({
+        key: categoryId,
+        title: category.name,
+        // A group with no resolvable options is dropped above, so `required`
+        // can never strand the sheet on a heading the customer cannot satisfy.
+        required: Boolean(category.required),
+        selectionType: resolveSelectionType(category),
+        options,
+      });
     }
   }
 
   return groups;
+}
+
+/** Groups written before types existed have none, and keep the quantity
+ *  stepper that was the only behaviour back then. */
+export function resolveSelectionType(
+  category: Pick<AddOnCategory, "selectionType">,
+): AddOnSelectionType {
+  const type = category.selectionType;
+  return type === "single" || type === "multi" ? type : "add";
+}
+
+/**
+ * The quantities the sheet opens with: 1 for every option the admin marked as
+ * default-selected, nothing for the rest. Options are keyed, not add-ons, so
+ * the same add-on defaulted in one group and not in another behaves correctly.
+ */
+export function defaultAddOnQuantities<P>(
+  groups: AddOnGroup<P>[],
+): Record<string, number> {
+  const quantities: Record<string, number> = {};
+  for (const group of groups) {
+    // A radio group showing two filled dots would be a lie about what the
+    // customer is buying, so only the first default counts there.
+    const options =
+      group.selectionType === "single"
+        ? group.options.filter((o) => o.defaultSelected).slice(0, 1)
+        : group.options;
+    for (const option of options) {
+      if (option.defaultSelected) quantities[option.key] = 1;
+    }
+  }
+  return quantities;
+}
+
+/**
+ * The required groups the customer has not satisfied yet — a group counts as
+ * satisfied once any one of its options is at quantity 1 or more.
+ */
+export function unmetRequiredGroups<P>(
+  groups: AddOnGroup<P>[],
+  quantities: Record<string, number>,
+): AddOnGroup<P>[] {
+  return groups.filter(
+    (group) =>
+      group.required &&
+      !group.options.some((option) => (quantities[option.key] ?? 0) > 0),
+  );
 }
 
 /** An override of 0 is meaningful (a free extra), so only an unset or

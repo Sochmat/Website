@@ -55,6 +55,17 @@ export interface MenuItem {
   updatedAt?: Date;
 }
 
+/**
+ * How the customer picks from an add-on category:
+ *   - `single` — radio, at most one add-on, quantity 1
+ *   - `multi`  — checkboxes, any number of different add-ons, quantity 1 each
+ *   - `add`    — quantity stepper, several of the same add-on
+ *
+ * Absent means `add`: that is how every group behaved before types existed, so
+ * documents written back then must keep behaving that way.
+ */
+export type AddOnSelectionType = "single" | "multi" | "add";
+
 /** One add-on inside an add-on category. `price` overrides the add-on's own
  *  price for this category only; leave it unset to charge the add-on's price.
  *  The same add-on may sit in several categories at different prices. */
@@ -62,6 +73,10 @@ export interface AddOnCategoryMember {
   /** `menuItems` document id of an add-on. */
   addOnId: string;
   price?: number;
+  /** Pre-ticked (quantity 1) when the add-to-cart sheet opens. The customer
+   *  can still remove it — it is a suggestion, not a forced charge. At most one
+   *  member of a category carries this. */
+  defaultSelected?: boolean;
 }
 
 /**
@@ -80,6 +95,12 @@ export interface AddOnCategory {
   _id?: ObjectId | string;
   name: string;
   hidden?: boolean;
+  /** The customer must take at least one add-on from this group before the
+   *  item can go in the cart. Checked in the sheet only — the order API keeps
+   *  recomputing prices, but does not reject a line for missing a group. */
+  required?: boolean;
+  /** See AddOnSelectionType. Absent = `add`. */
+  selectionType?: AddOnSelectionType;
   members: AddOnCategoryMember[];
   /** Menu items this group is offered on, by `menuItems` document id. */
   itemIds?: string[];

@@ -3,9 +3,12 @@ import {
   addOnCategoryAppliesTo,
   buildAddOnGroups,
   cheapestAddOnPrice,
+  defaultAddOnQuantities,
   resolveMemberPrice,
+  resolveSelectionType,
   sortAddOnCategories,
   splitCheckedMapping,
+  unmetRequiredGroups,
   DIRECT_GROUP_TITLE,
 } from "@/lib/addOnGroups";
 import type { AddOnCategory } from "@/lib/types";
@@ -311,5 +314,117 @@ describe("cheapestAddOnPrice", () => {
 
   it("is unaffected by categories the add-on is not in", () => {
     expect(cheapestAddOnPrice("cheese", 30, [sauces, freeExtras])).toBe(30);
+  });
+});
+
+describe("required groups and default selections", () => {
+  const compulsorySauces: AddOnCategory = {
+    ...sauces,
+    required: true,
+    members: [
+      { addOnId: "mayo", price: 10, defaultSelected: true },
+      { addOnId: "peri" },
+    ],
+  };
+
+  const build = (categories: AddOnCategory[]) =>
+    buildAddOnGroups<TestProduct>({
+      itemId: BURGER,
+      menuCategoryId: BURGERS,
+      productsById,
+      categories,
+    });
+
+  it("carries required onto the group and defaultSelected onto the option", () => {
+    const [group] = build([compulsorySauces]);
+    expect(group.required).toBe(true);
+    expect(group.options.map((o) => o.defaultSelected)).toEqual([true, false]);
+  });
+
+  it("marks a plain category as neither required nor defaulted", () => {
+    const [group] = build([sauces]);
+    expect(group.required).toBe(false);
+    expect(group.options.every((o) => !o.defaultSelected)).toBe(true);
+  });
+
+  it("opens the sheet with one of each default-selected add-on", () => {
+    expect(defaultAddOnQuantities(build([compulsorySauces, freeExtras]))).toEqual(
+      { "sauces:mayo": 1 },
+    );
+  });
+
+  it("reports a required group as unmet until one of its add-ons is taken", () => {
+    const groups = build([compulsorySauces]);
+    expect(unmetRequiredGroups(groups, {}).map((g) => g.title)).toEqual([
+      "Sauces",
+    ]);
+    // Any option in the group satisfies it — not just the defaulted one.
+    expect(unmetRequiredGroups(groups, { "sauces:peri": 1 })).toEqual([]);
+  });
+
+  it("does not let a taken add-on satisfy a different required group", () => {
+    const compulsoryExtras: AddOnCategory = { ...freeExtras, required: true };
+    const groups = build([compulsorySauces, compulsoryExtras]);
+    // Mayo sits in both groups, but at two prices — two separate offers.
+    expect(
+      unmetRequiredGroups(groups, { "sauces:mayo": 1 }).map((g) => g.title),
+    ).toEqual(["Free Extras"]);
+  });
+
+  it("leaves optional groups out of the unmet list at zero quantity", () => {
+    expect(unmetRequiredGroups(build([sauces, freeExtras]), {})).toEqual([]);
+  });
+});
+
+describe("selection types", () => {
+  const build = (categories: AddOnCategory[]) =>
+    buildAddOnGroups<TestProduct>({
+      itemId: BURGER,
+      menuCategoryId: BURGERS,
+      productsById,
+      categories,
+    });
+
+  it("keeps groups written before types existed on the quantity stepper", () => {
+    expect(resolveSelectionType({})).toBe("add");
+    expect(build([sauces])[0].selectionType).toBe("add");
+  });
+
+  it("ignores a type it does not recognise", () => {
+    expect(
+      resolveSelectionType({ selectionType: "toggle" as never }),
+    ).toBe("add");
+  });
+
+  it("carries the admin's type onto the group", () => {
+    const single = build([{ ...sauces, selectionType: "single" }]);
+    expect(single[0].selectionType).toBe("single");
+    const multi = build([{ ...sauces, selectionType: "multi" }]);
+    expect(multi[0].selectionType).toBe("multi");
+  });
+
+  it("leaves the item's own add-ons on the stepper", () => {
+    const [direct] = buildAddOnGroups<TestProduct>({
+      itemId: BURGER,
+      addOnIds: ["cheese"],
+      productsById,
+      categories: [],
+    });
+    expect(direct.title).toBe(DIRECT_GROUP_TITLE);
+    expect(direct.selectionType).toBe("add");
+  });
+
+  it("opens a radio group on one default even if the data holds two", () => {
+    const groups = build([
+      {
+        ...sauces,
+        selectionType: "single",
+        members: [
+          { addOnId: "mayo", defaultSelected: true },
+          { addOnId: "peri", defaultSelected: true },
+        ],
+      },
+    ]);
+    expect(defaultAddOnQuantities(groups)).toEqual({ "sauces:mayo": 1 });
   });
 });

@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Product, CartSelection } from "@/context/CartContext";
 import type { MenuVariant, SelectedAddOn } from "@/lib/types";
-import type { AddOnGroup } from "@/lib/addOnGroups";
+import {
+  defaultAddOnQuantities,
+  unmetRequiredGroups,
+  type AddOnGroup,
+} from "@/lib/addOnGroups";
 import FoodTypeDot from "./FoodTypeDot";
 
 interface AddToCartSheetProps {
@@ -31,8 +35,11 @@ export default function AddToCartSheet({
   const [variantIndex, setVariantIndex] = useState(0);
   // Option key -> chosen quantity (0 = not selected). Keyed by option, not by
   // add-on: the same add-on can appear in two groups at two prices, and those
-  // are separate offers that must count separately.
-  const [addOnQty, setAddOnQty] = useState<Record<string, number>>({});
+  // are separate offers that must count separately. Starts on the admin's
+  // default-selected add-ons, which the customer is free to remove.
+  const [addOnQty, setAddOnQty] = useState<Record<string, number>>(() =>
+    defaultAddOnQuantities(addOnGroups),
+  );
 
   // Every option across every group, for pricing and for building the result.
   const addOnOptions = useMemo(
@@ -63,10 +70,32 @@ export default function AddToCartSheet({
   );
   const total = basePrice + addOnsSum;
 
+  // A compulsory group blocks the confirm button until one of its add-ons is
+  // taken, so the customer is never told off after the fact.
+  const unmetGroups = unmetRequiredGroups(addOnGroups, addOnQty);
+  const unmetKeys = new Set(unmetGroups.map((group) => group.key));
+  const blocked = unmetGroups.length > 0;
+
   const setQty = (key: string, qty: number) =>
     setAddOnQty((prev) => ({ ...prev, [key]: Math.max(0, qty) }));
 
+  /** Radio and checkbox groups are both a toggle; they differ only in what
+   *  happens to the siblings. Re-tapping a chosen radio clears it, so an
+   *  optional group can be left empty after a mistaken tap. */
+  const toggleOption = (group: AddOnGroup<Product>, key: string) =>
+    setAddOnQty((prev) => {
+      const chosen = (prev[key] ?? 0) > 0;
+      if (group.selectionType !== "single") {
+        return { ...prev, [key]: chosen ? 0 : 1 };
+      }
+      const next = { ...prev };
+      for (const option of group.options) next[option.key] = 0;
+      next[key] = chosen ? 0 : 1;
+      return next;
+    });
+
   const handleConfirm = () => {
+    if (blocked) return;
     // The add-on id is what the kitchen and the order API key off, so that is
     // what travels — the price carries the group's override with it.
     const addOns: SelectedAddOn[] = addOnOptions
@@ -152,26 +181,89 @@ export default function AddToCartSheet({
               per mapped add-on category. */}
           {addOnGroups.map((group) => (
             <div key={group.key} className="mt-4">
-              <p className="text-sm font-semibold text-[#111] mb-2">
-                {group.title}
-              </p>
-              <div className="flex flex-col gap-2">
+              <div className="flex items-baseline gap-2 mb-2">
+                <p className="text-sm font-semibold text-[#111]">
+                  {group.title}
+                </p>
+                {group.required && (
+                  <span
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                      unmetKeys.has(group.key)
+                        ? "bg-[rgba(245,98,21,0.12)] text-[#f56215]"
+                        : "bg-gray-100 text-[#666]"
+                    }`}
+                  >
+                    Required
+                  </span>
+                )}
+              </div>
+              <div
+                className="flex flex-col gap-2"
+                role={group.selectionType === "single" ? "radiogroup" : undefined}
+                aria-label={group.selectionType === "single" ? group.title : undefined}
+              >
                 {group.options.map(({ key, product: a, price }) => {
                   const qty = addOnQty[key] ?? 0;
+                  const label = (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <FoodTypeDot item={a} size={14} dotSize={6} />
+                      <span className="text-sm text-[#111] truncate">
+                        {a.name}
+                      </span>
+                      <span className="text-sm text-[#666] shrink-0">
+                        {price > 0 ? `₹${price}` : "Free"}
+                      </span>
+                    </span>
+                  );
+
+                  // Radio and checkbox groups pick the whole row, so the row
+                  // itself is the control; only an "add" group keeps the
+                  // stepper, where the row has two separate hit targets.
+                  if (group.selectionType !== "add") {
+                    const chosen = qty > 0;
+                    const single = group.selectionType === "single";
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        role={single ? "radio" : "checkbox"}
+                        aria-checked={chosen}
+                        onClick={() => toggleOption(group, key)}
+                        className={`flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
+                          chosen
+                            ? "border-[#f56215] bg-[rgba(245,98,21,0.06)]"
+                            : "border-gray-200"
+                        }`}
+                      >
+                        {label}
+                        <span
+                          className={`w-4 h-4 shrink-0 border flex items-center justify-center ${
+                            single ? "rounded-full" : "rounded-[5px]"
+                          } ${
+                            chosen
+                              ? "border-[#f56215]"
+                              : "border-gray-300"
+                          } ${chosen && !single ? "bg-[#f56215]" : ""}`}
+                        >
+                          {chosen &&
+                            (single ? (
+                              <span className="w-2 h-2 rounded-full bg-[#f56215]" />
+                            ) : (
+                              <span className="text-white text-[10px] leading-none">
+                                ✓
+                              </span>
+                            ))}
+                        </span>
+                      </button>
+                    );
+                  }
+
                   return (
                     <div
                       key={key}
                       className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-gray-200"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FoodTypeDot item={a} size={14} dotSize={6} />
-                        <span className="text-sm text-[#111] truncate">
-                          {a.name}
-                        </span>
-                        <span className="text-sm text-[#666] shrink-0">
-                          {price > 0 ? `₹${price}` : "Free"}
-                        </span>
-                      </div>
+                      {label}
 
                       {qty > 0 ? (
                         <div className="bg-[rgba(245,98,21,0.1)] border border-[#f56215] flex items-center justify-between px-2.5 py-1 rounded-md text-[#f56215] text-sm w-[80px] shrink-0">
@@ -208,10 +300,16 @@ export default function AddToCartSheet({
 
         {/* Confirm */}
         <div className="px-4 pt-2 pb-6 shrink-0 border-t border-gray-100">
+          {blocked && (
+            <p className="text-xs text-[#f56215] mb-2 text-center">
+              Pick at least one from {listGroupTitles(unmetGroups)}
+            </p>
+          )}
           <button
             type="button"
             onClick={handleConfirm}
-            className="w-full bg-[#f56215] text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2"
+            disabled={blocked}
+            className="w-full bg-[#f56215] text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 disabled:bg-gray-300 disabled:text-gray-500"
           >
             <span>Add item to cart</span>
             <span>·</span>
@@ -221,4 +319,11 @@ export default function AddToCartSheet({
       </div>
     </>
   );
+}
+
+/** "Sauces", "Sauces and Sides", "Sauces, Sides and Dips". */
+function listGroupTitles(groups: { title: string }[]): string {
+  const titles = groups.map((group) => group.title);
+  if (titles.length <= 1) return titles[0] ?? "";
+  return `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
 }
